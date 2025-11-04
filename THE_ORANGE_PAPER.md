@@ -735,6 +735,67 @@ sequenceDiagram
 **MemPool**: Request mempool contents
 **FeeFilter**: Set minimum fee rate for transaction relay
 
+### 10.6 Dandelion++ k-Anonymity
+
+**Adversary Model**: Passive observer capable of monitoring network traffic, operating nodes, and performing graph analysis.
+
+**k-Anonymity Definition**: A transaction $tx$ satisfies k-anonymity if, from the adversary's perspective, $tx$ could have originated from at least $k$ distinct nodes with equal probability.
+
+Formally, let:
+- $O$ = set of nodes that could have originated $tx$ (from adversary's view)
+- $P(O = N_i | \text{Evidence})$ = probability that node $N_i$ originated $tx$ given observed evidence
+
+Then $tx$ has **k-anonymity** if:
+- $|O| \geq k$
+- $\forall N_i, N_j \in O: P(O = N_i | \text{Evidence}) = P(O = N_j | \text{Evidence})$
+
+**Stem Phase Parameters**:
+- $p_{\text{fluff}} \in [0, 1]$: Probability of transitioning to fluff at each hop (default: 0.1)
+- $\text{max\_stem\_hops} \in \mathbb{N}$: Maximum number of stem hops before forced fluff (default: 2)
+- $\text{stem\_timeout} \in \mathbb{R}^+$: Maximum duration (seconds) in stem phase before timeout fluff
+
+**Stem Phase Algorithm**:
+$$\text{stem\_phase\_relay}(tx, \text{current\_peer}, \text{peers}) \rightarrow \text{Option}<\text{Peer}>$$
+
+1. If $tx$ already in stem phase:
+   - If $\text{elapsed\_time}(tx) > \text{stem\_timeout}$: return $\text{None}$ (fluff via timeout)
+   - If $\text{hop\_count}(tx) \geq \text{max\_stem\_hops}$: return $\text{None}$ (fluff via hop limit)
+   - If $\text{random}() < p_{\text{fluff}}$: return $\text{None}$ (fluff via probability)
+   - Otherwise: $\text{advance\_stem}(tx)$ → return $\text{Some}(\text{next\_peer})$
+
+2. Else: $\text{start\_stem\_phase}(tx)$ → return $\text{Some}(\text{next\_peer})$
+
+**Fluff Phase**: When algorithm returns $\text{None}$, transaction enters fluff phase and is broadcast to all peers (standard Bitcoin relay).
+
+**Theorem 1 (Stem Phase Anonymity)**: During the stem phase, if the adversary observes a transaction at node $N_i$, the set of possible originators includes all nodes that have been on the stem path up to $N_i$.
+
+**Proof Sketch**: The adversary cannot distinguish between:
+1. $tx$ originated at $N_i$ and is in its first stem hop
+2. $tx$ originated at any previous node $N_j$ ($j < i$) and is being forwarded
+
+The random peer selection ensures uniform probability distribution over all possible originators in the path.
+
+**Theorem 2 (Minimum k-Anonymity)**: For a stem path of length $h$ hops, the minimum k-anonymity is $k \geq h + 1$.
+
+**Proof**: A stem path $N_0 \rightarrow N_1 \rightarrow \ldots \rightarrow N_h$ contains $h + 1$ nodes. From the adversary's perspective at $N_h$, any of these $h + 1$ nodes could have originated $tx$. Therefore, $k \geq h + 1$.
+
+**Corollary**: With $\text{max\_stem\_hops} = 2$, we guarantee $k \geq 3$ (3-anonymity).
+
+**Theorem 3 (Timeout Guarantee)**: Even if the adversary controls all peers except the originator, the stem phase will terminate within $\text{stem\_timeout}$ seconds.
+
+**Proof**: The timeout check ensures $tx$ transitions to fluff phase within $\text{stem\_timeout}$ seconds regardless of peer behavior.
+
+**Theorem 4 (No Premature Broadcast)**: During the stem phase, a transaction is never broadcast to multiple peers simultaneously.
+
+**Proof**: The algorithm returns $\text{Option}<\text{Peer}>$ where $\text{Some}(\text{peer})$ indicates single-peer relay and $\text{None}$ indicates transition to fluff. The fluff phase is the only mechanism for broadcast.
+
+**Implementation Invariants (Kani-Verified)**:
+1. **No Premature Broadcast**: $\forall tx, \text{phase}: \text{phase} = \text{Stem} \implies \text{broadcast\_count}(tx) = 0$
+2. **Bounded Stem Length**: $\forall tx: \text{stem\_hops}(tx) \leq \text{max\_stem\_hops}$
+3. **Timeout Enforcement**: $\forall tx: \text{elapsed\_time}(tx) > \text{stem\_timeout} \implies \text{phase}(tx) = \text{Fluff}$
+4. **Single Stem State**: $\forall tx: |\text{stem\_states}(tx)| \leq 1$
+5. **Eventual Fluff**: $\forall tx: \exists t: \text{phase\_at\_time}(tx, t) = \text{Fluff}$
+
 ## 11. Advanced Features
 
 ### 11.1 Segregated Witness (SegWit)
@@ -880,6 +941,59 @@ sequenceDiagram
 - **Malleability**: Prevented through SegWit
 - **DoS Protection**: Resource limits on size and operations
 - **Replay Protection**: Sequence numbers and locktime
+
+### 13.3 Engineering-Specific Edge Cases
+
+While the Orange Paper focuses on mathematical consensus rules (~95% coverage), there are engineering-specific edge cases that are consensus-critical but not purely mathematical. These must be handled identically to Bitcoin Core to prevent network divergence.
+
+#### 13.3.1 Integer Arithmetic Overflow/Underflow
+
+**Critical Requirement**: All monetary value arithmetic must use checked operations to prevent overflow/underflow.
+
+**Edge Cases**:
+1. **Value Summation**: Input/output value summation can overflow `i64::MAX` when combining many large UTXOs
+2. **Fee Calculation**: `total_in - total_out` can underflow or overflow near boundaries
+3. **Coinbase Value**: `subsidy + fees` can exceed `MAX_MONEY` if not checked
+4. **Fee Accumulation**: Summing fees across block transactions can overflow
+
+**Implementation**: Use `checked_add()` and `checked_sub()` for all value arithmetic. Match Bitcoin Core's `CAmount` behavior exactly.
+
+#### 13.3.2 Serialization/Deserialization Correctness
+
+**Critical Requirement**: Wire format must match Bitcoin Core byte-for-byte.
+
+**Edge Cases**:
+1. **VarInt Encoding**: Boundary values (`0xfc`, `0xfd`, `0xfe`, `0xff`) must use correct encoding format
+2. **Little-Endian**: All integers must be serialized as little-endian
+3. **Block Header**: Must be exactly 80 bytes
+4. **Transaction Format**: Must match Bitcoin Core's exact byte layout
+
+**Implementation**: Consolidated serialization module with round-trip correctness guarantees. See `docs/ENGINEERING_EDGE_CASES.md` for details.
+
+#### 13.3.3 Resource Limit Enforcement
+
+**Critical Requirement**: DoS protection limits must be enforced deterministically at exact boundaries.
+
+**Edge Cases**:
+1. **Script Operation Limit**: Exactly 201 operations must fail (limit check happens after increment)
+2. **Stack Size Limit**: Exactly 1000 stack items must fail before next push
+3. **Transaction Size**: Exactly 1,000,000 bytes must pass, 1,000,001 must fail
+4. **Coinbase ScriptSig**: Must be exactly 2-100 bytes (boundary validation)
+
+**Implementation**: All limits checked before resource exhaustion. Boundary behavior matches Bitcoin Core exactly.
+
+#### 13.3.4 Parser Determinism
+
+**Critical Requirement**: Malformed data must be rejected deterministically. All nodes must agree on invalid inputs.
+
+**Edge Cases**:
+1. **Truncated Data**: EOF at any point must be rejected with clear error
+2. **Invalid Length Fields**: Length > remaining bytes, invalid VarInt encodings
+3. **Malformed Structures**: Negative counts, maximum value abuse
+
+**Implementation**: Wire-format parser with comprehensive error handling. All rejection scenarios tested. See `tests/engineering/parser_edge_cases.rs`.
+
+**Reference**: See `docs/ENGINEERING_EDGE_CASES.md` for complete documentation of all engineering-specific edge cases, test coverage, and Bitcoin Core alignment.
 
 ## 14. Conclusion
 
