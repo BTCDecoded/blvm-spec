@@ -1,6 +1,6 @@
 # The Orange Paper: Bitcoin Protocol Specification
 
-[![CI](https://github.com/BTCDecoded/the-orange-paper/workflows/CI/badge.svg)](https://github.com/BTCDecoded/the-orange-paper/actions)
+[![CI](https://github.com/BTCDecoded/bllvm-spec/workflows/CI/badge.svg)](https://github.com/BTCDecoded/bllvm-spec/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A complete mathematical specification of the Bitcoin consensus protocol derived from Bitcoin Core implementation.
