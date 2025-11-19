@@ -30,6 +30,13 @@ This paper presents a complete mathematical specification of the Bitcoin consens
    - 5.1 [Transaction Validation](#51-transaction-validation)
    - 5.2 [Script Execution](#52-script-execution)
    - 5.3 [Block Validation](#53-block-validation)
+   - 5.4 [BIP Validation Rules](#54-bip-validation-rules)
+     - 5.4.1 [BIP30: Duplicate Coinbase Prevention](#541-bip30-duplicate-coinbase-prevention)
+     - 5.4.2 [BIP34: Block Height in Coinbase](#542-bip34-block-height-in-coinbase)
+     - 5.4.3 [BIP66: Strict DER Signatures](#543-bip66-strict-der-signatures)
+     - 5.4.4 [BIP90: Block Version Enforcement](#544-bip90-block-version-enforcement)
+     - 5.4.5 [BIP147: NULLDUMMY Enforcement](#545-bip147-nulldummy-enforcement)
+     - 5.4.6 [BIP119: OP_CHECKTEMPLATEVERIFY (CTV)](#546-bip119-opchecktemplateverify-ctv)
 6. [Economic Model](#6-economic-model)
    - 6.1 [Block Subsidy](#61-block-subsidy)
    - 6.2 [Total Supply](#62-total-supply)
@@ -66,6 +73,12 @@ This paper presents a complete mathematical specification of the Bitcoin consens
 14. [Conclusion](#14-conclusion)
     - 14.1 [Summary of Contributions](#141-summary-of-contributions)
     - 14.2 [Applications](#142-applications)
+15. [Governance Model](#15-governance-model)
+    - 15.1 [Overview](#151-overview)
+    - 15.2 [Mathematical Foundations](#152-mathematical-foundations)
+    - 15.3 [Vote Aggregation](#153-vote-aggregation)
+    - 15.4 [Security Properties](#154-security-properties)
+    - 15.5 [Implementation Functions](#155-implementation-functions)
 
 ## 1. Introduction
 
@@ -373,6 +386,295 @@ stateDiagram-v2
         - No double spending
     end note
 ```
+
+### 5.4 BIP Validation Rules
+
+This section specifies the mathematical properties of critical Bitcoin Improvement Proposals (BIPs) that enforce consensus rules for block and transaction validation.
+
+#### 5.4.1 BIP30: Duplicate Coinbase Prevention
+
+**BIP30Check**: $\mathcal{B} \times \mathcal{US} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For block $b = (h, txs)$ with UTXO set $us$:
+
+$$\text{BIP30Check}(b, us) = \begin{cases}
+\text{invalid} & \text{if } \exists tx \in txs : \text{IsCoinbase}(tx) \land \text{txid}(tx) \in \text{CoinbaseTxids}(us) \\
+\text{valid} & \text{otherwise}
+\end{cases}$$
+
+Where $\text{CoinbaseTxids}(us)$ is the set of all coinbase transaction IDs that have created UTXOs in $us$.
+
+**Mathematical Property**: BIP30 ensures coinbase transaction uniqueness:
+
+$$\forall b_1, b_2 \in \mathcal{B}, b_1 \neq b_2 : \text{IsCoinbase}(tx_1) \land \text{IsCoinbase}(tx_2) \implies \text{txid}(tx_1) \neq \text{txid}(tx_2)$$
+
+**Theorem 5.4.1** (BIP30 Uniqueness): BIP30 prevents duplicate coinbase transactions.
+
+*Proof*: By construction, if a coinbase transaction $tx$ has $\text{txid}(tx) \in \text{CoinbaseTxids}(us)$, then $\text{BIP30Check}(b, us) = \text{invalid}$, preventing the block from being accepted. Since coinbase transactions create new UTXOs, their transaction IDs are recorded in the UTXO set, ensuring uniqueness across all blocks.
+
+**Activation**: Block 0 (always active)
+
+---
+
+#### 5.4.2 BIP34: Block Height in Coinbase
+
+**BIP34Check**: $\mathcal{B} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For block $b = (h, txs)$ at height $h$:
+
+$$\text{BIP34Check}(b, h) = \begin{cases}
+\text{invalid} & \text{if } h \geq H_{34} \land \exists tx \in txs : \text{IsCoinbase}(tx) \land \text{ExtractHeight}(tx) \neq h \\
+\text{valid} & \text{otherwise}
+\end{cases}$$
+
+Where:
+- $H_{34}$ is the BIP34 activation height (mainnet: 227,836; testnet: 211,111; regtest: 0)
+- $\text{ExtractHeight}(tx)$ extracts the block height from coinbase scriptSig using CScriptNum encoding
+
+**Height Encoding**: The block height is encoded in the coinbase scriptSig as a script number:
+
+$$\text{EncodeHeight}(h) = \text{CScriptNum}(h)$$
+
+Where $\text{CScriptNum}$ encodes the height as a variable-length integer in the script format.
+
+**Mathematical Property**: BIP34 ensures coinbase height consistency:
+
+$$\forall b = (h, txs) \in \mathcal{B}, h \geq H_{34} : \text{IsCoinbase}(tx) \implies \text{ExtractHeight}(tx) = h$$
+
+**Theorem 5.4.2** (BIP34 Height Consistency): BIP34 ensures that coinbase transactions encode the correct block height.
+
+*Proof*: For any block $b$ at height $h \geq H_{34}$, if the coinbase transaction $tx$ does not encode height $h$ in its scriptSig, then $\text{BIP34Check}(b, h) = \text{invalid}$, preventing block acceptance. This ensures that all blocks after activation height have consistent height encoding.
+
+**Activation Heights**:
+- Mainnet: Block 227,836
+- Testnet: Block 211,111
+- Regtest: Block 0 (always active)
+
+---
+
+#### 5.4.3 BIP66: Strict DER Signature Validation
+
+**BIP66Check**: $\mathbb{S} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For signature $sig \in \mathbb{S}$ at block height $h$:
+
+$$\text{BIP66Check}(sig, h) = \begin{cases}
+\text{invalid} & \text{if } h \geq H_{66} \land \neg \text{IsStrictDER}(sig) \\
+\text{valid} & \text{otherwise}
+\end{cases}$$
+
+Where:
+- $H_{66}$ is the BIP66 activation height (mainnet: 363,724; testnet: 330,776; regtest: 0)
+- $\text{IsStrictDER}(sig)$ verifies that $sig$ is strictly DER-encoded according to [X.690](https://www.itu.int/rec/T-REC-X.690/) ASN.1 encoding rules
+
+**Strict DER Requirements**:
+1. **Sequence Structure**: $sig$ must be a valid DER-encoded SEQUENCE
+2. **Integer Encoding**: Both $r$ and $s$ values must be strictly DER-encoded integers
+3. **No Leading Zeros**: Integers must not have leading zero bytes (except for negative numbers)
+4. **Minimal Length**: Encoding must use minimal length representation
+
+**Mathematical Property**: BIP66 enforces strict DER signature encoding:
+
+$$\forall sig \in \mathbb{S}, h \geq H_{66} : \text{BIP66Check}(sig, h) = \text{valid} \implies \text{IsStrictDER}(sig)$$
+
+**Theorem 5.4.3** (BIP66 Strict DER Enforcement): BIP66 ensures all signatures after activation height are strictly DER-encoded.
+
+*Proof*: For any signature $sig$ at height $h \geq H_{66}$, if $\neg \text{IsStrictDER}(sig)$, then $\text{BIP66Check}(sig, h) = \text{invalid}$, causing script validation to fail. This ensures that all signatures after activation conform to strict DER encoding, preventing signature malleability.
+
+**Activation Heights**:
+- Mainnet: Block 363,724
+- Testnet: Block 330,776
+- Regtest: Block 0 (always active)
+
+---
+
+#### 5.4.4 BIP90: Block Version Enforcement
+
+**BIP90Check**: $\mathcal{H} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For block header $h = (version, \ldots)$ at height $height$:
+
+$$\text{BIP90Check}(h, height) = \begin{cases}
+\text{invalid} & \text{if } height \geq H_{34} \land version < 2 \\
+\text{invalid} & \text{if } height \geq H_{66} \land version < 3 \\
+\text{invalid} & \text{if } height \geq H_{65} \land version < 4 \\
+\text{valid} & \text{otherwise}
+\end{cases}$$
+
+Where:
+- $H_{34}$ is BIP34 activation height (mainnet: 227,836)
+- $H_{66}$ is BIP66 activation height (mainnet: 363,724)
+- $H_{65}$ is BIP65 activation height (mainnet: 388,381)
+
+**Mathematical Property**: BIP90 enforces minimum block versions:
+
+$$\forall h = (version, \ldots) \in \mathcal{H}, height \in \mathbb{N} : \text{BIP90Check}(h, height) = \text{valid} \implies version \geq \text{MinVersion}(height)$$
+
+Where $\text{MinVersion}(height)$ is the minimum required block version at height $height$:
+
+$$\text{MinVersion}(height) = \begin{cases}
+4 & \text{if } height \geq H_{65} \\
+3 & \text{if } height \geq H_{66} \\
+2 & \text{if } height \geq H_{34} \\
+1 & \text{otherwise}
+\end{cases}$$
+
+**Theorem 5.4.4** (BIP90 Version Enforcement): BIP90 ensures blocks use appropriate versions based on activation heights.
+
+*Proof*: For any block header $h$ at height $height$, if $version < \text{MinVersion}(height)$, then $\text{BIP90Check}(h, height) = \text{invalid}$, preventing block acceptance. This ensures that blocks after each BIP activation use the correct minimum version, simplifying activation logic.
+
+**Activation Heights**:
+- Mainnet: Various (BIP34: 227,836; BIP66: 363,724; BIP65: 388,381)
+- Testnet: Various
+- Regtest: Block 0 (always active)
+
+---
+
+#### 5.4.5 BIP147: NULLDUMMY Enforcement
+
+**BIP147Check**: $\mathbb{S} \times \mathbb{S} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For scriptSig $scriptSig$, scriptPubkey $scriptPubkey$ containing OP_CHECKMULTISIG, and block height $h$:
+
+$$\text{BIP147Check}(scriptSig, scriptPubkey, h) = \begin{cases}
+\text{invalid} & \text{if } h \geq H_{147} \land \text{ContainsMultisig}(scriptPubkey) \land \neg \text{IsNullDummy}(scriptSig) \\
+\text{valid} & \text{otherwise}
+\end{cases}$$
+
+Where:
+- $H_{147}$ is the BIP147 activation height (mainnet: 481,824; testnet: 834,624; regtest: 0)
+- $\text{ContainsMultisig}(scriptPubkey)$ checks if $scriptPubkey$ contains OP_CHECKMULTISIG (0xae)
+- $\text{IsNullDummy}(scriptSig)$ verifies that the dummy element (extra stack element consumed by OP_CHECKMULTISIG) is empty (OP_0)
+
+**OP_CHECKMULTISIG Stack Consumption**: OP_CHECKMULTISIG consumes $m + n + 2$ stack elements:
+1. $m$ signatures
+2. $n$ public keys
+3. $m$ (signature threshold)
+4. $n$ (public key count)
+5. **Dummy element** (must be empty with BIP147)
+
+**Mathematical Property**: BIP147 enforces NULLDUMMY for multisig scripts:
+
+$$\forall scriptSig, scriptPubkey \in \mathbb{S}, h \geq H_{147} : \text{ContainsMultisig}(scriptPubkey) \land \text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{valid} \implies \text{IsNullDummy}(scriptSig)$$
+
+**Theorem 5.4.5** (BIP147 NULLDUMMY Enforcement): BIP147 ensures that OP_CHECKMULTISIG dummy elements are empty after activation height.
+
+*Proof*: For any scriptSig $scriptSig$ and scriptPubkey $scriptPubkey$ containing OP_CHECKMULTISIG at height $h \geq H_{147}$, if $\neg \text{IsNullDummy}(scriptSig)$, then $\text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{invalid}$, causing script validation to fail. This ensures that all multisig scripts after activation use empty dummy elements, which is required for SegWit compatibility.
+
+**Activation Heights**:
+- Mainnet: Block 481,824 (SegWit activation)
+- Testnet: Block 834,624
+- Regtest: Block 0 (always active)
+
+---
+
+#### 5.4.6 BIP119: OP_CHECKTEMPLATEVERIFY (CTV)
+
+**BIP119Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For transaction $tx$, input index $i$, and template hash $h$:
+
+$$\text{BIP119Check}(tx, i, h) = \begin{cases}
+\text{valid} & \text{if } \text{TemplateHash}(tx, i) = h \\
+\text{invalid} & \text{otherwise}
+\end{cases}$$
+
+**Template Hash Calculation**:
+
+$$\text{TemplateHash}(tx, i) = \text{SHA256}(\text{SHA256}(\text{TemplatePreimage}(tx, i)))$$
+
+Where $\text{TemplatePreimage}(tx, i)$ is the serialized template structure:
+
+$$\text{TemplatePreimage}(tx, i) = \text{Version}(tx) || \text{Inputs}(tx) || \text{Outputs}(tx) || \text{Locktime}(tx) || i$$
+
+**Template Preimage Serialization**:
+
+1. **Transaction Version** (4 bytes, little-endian):
+   $$\text{Version}(tx) = \text{LE32}(tx.\text{version})$$
+
+2. **Input Count** (varint):
+   $$\text{InputCount}(tx) = \text{VarInt}(|tx.\text{inputs}|)$$
+
+3. **Input Serialization** (for each input $in \in tx.\text{inputs}$):
+   - Previous output hash (32 bytes): $in.\text{prevout}.\text{hash}$
+   - Previous output index (4 bytes, little-endian): $\text{LE32}(in.\text{prevout}.\text{index})$
+   - Sequence (4 bytes, little-endian): $\text{LE32}(in.\text{sequence})$
+   - **Note**: $\text{scriptSig}$ is **NOT** included in template (key difference from sighash)
+
+4. **Output Count** (varint):
+   $$\text{OutputCount}(tx) = \text{VarInt}(|tx.\text{outputs}|)$$
+
+5. **Output Serialization** (for each output $out \in tx.\text{outputs}$):
+   - Value (8 bytes, little-endian): $\text{LE64}(out.\text{value})$
+   - Script length (varint): $\text{VarInt}(|out.\text{scriptPubkey}|)$
+   - Script bytes: $out.\text{scriptPubkey}$
+
+6. **Locktime** (4 bytes, little-endian):
+   $$\text{Locktime}(tx) = \text{LE32}(tx.\text{lockTime})$$
+
+7. **Input Index** (4 bytes, little-endian):
+   $$i = \text{LE32}(i)$$
+
+**Mathematical Properties**:
+
+**Theorem 5.4.6.1** (CTV Determinism): Template hash is deterministic:
+
+$$\forall tx \in \mathcal{TX}, i \in \mathbb{N} : \text{TemplateHash}(tx, i) \text{ is unique and deterministic}$$
+
+*Proof*: By construction, $\text{TemplateHash}$ uses SHA256, which is a deterministic cryptographic hash function. Given the same transaction structure and input index, the template preimage is identical, producing the same hash.
+
+**Theorem 5.4.6.2** (CTV Uniqueness): Different transactions produce different template hashes with overwhelming probability:
+
+$$\forall tx_1, tx_2 \in \mathcal{TX}, tx_1 \neq tx_2 : P(\text{TemplateHash}(tx_1, i) = \text{TemplateHash}(tx_2, i)) \approx 2^{-256}$$
+
+*Proof*: SHA256 is a cryptographic hash function with collision resistance. The probability of two different transactions producing the same template hash is approximately $2^{-256}$, which is negligible.
+
+**Theorem 5.4.6.3** (CTV Input-Specific): Template hash depends on input index:
+
+$$\forall tx \in \mathcal{TX}, i_1, i_2 \in \mathbb{N}, i_1 \neq i_2 : \text{TemplateHash}(tx, i_1) \neq \text{TemplateHash}(tx, i_2)$$
+
+*Proof*: The input index $i$ is included in the template preimage. Since $i_1 \neq i_2$, the preimages differ, and by the collision resistance of SHA256, the hashes must differ.
+
+**Theorem 5.4.6.4** (CTV ScriptSig Independence): Template hash does not depend on scriptSig:
+
+$$\forall tx_1, tx_2 \in \mathcal{TX}, i \in \mathbb{N} : (\text{Structure}(tx_1) = \text{Structure}(tx_2) \land tx_1.\text{inputs}[i].\text{scriptSig} \neq tx_2.\text{inputs}[i].\text{scriptSig}) \implies \text{TemplateHash}(tx_1, i) = \text{TemplateHash}(tx_2, i)$$
+
+Where $\text{Structure}(tx)$ includes all fields except scriptSig.
+
+*Proof*: By construction, scriptSig is not included in the template preimage. Therefore, changes to scriptSig do not affect the template hash, allowing the same template to be satisfied by different scriptSigs.
+
+**Opcode Behavior**:
+
+OP_CHECKTEMPLATEVERIFY (opcode 0xba):
+- **Stack Input**: $[h]$ where $h \in \mathbb{H}$ is a 32-byte template hash
+- **Stack Output**: Nothing (opcode fails if template doesn't match)
+- **Validation**: $\text{BIP119Check}(tx, i, h) = \text{valid}$
+
+**Use Cases**:
+
+1. **Congestion Control**: Transaction batching with predefined templates
+2. **Vault Contracts**: Time-locked withdrawals with specific output structures
+3. **Payment Channels**: State updates with committed transaction structures
+4. **Smart Contracts**: Covenants and state machines with transaction templates
+
+**Activation Heights**:
+- Mainnet: TBD (BIP9 activation pending)
+- Testnet: TBD
+- Regtest: Block 0 (always active for testing)
+
+**Implementation Notes**:
+
+- Template hash calculation must match BIP119 specification exactly
+- Input index must be within bounds: $0 \leq i < |tx.\text{inputs}|$
+- Transaction must have at least one input and one output
+- Template hash is 32 bytes (SHA256 output)
+- Opcode requires full transaction context (cannot be used in basic script execution)
+
+---
+
+**Corollary 5.4.1** (BIP Activation Consistency): All BIP validation rules are enforced consistently across the network after their respective activation heights, ensuring consensus compatibility.
+
+*Proof*: Each BIP validation rule $P$ has an activation height $H_P$ such that for all blocks $b$ at height $h \geq H_P$, $P(b) = \text{valid}$ is required. Since all nodes enforce the same activation heights, consensus is maintained.
 
 ## 6. Economic Model
 
@@ -994,6 +1296,42 @@ While the Orange Paper focuses on mathematical consensus rules (~95% coverage), 
 **Implementation**: Wire-format parser with comprehensive error handling. All rejection scenarios tested. See `tests/engineering/parser_edge_cases.rs`.
 
 **Reference**: See `docs/ENGINEERING_EDGE_CASES.md` for complete documentation of all engineering-specific edge cases, test coverage, and Bitcoin Core alignment.
+
+## 15. Governance Model
+
+The Bitcoin Commons governance system enables decentralized decision-making through contribution-based voting with quadratic weighting, weight caps, and cooling-off periods. See [GOVERNANCE_SPECIFICATION.md](GOVERNANCE_SPECIFICATION.md) for the complete mathematical specification.
+
+### 15.1 Overview
+
+The governance model uses three types of contributions:
+- **Merge Mining**: 1% of secondary chain rewards (30-day rolling)
+- **Fee Forwarding**: Transaction fees forwarded to Commons address (30-day rolling)
+- **Zap Contributions**: Lightning payments via Nostr (cumulative)
+
+### 15.2 Mathematical Foundations
+
+**Participation Weight**: $W_c(t) = \sqrt{M_c(t) + F_c(t) + Z_c}$
+
+**Weight Cap**: $W_{capped}(c, t) = \min(W_c(t), 0.05 \cdot \sum_{c' \in \mathcal{C}} W_{capped}(c', t))$
+
+**Cooling-Off**: Contributions $\geq 0.1$ BTC require 30 days before counting toward votes.
+
+### 15.3 Vote Aggregation
+
+Votes are aggregated from:
+- **Zap Votes**: Lightning payments to proposals (quadratic weighting)
+- **Participation Votes**: From contributors using their participation weights
+- **Economic Node Veto**: 30% hashpower OR 40% economic activity (Tier 3+)
+
+### 15.4 Security Properties
+
+**Whale Resistance**: No single contributor can exceed 5% of total system weight.
+
+**Quadratic Scaling**: Doubling contribution does not double voting power: $W(2T) = \sqrt{2} \cdot W(T) < 2W(T)$
+
+**Cooling-Off Protection**: Large contributions cannot immediately influence votes.
+
+See [GOVERNANCE_SPECIFICATION.md](GOVERNANCE_SPECIFICATION.md) for complete mathematical specification, proofs, and implementation details.
 
 ## 14. Conclusion
 
