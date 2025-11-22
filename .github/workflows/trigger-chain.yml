@@ -18,7 +18,7 @@ permissions:
 jobs:
   trigger-consensus:
     name: Trigger bllvm-consensus Build
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, Linux, X64, builds]
     steps:
       - name: Determine version/tag
         id: version
