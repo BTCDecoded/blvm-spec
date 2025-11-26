@@ -30,6 +30,7 @@ This paper presents a complete mathematical specification of the Bitcoin consens
    - 5.1 [Transaction Validation](#51-transaction-validation)
    - 5.2 [Script Execution](#52-script-execution)
    - 5.3 [Block Validation](#53-block-validation)
+     - 5.3.1 [Transaction Application Equivalence](#531-transaction-application-equivalence)
    - 5.4 [BIP Validation Rules](#54-bip-validation-rules)
      - 5.4.1 [BIP30: Duplicate Coinbase Prevention](#541-bip30-duplicate-coinbase-prevention)
      - 5.4.2 [BIP34: Block Height in Coinbase](#542-bip34-block-height-in-coinbase)
@@ -37,6 +38,8 @@ This paper presents a complete mathematical specification of the Bitcoin consens
      - 5.4.4 [BIP90: Block Version Enforcement](#544-bip90-block-version-enforcement)
      - 5.4.5 [BIP147: NULLDUMMY Enforcement](#545-bip147-nulldummy-enforcement)
      - 5.4.6 [BIP119: OP_CHECKTEMPLATEVERIFY (CTV)](#546-bip119-opchecktemplateverify-ctv)
+     - 5.4.7 [BIP65: OP_CHECKLOCKTIMEVERIFY (CLTV)](#547-bip65-opchecklocktimeverify-cltv)
+   - 5.5 [Sequence Locks (BIP68)](#55-sequence-locks-bip68)
 6. [Economic Model](#6-economic-model)
    - 6.1 [Block Subsidy](#61-block-subsidy)
    - 6.2 [Total Supply](#62-total-supply)
@@ -48,6 +51,7 @@ This paper presents a complete mathematical specification of the Bitcoin consens
    - 8.1 [Economic Security](#81-economic-security)
    - 8.2 [Cryptographic Security](#82-cryptographic-security)
    - 8.3 [Merkle Tree Security](#83-merkle-tree-security)
+   - 8.4 [Deterministic Properties](#84-deterministic-properties)
 9. [Mempool Protocol](#9-mempool-protocol)
    - 9.1 [Mempool Validation](#91-mempool-validation)
    - 9.2 [Standard Transaction Rules](#92-standard-transaction-rules)
@@ -62,6 +66,8 @@ This paper presents a complete mathematical specification of the Bitcoin consens
     - 11.1 [Segregated Witness (SegWit)](#111-segregated-witness-segwit)
     - 11.2 [Taproot](#112-taproot)
     - 11.3 [Chain Reorganization](#113-chain-reorganization)
+      - 11.3.1 [Undo Log Pattern](#1131-undo-log-pattern)
+    - 11.4 [UTXO Commitments](#114-utxo-commitments)
 12. [Mining Protocol](#12-mining-protocol)
     - 12.1 [Block Template Generation](#121-block-template-generation)
     - 12.2 [Coinbase Transaction](#122-coinbase-transaction)
@@ -297,6 +303,17 @@ For scriptSig $ss$, scriptPubKey $spk$, witness $w$, and flags $f$:
 **ConnectBlock**: $\mathcal{B} \times \mathcal{US} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\} \times \mathcal{US}$
 
 For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
+
+#### 5.3.1 Transaction Application Equivalence
+
+**Theorem 5.3.1** (ApplyTransaction Equivalence): The functions `apply_transaction` and `apply_transaction_with_id` produce identical results:
+
+$$\forall tx \in \mathcal{TX}, us \in \mathcal{US}, h \in \mathbb{N}:$$
+$$\text{ApplyTransaction}(tx, us, h) = \text{ApplyTransactionWithId}(tx, \text{CalculateTxId}(tx), us, h)$$
+
+*Proof*: Both functions perform the same UTXO set transformations. The only difference is that `apply_transaction_with_id` accepts a pre-computed transaction ID, while `apply_transaction` computes it internally. The equivalence is verified by comparing UTXO sets produced by both functions, ensuring they are identical. This property is implicitly proven through the consistency proofs in the implementation.
+
+**Corollary 5.3.1.1**: Transaction application is deterministic and side-effect-free, regardless of which function is used.
 
 1. Validate block header $h$
 2. For each transaction $tx \in txs$:
@@ -672,9 +689,146 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xba):
 
 ---
 
+#### 5.4.7 BIP65: OP_CHECKLOCKTIMEVERIFY (CLTV)
+
+**BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For transaction $tx$, input index $i$, locktime value $lt$, and block header $h$:
+
+$$\text{BIP65Check}(tx, i, lt, h) = \begin{cases}
+\text{invalid} & \text{if } tx.\text{lockTime} = 0 \\
+\text{invalid} & \text{if } \text{LocktimeType}(tx.\text{lockTime}) \neq \text{LocktimeType}(lt) \\
+\text{invalid} & \text{if } tx.\text{lockTime} > lt \\
+\text{valid} & \text{otherwise}
+\end{cases}$$
+
+Where $\text{LocktimeType}(x)$ returns $\text{BlockHeight}$ if $x < 500000000$, otherwise $\text{Timestamp}$.
+
+**OP_CHECKLOCKTIMEVERIFY (opcode 0xb1)**:
+- **Stack Input**: $[lt]$ where $lt$ is a locktime value (encoded as minimal byte string)
+- **Stack Output**: Nothing (opcode fails if locktime check doesn't pass)
+- **Validation**: $\text{BIP65Check}(tx, i, \text{DecodeLocktime}(lt), h) = \text{valid}$
+
+**Locktime Type Determination**: 
+
+$$\text{LocktimeType}(lt) = \begin{cases}
+\text{BlockHeight} & \text{if } lt < 500000000 \\
+\text{Timestamp} & \text{otherwise}
+\end{cases}$$
+
+**Locktime Encoding/Decoding**: Locktime values are encoded as minimal little-endian byte strings (max 5 bytes) on the script stack.
+
+**Theorem 5.4.7.1** (Locktime Encoding Round-Trip): Locktime encoding and decoding are inverse operations:
+
+$$\forall lt \in \mathbb{N}_{32}: \text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt$$
+
+*Proof*: By construction, the encoding uses minimal little-endian representation and decoding reconstructs the value from the byte string. This is proven by Kani formal verification (see `kani_locktime_encoding_round_trip`).
+
+**Theorem 5.4.7.2** (Locktime Type Determination Correctness): Locktime type determination is correct:
+
+$$\forall lt \in \mathbb{N}_{32}: \text{LocktimeType}(lt) = \begin{cases}
+\text{BlockHeight} & \text{if } lt < 500000000 \\
+\text{Timestamp} & \text{otherwise}
+\end{cases}$$
+
+*Proof*: By construction, the threshold $500000000$ correctly separates block heights (which are always $< 500000000$) from Unix timestamps (which are always $\geq 500000000$). This is proven by Kani formal verification (see `kani_locktime_type_determination`).
+
+**Theorem 5.4.7.3** (CLTV Type Matching Requirement): CLTV requires matching locktime types:
+
+$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$$
+
+*Proof*: By construction, if the types don't match, $\text{BIP65Check}$ returns $\text{invalid}$. This ensures that block height locktimes are only compared with block heights, and timestamps are only compared with timestamps. This is proven by Kani formal verification (see `kani_locktime_types_match_correctness`, `kani_bip65_cltv_type_mismatch_fails`).
+
+**Theorem 5.4.7.4** (CLTV Zero Locktime Rejection): CLTV always fails when transaction locktime is zero:
+
+$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: tx.\text{lockTime} = 0 \implies \text{BIP65Check}(tx, i, lt, h) = \text{invalid}$$
+
+*Proof*: By construction, if $tx.\text{lockTime} = 0$, the check immediately returns $\text{invalid}$ regardless of the stack locktime value. This is proven by Kani formal verification (see `kani_bip65_cltv_zero_locktime_fails`).
+
+**Activation Heights**:
+- Mainnet: Block 388,381
+- Testnet: Block 371,337
+- Regtest: Block 0 (always active)
+
+---
+
 **Corollary 5.4.1** (BIP Activation Consistency): All BIP validation rules are enforced consistently across the network after their respective activation heights, ensuring consensus compatibility.
 
 *Proof*: Each BIP validation rule $P$ has an activation height $H_P$ such that for all blocks $b$ at height $h \geq H_P$, $P(b) = \text{valid}$ is required. Since all nodes enforce the same activation heights, consensus is maintained.
+
+### 5.5 Sequence Locks (BIP68)
+
+Sequence locks enforce relative locktime constraints using transaction input sequence numbers. Unlike absolute locktime (nLockTime), sequence locks are relative to when the input was confirmed.
+
+**Sequence Number Encoding**: $nSequence \in \mathbb{N}_{32}$ (32-bit unsigned integer)
+
+The sequence number encodes:
+- **Bit 31** (0x80000000): Disable flag - if set, sequence is not treated as relative locktime
+- **Bit 22** (0x00400000): Type flag - if set, locktime is time-based; otherwise block-based
+- **Bits 0-15** (0x0000ffff): Locktime value
+
+**ExtractSequenceLocktimeValue**: $\mathbb{N}_{32} \rightarrow \mathbb{N}_{16}$
+
+$$\text{ExtractSequenceLocktimeValue}(seq) = seq \land 0x0000ffff$$
+
+**ExtractSequenceTypeFlag**: $\mathbb{N}_{32} \rightarrow \{\text{true}, \text{false}\}$
+
+$$\text{ExtractSequenceTypeFlag}(seq) = (seq \land 0x00400000) \neq 0$$
+
+**IsSequenceDisabled**: $\mathbb{N}_{32} \rightarrow \{\text{true}, \text{false}\}$
+
+$$\text{IsSequenceDisabled}(seq) = (seq \land 0x80000000) \neq 0$$
+
+**CalculateSequenceLocks**: $\mathcal{TX} \times \mathbb{N} \times [\mathbb{N}] \times [\mathcal{H}]^? \rightarrow (\mathbb{Z}, \mathbb{Z})$
+
+For transaction $tx$, flags $f$, previous heights $ph \in [\mathbb{N}]$, and recent headers $rh \in [\mathcal{H}]^?$:
+
+$$\text{CalculateSequenceLocks}(tx, f, ph, rh) = (\text{min\_height}, \text{min\_time})$$
+
+Where:
+- BIP68 is only enforced if $tx.\text{version} \geq 2$ and $(f \land 0x01) \neq 0$
+- For each input $i \in tx.\text{inputs}$:
+  - If $\text{IsSequenceDisabled}(i.\text{sequence})$: skip input
+  - If $\text{ExtractSequenceTypeFlag}(i.\text{sequence})$ (time-based):
+    - $locktime\_value = \text{ExtractSequenceLocktimeValue}(i.\text{sequence})$
+    - $locktime\_seconds = locktime\_value \times 512 = locktime\_value \ll 9$ (bit shift for efficiency)
+    - $coin\_time = \text{GetMedianTimePast}(ph[i], rh)$
+    - $required\_time = coin\_time + locktime\_seconds - 1$
+    - $\text{min\_time} = \max(\text{min\_time}, required\_time)$
+  - Else (block-based):
+    - $locktime\_value = \text{ExtractSequenceLocktimeValue}(i.\text{sequence})$
+    - $required\_height = ph[i] + locktime\_value - 1$
+    - $\text{min\_height} = \max(\text{min\_height}, required\_height)$
+
+**EvaluateSequenceLocks**: $\mathbb{N} \times \mathbb{N} \times (\mathbb{Z}, \mathbb{Z}) \rightarrow \{\text{true}, \text{false}\}$
+
+$$\text{EvaluateSequenceLocks}(height, time, (min\_h, min\_t)) = \begin{cases}
+\text{true} & \text{if } (min\_h < 0 \lor height > min\_h) \land (min\_t < 0 \lor time > min\_t) \\
+\text{false} & \text{otherwise}
+\end{cases}$$
+
+Where:
+- $min\_h < 0$ (typically $-1$) indicates no height constraint
+- $min\_t < 0$ indicates no time constraint
+- The comparison uses $>$ (strictly greater) because sequence locks use "last invalid" semantics (like nLockTime)
+
+**Theorem 5.5.1** (Sequence Lock Arithmetic Safety): Sequence lock calculations never overflow for valid inputs:
+
+$$\forall tx \in \mathcal{TX}, ph \in [\mathbb{N}], seq \in \mathbb{N}_{32}:$$
+$$\text{CalculateSequenceLocks}(tx, f, ph, rh) \text{ does not overflow}$$
+
+*Proof*: By construction, all arithmetic operations use checked addition/subtraction. The locktime value is bounded to 16 bits (0-65535), and block heights/times are bounded to 64-bit integers. This is proven by Kani formal verification (see `kani_sequence_lock_arithmetic_safety`).
+
+**Theorem 5.5.2** (Sequence Lock Correctness): Sequence locks correctly enforce relative locktime:
+
+$$\forall tx \in \mathcal{TX}, ph \in [\mathbb{N}]:$$
+$$\text{EvaluateSequenceLocks}(h, t, \text{CalculateSequenceLocks}(tx, f, ph, rh)) = \text{true}$$
+$$\iff$$
+$$\forall i \in tx.\text{inputs}: \text{IsSequenceDisabled}(i.\text{sequence}) \lor \text{LocktimeSatisfied}(i, ph[i], h, t)$$
+
+Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is met.
+
+*Proof*: By construction, $\text{CalculateSequenceLocks}$ computes the minimum height/time required by all inputs, and $\text{EvaluateSequenceLocks}$ checks if current height/time meets these requirements. This is proven by Kani formal verification (see `kani_sequence_locks_calculation_correctness` and `kani_sequence_locks_evaluation_correctness`).
 
 ## 6. Economic Model
 
@@ -705,13 +859,35 @@ xychart-beta
 - **Blocks 840,000+**: 3.125 BTC per block
 - **Blocks 13,440,000+**: 0 BTC per block (after 64 halvings)
 
+**Theorem 6.1.1** (Halving Schedule Correctness): The block subsidy halves every 210,000 blocks:
+
+$$\forall h \in \mathbb{N}, h < 64 \times H: \text{GetBlockSubsidy}(h + H) = \frac{\text{GetBlockSubsidy}(h)}{2}$$
+
+Where $H = 210,000$ is the halving interval.
+
+*Proof*: By construction, $\text{GetBlockSubsidy}(h) = 50 \times C \times 2^{-\lfloor h/H \rfloor}$. For $h + H$, we have $\lfloor (h+H)/H \rfloor = \lfloor h/H \rfloor + 1$, so $\text{GetBlockSubsidy}(h + H) = 50 \times C \times 2^{-(\lfloor h/H \rfloor + 1)} = \frac{50 \times C \times 2^{-\lfloor h/H \rfloor}}{2} = \frac{\text{GetBlockSubsidy}(h)}{2}$. This is proven by Kani formal verification (see `kani_get_block_subsidy_halving_schedule`).
+
 ### 6.2 Total Supply
 
 **TotalSupply**: $\mathbb{N} \rightarrow \mathbb{Z}$
 
 $$\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$$
 
-**Theorem 6.1** (Supply Convergence): $\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$
+**Theorem 6.2.1** (Total Supply Monotonicity): Total supply is monotonically increasing:
+
+$$\forall h_1, h_2 \in \mathbb{N}, h_1 \leq h_2: \text{TotalSupply}(h_1) \leq \text{TotalSupply}(h_2)$$
+
+*Proof*: By construction, $\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$. Since $\text{GetBlockSubsidy}(i) \geq 0$ for all $i$, adding more terms can only increase the sum. This is proven by Kani formal verification (see `kani_total_supply_monotonic`).
+
+**Theorem 6.2.2** (Total Supply Bounded): Total supply never exceeds MAX_MONEY:
+
+$$\forall h \in \mathbb{N}: \text{TotalSupply}(h) \leq \text{MAX\_MONEY}$$
+
+Where $\text{MAX\_MONEY} = 21 \times 10^6 \times C$ is the maximum Bitcoin supply.
+
+*Proof*: By construction, the total supply converges to $21 \times 10^6 \times C$ as $h \to \infty$, and all block subsidies are non-negative. The implementation uses checked arithmetic to prevent overflow. This is proven by Kani formal verification (see `kani_supply_limit_respected`).
+
+**Theorem 6.2.3** (Supply Convergence): $\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$
 
 *Proof*: The total supply can be expressed as a sum of geometric series. For each halving period $k$ (where $k = \lfloor h/H \rfloor$), the subsidy is $50 \times C \times 2^{-k}$ for $H$ consecutive blocks.
 
@@ -730,6 +906,12 @@ $$\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in 
 **Fee Rate**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathbb{Q}$
 
 $$\text{FeeRate}(tx, us) = \frac{\text{Fee}(tx, us)}{\text{Weight}(tx)}$$
+
+**Theorem 6.3.1** (Fee Non-Negativity): Transaction fees are always non-negative for valid transactions:
+
+$$\forall tx \in \mathcal{TX}, us \in \mathcal{US}: \text{Fee}(tx, us) \geq 0$$
+
+*Proof*: By construction, $\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in tx.outputs} o.value$. For a valid transaction, the sum of input values must be at least the sum of output values (otherwise the transaction would be invalid). This is proven by Kani formal verification (see `kani_calculate_fee_correctness`).
 
 ```mermaid
 flowchart TD
@@ -816,6 +998,22 @@ Where $timeSpan$ is clamped to $[\frac{expectedTime}{4}, 4 \times expectedTime]$
 $$\frac{1}{4} \leq adjustment \leq 4$$
 
 **Corollary 7.1**: The difficulty can change by at most a factor of 4 between any two difficulty adjustment periods.
+
+**Theorem 7.1.1** (Target Expansion Bounds): For valid difficulty bits, target expansion produces valid targets:
+
+$$\forall bits \in \mathbb{N}, 0x03000000 \leq bits \leq 0x1d00ffff:$$
+$$\text{ExpandTarget}(bits) \text{ produces valid target } \land \text{ExpandTarget}(bits) \leq 0x00ffffff \times 256^{exponent-3}$$
+
+Where $exponent = (bits \gg 24) \land 0xff$ and $mantissa = bits \land 0x00ffffff$.
+
+*Proof*: By construction, the target expansion formula ensures that valid bits produce valid targets within the specified bounds. Invalid bits may produce errors, which is acceptable. This is proven by Kani formal verification (see `kani_expand_target_valid_range`).
+
+**Theorem 7.1.2** (Difficulty Adjustment Bounds Enforcement): Difficulty adjustment respects maximum and minimum bounds:
+
+$$\forall h \in \mathcal{H}, prev \in [\mathcal{H}]:$$
+$$\text{GetNextWorkRequired}(h, prev) \leq \text{MAX\_TARGET} \land \text{GetNextWorkRequired}(h, prev) > 0$$
+
+*Proof*: By construction, the difficulty adjustment algorithm clamps the result to ensure it never exceeds $\text{MAX\_TARGET}$ and is always positive. This is proven by Kani formal verification (see `kani_get_next_work_required_bounds`).
 
 **Theorem 7.2** (Difficulty Convergence): Under constant hash rate, the difficulty converges to the target block time.
 
@@ -907,6 +1105,30 @@ Any change to any transaction would result in a different merkle root, assuming 
 *Proof*: The vulnerability occurs when the number of hashes at a given level is odd, causing the last hash to be duplicated. This can result in different transaction lists producing the same merkle root. The implementation mitigates this by detecting when identical hashes are hashed together and treating such blocks as invalid.
 
 **Corollary 8.1**: The merkle tree provides cryptographic commitment to transaction inclusion but requires additional validation to prevent malleability attacks.
+
+### 8.4 Deterministic Properties
+
+Many consensus functions must be deterministic to ensure all nodes reach the same results.
+
+**Theorem 8.4.1** (Proof of Work Determinism): Proof of work validation is deterministic:
+
+$$\forall h \in \mathcal{H}: \text{CheckProofOfWork}(h) \text{ is deterministic}$$
+
+*Proof*: The function uses only the block header and deterministic hash functions (SHA256). Given the same header, it always produces the same result. This is proven by Kani formal verification (see `kani_check_proof_of_work_deterministic`).
+
+**Theorem 8.4.2** (Transaction Application Determinism): Transaction application is deterministic:
+
+$$\forall tx \in \mathcal{TX}, us \in \mathcal{US}, h \in \mathbb{N}:$$
+$$\text{ApplyTransaction}(tx, us, h) \text{ is deterministic}$$
+
+*Proof*: Transaction application uses only the transaction, UTXO set, and height. All operations (UTXO removal, UTXO addition) are deterministic. The consistency and correctness of transaction application is proven by Kani formal verification (see `kani_apply_transaction_consistency`, `kani_apply_transaction_with_id_correctness`, `kani_apply_transaction_mathematical_correctness`).
+
+**Theorem 8.4.3** (Block Connection Determinism): Block connection is deterministic:
+
+$$\forall b \in \mathcal{B}, us \in \mathcal{US}, h \in \mathbb{N}:$$
+$$\text{ConnectBlock}(b, us, h) \text{ is deterministic}$$
+
+*Proof*: Block connection applies transactions deterministically and performs deterministic validation checks. This ensures all nodes reach the same consensus state.
 
 ## 9. Mempool Protocol
 
@@ -1129,6 +1351,123 @@ $$\text{BestChain} = \arg\max_{chain} \sum_{block \in chain} \text{Work}(block)$
 2. Connect blocks from new chain
 3. Update UTXO set accordingly
 
+#### 11.3.1 Undo Log Pattern
+
+Chain reorganization requires disconnecting blocks from the current chain and connecting blocks from the new chain. To efficiently reverse the effects of `ConnectBlock`, we use an undo log pattern that records all UTXO set changes made by a block.
+
+**Undo Entry**: $\mathcal{UE} = \mathcal{O} \times \mathcal{U}^? \times \mathcal{U}^?$
+
+An undo entry records:
+- `outpoint`: The outpoint that was changed
+- `previous_utxo`: The UTXO that existed before (None if created)
+- `new_utxo`: The UTXO that exists after (None if spent)
+
+**Block Undo Log**: $\mathcal{UL} = \mathcal{UE}^*$
+
+A block undo log contains all undo entries for a block, stored in reverse order (most recent first) to allow efficient undo by iterating forward.
+
+**DisconnectBlock**: $\mathcal{B} \times \mathcal{UL} \times \mathcal{US} \rightarrow \mathcal{US}$
+
+For block $b$, undo log $ul$, and UTXO set $us$:
+
+$$\text{DisconnectBlock}(b, ul, us) = \begin{cases}
+us' & \text{where } us' = \text{ApplyUndoLog}(ul, us) \\
+\text{error} & \text{if undo log is invalid}
+\end{cases}$$
+
+Where $\text{ApplyUndoLog}$ processes each entry $e \in ul$ in order:
+- If $e.\text{new\_utxo} \neq \text{None}$: $us' = us' \setminus \{e.\text{outpoint}\}$ (remove UTXO created by block)
+- If $e.\text{previous\_utxo} \neq \text{None}$: $us' = us' \cup \{e.\text{outpoint} \mapsto e.\text{previous\_utxo}\}$ (restore UTXO spent by block)
+
+**Theorem 11.3.1** (Disconnect/Connect Idempotency): Disconnect and connect operations are perfect inverses:
+
+$$\forall b \in \mathcal{B}, us \in \mathcal{US}, ul \in \mathcal{UL}:$$
+$$\text{DisconnectBlock}(b, ul, \text{ConnectBlock}(b, us)) = us$$
+
+*Proof*: By construction, the undo log $ul$ created during $\text{ConnectBlock}$ records all UTXO changes. When $\text{DisconnectBlock}$ applies the undo log, it reverses each change exactly, restoring the original UTXO set. This is proven by Kani formal verification (see `kani_disconnect_connect_idempotency_with_undo`).
+
+**Corollary 11.3.1.1**: Undo logs enable perfect historical state restoration without re-validating blocks.
+
+### 11.4 UTXO Commitments
+
+UTXO commitments provide cryptographic commitments to the UTXO set using Merkle trees, enabling efficient UTXO set synchronization and verification without requiring full blockchain download.
+
+**UTXO Commitment**: $\mathcal{UC} = \mathbb{H} \times \mathbb{N} \times \mathbb{H} \times \mathbb{N} \times \mathbb{N}$
+
+A UTXO commitment contains:
+- `merkle_root`: Root hash of the UTXO Merkle tree
+- `block_height`: Block height at which commitment was created
+- `block_hash`: Hash of the block at commitment height
+- `total_supply`: Total supply committed (sum of all UTXO values)
+- `utxo_count`: Number of UTXOs in the commitment
+
+**UTXO Merkle Tree**: Sparse Merkle tree where:
+- **Key**: OutPoint hash (256 bits)
+- **Value**: Serialized UTXO (value, script_pubkey, height)
+- **Root**: Merkle root hash committing to entire UTXO set
+
+**GenerateCommitment**: $\mathcal{US} \times \mathbb{H} \times \mathbb{N} \rightarrow \mathcal{UC}$
+
+For UTXO set $us$, block hash $bh$, and height $h$:
+
+$$\text{GenerateCommitment}(us, bh, h) = \begin{cases}
+uc & \text{where } uc.\text{merkle\_root} = \text{BuildMerkleTree}(us) \\
+& uc.\text{block\_height} = h \\
+& uc.\text{block\_hash} = bh \\
+& uc.\text{total\_supply} = \sum_{utxo \in us} utxo.\text{value} \\
+& uc.\text{utxo\_count} = |us|
+\end{cases}$$
+
+**FindConsensus**: $[\mathcal{UC}] \times [0,1] \rightarrow \mathcal{UC}^?$
+
+For commitments $cs \in [\mathcal{UC}]$ and threshold $t \in [0,1]$:
+
+$$\text{FindConsensus}(cs, t) = \begin{cases}
+c & \text{if } \exists c \in cs: \frac{|\{c' \in cs : c' = c\}|}{|cs|} \geq t \\
+\text{None} & \text{otherwise}
+\end{cases}$$
+
+**VerifyConsensusCommitment**: $\mathcal{UC} \times [\mathcal{H}] \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For commitment $uc$ and headers $hs$:
+
+$$\text{VerifyConsensusCommitment}(uc, hs) = \begin{cases}
+\text{valid} & \text{if } \text{VerifyPoW}(uc.\text{block\_hash}, hs) \land \\
+& \quad \text{VerifySupply}(uc.\text{total\_supply}, uc.\text{block\_height}) \\
+\text{invalid} & \text{otherwise}
+\end{cases}$$
+
+**Theorem 11.4.1** (Consensus Threshold Correctness): Consensus threshold calculation using integer arithmetic is correct:
+
+$$\forall cs \in [\mathcal{UC}], t \in [0,1]:$$
+$$\text{FindConsensus}(cs, t) = c \iff \lceil |cs| \times t \rceil \text{ peers agree on } c$$
+
+*Proof*: The threshold check uses integer arithmetic: $required = \lceil |cs| \times t \rceil$. If $agreement\_count \geq required$, then $agreement\_count / |cs| \geq t$ (within floating-point precision). This avoids floating-point precision issues and is proven by Kani formal verification (see `kani_integer_threshold_calculation`).
+
+**Integer Arithmetic for Threshold Calculations**: To avoid floating-point precision issues in consensus-critical calculations, we use integer arithmetic with ceiling operations. For threshold $t \in [0,1]$ and count $n \in \mathbb{N}$:
+
+$$required = \lceil n \times t \rceil$$
+
+**Theorem 11.4.2** (Integer Threshold Correctness): Integer threshold calculation correctly implements consensus thresholds:
+
+$$\forall n \in \mathbb{N}, t \in [0,1]:$$
+$$required = \lceil n \times t \rceil \implies \forall agreement \in \mathbb{N}:$$
+$$(agreement \geq required \implies \frac{agreement}{n} \geq t - \epsilon) \land$$
+$$(agreement < required \implies \frac{agreement}{n} < t + \epsilon)$$
+
+Where $\epsilon$ is floating-point precision error (typically $< 10^{-15}$).
+
+*Proof*: By properties of ceiling function and floating-point arithmetic. The integer calculation ensures we err on the side of requiring more agreement, which is safer for consensus. This is proven by Kani formal verification (see `kani_integer_threshold_calculation`).
+
+**Theorem 11.4.3** (Commitment Verification): UTXO commitments can be verified without full UTXO set:
+
+$$\forall us \in \mathcal{US}, uc = \text{GenerateCommitment}(us, bh, h):$$
+$$\text{VerifyCommitment}(uc, merkle\_proof, outpoint, utxo) = \text{valid}$$
+$$\iff$$
+$$utxo \in us \land us[\text{outpoint}] = utxo$$
+
+*Proof*: By construction, the Merkle tree provides cryptographic commitment. A Merkle proof for a specific outpoint can verify inclusion without revealing the entire UTXO set.
+
 ## 12. Mining Protocol
 
 ### 12.1 Block Template Generation
@@ -1272,6 +1611,20 @@ While the Orange Paper focuses on mathematical consensus rules (~95% coverage), 
 
 **Implementation**: Consolidated serialization module with round-trip correctness guarantees. See `docs/ENGINEERING_EDGE_CASES.md` for details.
 
+**Theorem 13.3.2.1** (Serialization Round-Trip Correctness): Serialization and deserialization are inverse operations:
+
+$$\forall x \in \mathcal{D}: \text{deserialize}(\text{serialize}(x)) = x$$
+
+Where $\mathcal{D}$ is the domain of serializable data structures (block headers, transactions, etc.).
+
+*Proof*: By construction, the serialization format is designed to be lossless and reversible. All fields are encoded in a deterministic format that can be exactly reconstructed. This is proven by Kani formal verification (see `kani_block_header_serialization_round_trip`, `kani_transaction_serialization_round_trip`).
+
+**Theorem 13.3.2.2** (Serialization Determinism): Serialization is deterministic:
+
+$$\forall x \in \mathcal{D}: \text{serialize}(x) \text{ is deterministic (same input always produces same output)}$$
+
+*Proof*: The serialization process uses only the input data structure and deterministic encoding rules. There are no random elements or non-deterministic operations. This is proven by Kani formal verification (see `kani_block_header_serialization_determinism`, `kani_transaction_serialization_determinism`).
+
 #### 13.3.3 Resource Limit Enforcement
 
 **Critical Requirement**: DoS protection limits must be enforced deterministically at exact boundaries.
@@ -1296,6 +1649,32 @@ While the Orange Paper focuses on mathematical consensus rules (~95% coverage), 
 **Implementation**: Wire-format parser with comprehensive error handling. All rejection scenarios tested. See `tests/engineering/parser_edge_cases.rs`.
 
 **Reference**: See `docs/ENGINEERING_EDGE_CASES.md` for complete documentation of all engineering-specific edge cases, test coverage, and Bitcoin Core alignment.
+
+#### 13.3.5 Integration Proofs
+
+Integration proofs verify that different consensus modules work together correctly, ensuring that cross-module interactions maintain mathematical correctness.
+
+**Theorem 13.3.5.1** (BIP65/BIP112 Locktime Consistency): BIP65 (CLTV) and BIP112 (CSV) use shared locktime logic consistently:
+
+$$\forall lt \in \mathbb{N}_{32}:$$
+$$\text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt \land$$
+$$\text{LocktimeType}(lt) \text{ is consistent for CLTV and CSV}$$
+
+*Proof*: Both BIP65 and BIP112 use the same locktime encoding/decoding and type determination functions. The shared implementation ensures consistency. This is proven by Kani formal verification (see `kani_bip65_bip112_locktime_consistency`).
+
+**Theorem 13.3.5.2** (Locktime/Script Integration): Locktime validation integrates correctly with script execution:
+
+$$\forall tx \in \mathcal{TX}, script \in \mathcal{SC}, lt \in \mathbb{N}_{32}:$$
+$$\text{ExecuteScript}(script, tx, lt) \text{ uses consistent locktime validation}$$
+
+*Proof*: Script execution uses the same locktime validation functions as standalone locktime checks, ensuring consistency between script-level and transaction-level locktime validation. This is proven by Kani formal verification (see `kani_locktime_script_integration`).
+
+**Theorem 13.3.5.3** (Economic/Block Integration): Economic rules integrate correctly with block validation:
+
+$$\forall b \in \mathcal{B}, h \in \mathbb{N}:$$
+$$\text{ConnectBlock}(b, us, h) \text{ enforces economic invariants (subsidy, fees, supply limits)}$$
+
+*Proof*: Block connection validates economic rules (subsidy calculation, fee validation, supply limits) as part of the block validation process, ensuring economic correctness is maintained. This is proven by Kani formal verification (see `kani_economic_block_integration`).
 
 ## 15. Governance Model
 
