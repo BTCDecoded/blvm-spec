@@ -235,6 +235,52 @@ For transaction $tx$ with UTXO set $us$ at height $h$:
 4. If $total_{in} < total_{out}$: return $(\text{invalid}, 0)$
 5. Return $(\text{valid}, total_{in} - total_{out})$
 
+#### 5.1.1 Transaction Sighash Calculation
+
+**CalculateSighash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \text{SighashType} \times \mathbb{N} \rightarrow \mathbb{H}$
+
+For transaction $tx$, input index $i$, UTXO set $us$, sighash type $st$, and height $h$:
+
+$$\text{CalculateSighash}(tx, i, us, st, h) = \text{SHA256}(\text{SHA256}(\text{SighashPreimage}(tx, i, us, st, h)))$$
+
+**SighashScriptCode**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \rightarrow \mathbb{S}$
+
+For transaction $tx$, input index $i$, and UTXO set $us$:
+
+$$\text{SighashScriptCode}(tx, i, us) = \begin{cases}
+\text{RedeemScript}(tx, i) & \text{if } \text{IsP2SH}(us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey}) \\
+us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey} & \text{otherwise}
+\end{cases}$$
+
+Where $\text{RedeemScript}(tx, i)$ is the redeem script extracted from the stack after executing scriptSig for input $i$.
+
+**SighashType**: $\mathbb{N}_{8} \times \mathbb{N} \rightarrow \text{SighashType}$
+
+For sighash byte $byte$ and height $h$:
+
+$$\text{SighashType}(byte, h) = \begin{cases}
+\text{AllLegacy} & \text{if } byte = 0x00 \land h < H_{66} \\
+\text{All} & \text{if } byte = 0x01 \\
+\text{None} & \text{if } byte = 0x02 \\
+\text{Single} & \text{if } byte = 0x03 \\
+\text{All} \mid \text{AnyoneCanPay} & \text{if } byte = 0x81 \\
+\text{None} \mid \text{AnyoneCanPay} & \text{if } byte = 0x82 \\
+\text{Single} \mid \text{AnyoneCanPay} & \text{if } byte = 0x83 \\
+\text{Invalid} & \text{otherwise}
+\end{cases}$$
+
+Where $H_{66}$ is the BIP66 activation height (mainnet: 363,724).
+
+**Early Bitcoin Legacy**: In early Bitcoin (pre-BIP66), sighash type $0x00$ was accepted and treated as SIGHASH_ALL. This is represented as $\text{AllLegacy}$ to preserve the correct byte value for sighash computation.
+
+**Theorem 5.1.1** (P2SH Redeem Script Sighash): For P2SH transactions, the sighash must use the redeem script instead of the scriptPubKey.
+
+*Proof*: By construction, P2SH scriptPubKeys contain only a hash of the redeem script. The actual script logic is in the redeem script, which must be used for sighash calculation to ensure signatures validate correctly. This is proven by the requirement that $\text{SighashScriptCode}$ returns the redeem script for P2SH transactions.
+
+**Theorem 5.1.2** (Sighash Type AllLegacy): Early Bitcoin (pre-BIP66) accepted sighash type 0x00 as SIGHASH_ALL.
+
+*Proof*: Historical Bitcoin blocks before BIP66 activation (block 363,724) contain transactions with sighash type 0x00. These transactions are valid and must be accepted. The $\text{SighashType}$ function maps $0x00$ to $\text{AllLegacy}$ for heights $< H_{66}$ to preserve compatibility with these historical transactions.
+
 ### 5.2 Script Execution
 
 Bitcoin uses a stack-based scripting language for transaction validation. Scripts are executed to determine whether a transaction output can be spent.
@@ -293,10 +339,98 @@ sequenceDiagram
 
 For scriptSig $ss$, scriptPubKey $spk$, witness $w$, and flags $f$:
 
-1. Execute $ss$ on empty stack
-2. Execute $spk$ on resulting stack
-3. If witness present: execute $w$ on stack
-4. Return final stack has exactly one true value
+1. **P2SH Push-Only Validation**: If $(f \land 0x01) \neq 0$ (SCRIPT_VERIFY_P2SH) and $\text{IsP2SH}(spk)$, then $\text{P2SHPushOnlyCheck}(ss)$ must be valid
+2. Execute $ss$ on empty stack
+3. Execute $spk$ on resulting stack
+4. If witness present: execute $w$ on stack
+5. Return final stack has exactly one true value
+
+#### 5.2.1 P2SH Push-Only Validation
+
+**P2SHPushOnlyCheck**: $\mathbb{S} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+For P2SH scriptSig $ss$:
+
+$$\text{P2SHPushOnlyCheck}(ss) = \begin{cases}
+\text{valid} & \text{if } \forall op \in ss : \text{IsPushOpcode}(op) \\
+\text{invalid} & \text{otherwise}
+\end{cases}$$
+
+Where $\text{IsPushOpcode}(op)$ returns true if $op$ is a push opcode (0x00-0x4e) with valid encoding:
+- Direct push: $0x01 \leq op \leq 0x4b$ (push 1-75 bytes)
+- OP_PUSHDATA1: $op = 0x4c$ (followed by 1-byte length)
+- OP_PUSHDATA2: $op = 0x4d$ (followed by 2-byte length)
+- OP_PUSHDATA4: $op = 0x4e$ (followed by 4-byte length)
+- OP_0: $op = 0x00$ (push empty array)
+
+**P2SH Detection**: $\text{IsP2SH}(spk) = (|spk| = 23) \land (spk[0] = 0xa9) \land (spk[1] = 0x14) \land (spk[22] = 0x87)$
+
+Where:
+- $0xa9$ is OP_HASH160
+- $0x14$ is push 20 bytes
+- $0x87$ is OP_EQUAL
+
+**Security Property**: P2SH push-only validation prevents script injection attacks:
+
+$$\forall ss, spk \in \mathbb{S}, f \in \mathbb{N}_{32} : (f \land 0x01) \neq 0 \land \text{IsP2SH}(spk) \land \neg \text{P2SHPushOnlyCheck}(ss) \implies \text{VerifyScript}(ss, spk, w, f) = \text{false}$$
+
+**Theorem 5.2.1** (P2SH Push-Only Security): P2SH scriptSig must contain only push operations to prevent script injection.
+
+*Proof*: By construction, if a P2SH scriptSig $ss$ contains any non-push opcode, then $\text{P2SHPushOnlyCheck}(ss) = \text{invalid}$, causing $\text{VerifyScript}(ss, spk, w, f) = \text{false}$ before script execution. This prevents malicious opcodes from being executed, ensuring that only data (the redeem script) is pushed onto the stack.
+
+**Activation**: Block 173,805 (mainnet) - Same as P2SH activation (BIP16)
+
+---
+
+#### 5.2.2 Script Verification Flags
+
+**CalculateScriptFlags**: $\mathcal{TX} \times \mathcal{W}^? \times \mathbb{N} \times \text{Network} \rightarrow \mathbb{N}_{32}$
+
+For transaction $tx$, witness $w$, height $h$, and network $n$:
+
+$$\text{CalculateScriptFlags}(tx, w, h, n) = \bigcup_{flag \in \text{ActiveFlags}(tx, w, h, n)} flag$$
+
+Where $\text{ActiveFlags}(tx, w, h, n)$ returns the set of flags active for this transaction:
+
+$$\text{ActiveFlags}(tx, w, h, n) = \{f : f \in \text{AllFlags} \land \text{IsFlagActive}(f, tx, w, h, n)\}$$
+
+**Flag Activation**: $\text{IsFlagActive}(f, tx, w, h, n) = (h \geq H_f(n)) \land \text{FlagCondition}(f, tx, w)$
+
+Where:
+- $H_f(n)$ is the activation height for flag $f$ on network $n$
+- $\text{FlagCondition}(f, tx, w)$ is the transaction-specific condition for flag $f$
+
+**Flag Definitions**:
+- **SCRIPT_VERIFY_P2SH** ($f = 0x01$): $H_f(\text{mainnet}) = 173,805$, $\text{FlagCondition} = \text{true}$ (always active after activation)
+- **SCRIPT_VERIFY_STRICTENC** ($f = 0x02$): $H_f(\text{mainnet}) = 363,724$ (BIP66), $\text{FlagCondition} = \text{true}$
+- **SCRIPT_VERIFY_DERSIG** ($f = 0x04$): $H_f(\text{mainnet}) = 363,724$ (BIP66), $\text{FlagCondition} = \text{true}$
+- **SCRIPT_VERIFY_LOW_S** ($f = 0x08$): $H_f(\text{mainnet}) = 363,724$ (BIP66), $\text{FlagCondition} = \text{true}$
+- **SCRIPT_VERIFY_NULLDUMMY** ($f = 0x10$): $H_f(\text{mainnet}) = 481,824$ (BIP147), $\text{FlagCondition} = \text{true}$
+- **SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY** ($f = 0x200$): $H_f(\text{mainnet}) = 388,381$ (BIP65), $\text{FlagCondition} = \text{true}$
+- **SCRIPT_VERIFY_CHECKSEQUENCEVERIFY** ($f = 0x400$): $H_f(\text{mainnet}) = 481,824$ (BIP112), $\text{FlagCondition} = \text{true}$
+- **SCRIPT_VERIFY_WITNESS** ($f = 0x800$): $H_f(\text{mainnet}) = 481,824$ (SegWit), $\text{FlagCondition} = (w \neq \emptyset \lor \text{IsSegWitTransaction}(tx))$
+- **SCRIPT_VERIFY_WITNESS_PUBKEYTYPE** ($f = 0x8000$): $H_f(\text{mainnet}) = 709,632$ (Taproot), $\text{FlagCondition} = \exists o \in tx.\text{outputs} : \text{IsP2TR}(o.\text{scriptPubkey})$
+
+**P2TR Detection**: $\text{IsP2TR}(spk) = (|spk| = 34) \land (spk[0] = 0x51) \land (spk[1] = 0x20)$
+
+Where:
+- $0x51$ is OP_1
+- $0x20$ is push 32 bytes
+
+**Mathematical Property**: Flags are calculated per-transaction, not per-block:
+
+$$\forall tx_1, tx_2 \in \mathcal{TX}, tx_1 \neq tx_2 : \text{CalculateScriptFlags}(tx_1, w_1, h, n) \neq \text{CalculateScriptFlags}(tx_2, w_2, h, n) \text{ (may differ)}$$
+
+**Theorem 5.2.2** (Per-Transaction Flag Calculation): Script verification flags must be calculated per-transaction based on transaction characteristics and block height.
+
+*Proof*: By construction, flags depend on both block height (activation) and transaction characteristics (witness presence, output types). Different transactions in the same block may have different flags, so flags cannot be calculated once per block. This is proven by the implementation requirement that $\text{CalculateScriptFlags}$ is called for each transaction individually.
+
+**Activation Heights** (Mainnet):
+- P2SH: Block 173,805
+- BIP66 (DER, STRICTENC, LOW_S): Block 363,724
+- BIP65 (CLTV): Block 388,381
+- SegWit (WITNESS, NULLDUMMY, CSV): Block 481,824
+- Taproot (WITNESS_PUBKEYTYPE): Block 709,632
 
 ### 5.3 Block Validation
 
@@ -410,26 +544,38 @@ This section specifies the mathematical properties of critical Bitcoin Improveme
 
 #### 5.4.1 BIP30: Duplicate Coinbase Prevention
 
-**BIP30Check**: $\mathcal{B} \times \mathcal{US} \rightarrow \{\text{valid}, \text{invalid}\}$
+**BIP30Check**: $\mathcal{B} \times \mathcal{US} \times \mathbb{N} \times \text{Network} \rightarrow \{\text{valid}, \text{invalid}\}$
 
-For block $b = (h, txs)$ with UTXO set $us$:
+For block $b = (h, txs)$ with UTXO set $us$, height $h$, and network $n$:
 
-$$\text{BIP30Check}(b, us) = \begin{cases}
-\text{invalid} & \text{if } \exists tx \in txs : \text{IsCoinbase}(tx) \land \text{txid}(tx) \in \text{CoinbaseTxids}(us) \\
+$$\text{BIP30Check}(b, us, h, n) = \begin{cases}
+\text{valid} & \text{if } h > H_{30\_deact}(n) \\
+\text{invalid} & \text{if } h \leq H_{30\_deact}(n) \land \exists tx \in txs : \text{IsCoinbase}(tx) \land \text{txid}(tx) \in \text{CoinbaseTxids}(us) \\
 \text{valid} & \text{otherwise}
 \end{cases}$$
 
-Where $\text{CoinbaseTxids}(us)$ is the set of all coinbase transaction IDs that have created UTXOs in $us$.
+Where:
+- $H_{30\_deact}(n)$ is the BIP30 deactivation height for network $n$:
+  - Mainnet: $H_{30\_deact}(\text{mainnet}) = 91,722$
+  - Testnet: $H_{30\_deact}(\text{testnet}) = 0$ (never enforced)
+  - Regtest: $H_{30\_deact}(\text{regtest}) = 0$ (never enforced)
+- $\text{CoinbaseTxids}(us)$ is the set of all coinbase transaction IDs that have created UTXOs in $us$.
 
-**Mathematical Property**: BIP30 ensures coinbase transaction uniqueness:
+**Deactivation**: BIP30 was disabled after block 91,722 (mainnet) to allow duplicate coinbases in blocks 91,842 and 91,880 (historical bug, grandfathered exception).
 
-$$\forall b_1, b_2 \in \mathcal{B}, b_1 \neq b_2 : \text{IsCoinbase}(tx_1) \land \text{IsCoinbase}(tx_2) \implies \text{txid}(tx_1) \neq \text{txid}(tx_2)$$
+**Mathematical Property**: BIP30 ensures coinbase transaction uniqueness before deactivation:
 
-**Theorem 5.4.1** (BIP30 Uniqueness): BIP30 prevents duplicate coinbase transactions.
+$$\forall b_1, b_2 \in \mathcal{B}, b_1 \neq b_2, h \leq H_{30\_deact}(n) : \text{IsCoinbase}(tx_1) \land \text{IsCoinbase}(tx_2) \implies \text{txid}(tx_1) \neq \text{txid}(tx_2)$$
 
-*Proof*: By construction, if a coinbase transaction $tx$ has $\text{txid}(tx) \in \text{CoinbaseTxids}(us)$, then $\text{BIP30Check}(b, us) = \text{invalid}$, preventing the block from being accepted. Since coinbase transactions create new UTXOs, their transaction IDs are recorded in the UTXO set, ensuring uniqueness across all blocks.
+**Theorem 5.4.1** (BIP30 Uniqueness): BIP30 prevents duplicate coinbase transactions before deactivation height.
 
-**Activation**: Block 0 (always active)
+*Proof*: By construction, if a coinbase transaction $tx$ at height $h \leq H_{30\_deact}(n)$ has $\text{txid}(tx) \in \text{CoinbaseTxids}(us)$, then $\text{BIP30Check}(b, us, h, n) = \text{invalid}$, preventing the block from being accepted. Since coinbase transactions create new UTXOs, their transaction IDs are recorded in the UTXO set, ensuring uniqueness across all blocks before deactivation.
+
+**Activation**: Block 0 (always active until deactivation)  
+**Deactivation Heights**:
+- Mainnet: Block 91,722
+- Testnet: Block 0 (never enforced)
+- Regtest: Block 0 (never enforced)
 
 ---
 
@@ -1332,14 +1478,60 @@ $$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{Hash}(tx.witness) : tx \
 **Weight Calculation**: 
 $$\text{Weight}(tx) = 4 \times |\text{Serialize}(tx \setminus witness)| + |\text{Serialize}(tx)|$$
 
+#### 11.1.1 Nested SegWit (P2WSH-in-P2SH, P2WPKH-in-P2SH)
+
+**Nested SegWit**: SegWit outputs can be wrapped in P2SH, creating nested SegWit transactions.
+
+**P2WPKH-in-P2SH**: Pay-to-Witness-Public-Key-Hash wrapped in P2SH
+
+For P2WPKH-in-P2SH:
+- **Redeem Script Format**: $[0x00, 0x14, h_{20}]$ where $h_{20} \in \{0,1\}^{160}$
+  - $0x00$ is OP_0
+  - $0x14$ is push 20 bytes
+  - $h_{20}$ is the 20-byte pubkey hash
+- **Witness**: Contains signature and public key (2 elements)
+- **Validation**: Witness program is 20 bytes, witness contains signature + pubkey
+
+**P2WSH-in-P2SH**: Pay-to-Witness-Script-Hash wrapped in P2SH
+
+For P2WSH-in-P2SH:
+- **Redeem Script Format**: $[0x00, 0x20, h_{32}]$ where $h_{32} \in \{0,1\}^{256}$
+  - $0x00$ is OP_0
+  - $0x20$ is push 32 bytes
+  - $h_{32}$ is the 32-byte script hash
+- **Witness**: Contains witness script as last element
+- **Validation**: Witness program is 32 bytes, witness script (last witness element) must hash to program
+
+**Nested SegWit Detection**: $\text{IsNestedSegWit}(redeem) = (redeem[0] = 0x00) \land ((redeem[1] = 0x14) \lor (redeem[1] = 0x20))$
+
+**Theorem 11.1.1** (Nested SegWit Validation): Nested SegWit transactions validate the witness program hash in the P2SH redeem script, then execute witness validation.
+
+*Proof*: By construction, nested SegWit transactions first validate that the redeem script hash matches the P2SH scriptPubKey. Then, the witness program (20 or 32 bytes) is extracted from the redeem script, and witness validation proceeds as for direct SegWit transactions. For P2WSH-in-P2SH, the witness script is the last witness element and must hash to the 32-byte program.
+
+**Activation**: Block 481,824 (mainnet) - Same as SegWit activation
+
 ### 11.2 Taproot
 
 **Taproot Output**: P2TR script `OP_1 <32-byte-hash>`
+
+**P2TR Script Format**: $\text{P2TR} = [0x51, 0x20, h_{32}]$ where $h_{32} \in \{0,1\}^{256}$
+
+**P2TR Detection**: $\text{IsP2TR}(spk) = (|spk| = 34) \land (spk[0] = 0x51) \land (spk[1] = 0x20)$
+
+**Empty ScriptSig Requirement**: For Taproot transactions, scriptSig must be empty:
+
+$$\forall tx \in \mathcal{TX}, i \in \mathbb{N} : \text{IsP2TR}(tx.\text{outputs}[j].\text{scriptPubkey}) \land tx.\text{inputs}[i].\text{prevout} = (txid, j) \implies tx.\text{inputs}[i].\text{scriptSig} = \emptyset$$
 
 **Key Aggregation**: 
 $$\text{OutputKey} = \text{InternalPubKey} + \text{TaprootTweak}(\text{MerkleRoot}) \times G$$
 
 **Script Path**: Alternative spending path using merkle proof
+
+**Theorem 11.2.1** (Taproot Empty ScriptSig): Taproot transactions require empty scriptSig for all inputs spending P2TR outputs.
+
+*Proof*: By construction, Taproot validation happens entirely through witness data (key path or script path). The scriptPubKey `OP_1 <32-byte-hash>` is not executable as a script, so scriptSig must be empty. If scriptSig is non-empty, validation fails before witness processing.
+
+**Activation**: Block 709,632 (mainnet)
 
 ### 11.3 Chain Reorganization
 
