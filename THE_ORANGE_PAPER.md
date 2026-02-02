@@ -225,7 +225,29 @@ flowchart TD
     style S fill:#ffcdd2
 ```
 
+**Properties**:
+- Structure validation: $\text{CheckTransaction}(tx) = \text{valid} \implies |tx.\text{inputs}| > 0 \land |tx.\text{outputs}| > 0$
+- Input bounds: $\text{CheckTransaction}(tx) = \text{valid} \implies |tx.\text{inputs}| \leq M_{\text{max\_inputs}}$
+- Output bounds: $\text{CheckTransaction}(tx) = \text{valid} \implies |tx.\text{outputs}| \leq M_{\text{max\_outputs}}$
+- Empty rejection: $|tx.\text{inputs}| = 0 \lor |tx.\text{outputs}| = 0 \implies \text{CheckTransaction}(tx) \neq \text{valid}$
+- Output value bounds: $\text{CheckTransaction}(tx) = \text{valid} \implies \forall o \in tx.\text{outputs}: 0 \leq o.\text{value} \leq M_{\text{max}}$
+- Total output sum: $\text{CheckTransaction}(tx) = \text{valid} \implies \sum_{o \in tx.\text{outputs}} o.\text{value} \leq M_{\text{max}}$
+- No duplicate prevouts: $\text{CheckTransaction}(tx) = \text{valid} \implies \forall i,j \in tx.\text{inputs}: i \neq j \implies i.\text{prevout} \neq j.\text{prevout}$
+- Coinbase scriptSig length: $\text{CheckTransaction}(tx) = \text{valid} \land \text{IsCoinbase}(tx) \implies 2 \leq |tx.\text{inputs}[0].\text{scriptSig}| \leq 100$
+- Non-coinbase prevout: $\text{CheckTransaction}(tx) = \text{valid} \land \neg \text{IsCoinbase}(tx) \implies \forall i \in tx.\text{inputs}: \neg i.\text{prevout}.\text{IsNull}()$
+- Deterministic: $\text{CheckTransaction}(tx_1) = \text{CheckTransaction}(tx_2) \iff tx_1 = tx_2$ (same transaction → same result)
+- Result type: $\text{CheckTransaction}(tx) \in \{\text{valid}, \text{invalid}\}$
+
 **CheckTxInputs**: $\mathcal{TX} \times \mathcal{US} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\} \times \mathbb{Z}$
+
+**Properties**:
+- Coinbase fee: $\text{IsCoinbase}(tx) = \text{true} \implies \text{CheckTxInputs}(tx, us, h) = (\text{valid}, 0)$
+- Value conservation: $\text{CheckTxInputs}(tx, us, h) = (\text{valid}, fee) \land \neg \text{IsCoinbase}(tx) \implies \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} = \sum_{o \in tx.\text{outputs}} o.\text{value} + fee$
+- Fee calculation: $\text{CheckTxInputs}(tx, us, h) = (\text{valid}, fee) \land \neg \text{IsCoinbase}(tx) \implies fee = \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} - \sum_{o \in tx.\text{outputs}} o.\text{value}$
+- Non-negative fee: $\text{CheckTxInputs}(tx, us, h) = (\text{valid}, fee) \implies fee \geq 0$
+- Insufficient funds: $\text{CheckTxInputs}(tx, us, h) = (\text{invalid}, 0) \land \neg \text{IsCoinbase}(tx) \implies \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} < \sum_{o \in tx.\text{outputs}} o.\text{value}$
+- Deterministic: $\text{CheckTxInputs}(tx_1, us_1, h_1) = \text{CheckTxInputs}(tx_2, us_2, h_2) \iff tx_1 = tx_2 \land us_1 = us_2 \land h_1 = h_2$
+- Result type: $\text{CheckTxInputs}(tx, us, h) \in \{(\text{valid}, \mathbb{Z}), (\text{invalid}, 0)\}$
 
 For transaction $tx$ with UTXO set $us$ at height $h$:
 
@@ -238,6 +260,11 @@ For transaction $tx$ with UTXO set $us$ at height $h$:
 #### 5.1.1 Transaction Sighash Calculation
 
 **CalculateSighash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \text{SighashType} \times \mathbb{N} \rightarrow \mathbb{H}$
+
+**Properties**:
+- Hash length: $\text{CalculateSighash}(tx, i, us, st, h) = h \implies |h| = 32$ (32-byte hash)
+- Input index requirement: $\text{CalculateSighash}(tx, i, us, st, h)$ requires $i < |tx.inputs|$ (valid input index)
+- Deterministic: $\text{CalculateSighash}(tx_1, i_1, us_1, st_1, h_1) = \text{CalculateSighash}(tx_2, i_2, us_2, st_2, h_2) \iff tx_1 = tx_2 \land i_1 = i_2 \land us_1 = us_2 \land st_1 = st_2 \land h_1 = h_2$
 
 For transaction $tx$, input index $i$, UTXO set $us$, sighash type $st$, and height $h$:
 
@@ -297,6 +324,17 @@ Script execution follows a stack-based virtual machine:
    - If execution fails: return $\text{false}$
 3. Return $|S| = 1 \land S[0] \neq 0$ (exactly one non-zero value on stack)
 
+**Properties**:
+- Success condition: $\text{EvalScript}(script, stack, flags) = \text{true} \iff |stack| = 1 \land stack[0] \neq 0$
+- Stack bounds: $\text{EvalScript}(script, stack, flags) \implies |stack| \leq L_{\text{stack}}$ (stack never exceeds maximum size)
+- Empty script: $|script| = 0 \implies \text{EvalScript}(script, stack, flags) = \text{false}$ (empty script always fails)
+- Operation limit: $\text{EvalScript}(script, stack, flags)$ fails if operation count exceeds $L_{\text{ops}}$
+- Stack overflow: If $|stack| > L_{\text{stack}}$ during execution, $\text{EvalScript}(script, stack, flags) = \text{false}$
+- Boolean result: $\text{EvalScript}(script, stack, flags) \in \{\text{true}, \text{false}\}$
+- Deterministic: $\text{EvalScript}(script_1, stack_1, flags_1) = \text{EvalScript}(script_2, stack_2, flags_2) \iff script_1 = script_2 \land stack_1 = stack_2 \land flags_1 = flags_2$
+- Stack preservation: During execution, stack size is bounded by $L_{\text{stack}}$
+- Failure modes: $\text{EvalScript}(script, stack, flags) = \text{false}$ if stack overflow, operation limit exceeded, or opcode execution fails
+
 ```mermaid
 sequenceDiagram
     participant S as Script
@@ -335,6 +373,15 @@ sequenceDiagram
     end
 ```
 
+**Properties**:
+- Script verification correctness: $\text{VerifyScript}(ss, spk, w, f) = \text{true} \iff$ script execution succeeds with final stack having exactly one true value
+- P2SH validation: $(f \land 0x01) \neq 0 \land \text{IsP2SH}(spk) \implies \text{P2SHPushOnlyCheck}(ss)$ must be valid
+- Boolean result: $\text{VerifyScript}(ss, spk, w, f) \in \{\text{true}, \text{false}\}$
+- Deterministic: $\text{VerifyScript}(ss_1, spk_1, w_1, f_1) = \text{VerifyScript}(ss_2, spk_2, w_2, f_2) \iff ss_1 = ss_2 \land spk_1 = spk_2 \land w_1 = w_2 \land f_1 = f_2$
+- Execution order: $\text{VerifyScript}(ss, spk, w, f)$ executes $ss$ first, then $spk$, then $w$ if present
+- Stack initialization: $\text{VerifyScript}(ss, spk, w, f)$ starts with empty stack for $ss$ execution
+- Final stack condition: $\text{VerifyScript}(ss, spk, w, f) = \text{true} \implies$ final stack has exactly one non-zero element
+
 **VerifyScript**: $\mathcal{SC} \times \mathcal{SC} \times \mathcal{W} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
 
 For scriptSig $ss$, scriptPubKey $spk$, witness $w$, and flags $f$:
@@ -348,6 +395,13 @@ For scriptSig $ss$, scriptPubKey $spk$, witness $w$, and flags $f$:
 #### 5.2.1 P2SH Push-Only Validation
 
 **P2SHPushOnlyCheck**: $\mathbb{S} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- Push-only validation: $\text{P2SHPushOnlyCheck}(ss) = \text{valid} \iff \forall op \in ss : \text{IsPushOpcode}(op)$
+- Boolean result: $\text{P2SHPushOnlyCheck}(ss) \in \{\text{valid}, \text{invalid}\}$
+- Deterministic: $\text{P2SHPushOnlyCheck}(ss_1) = \text{P2SHPushOnlyCheck}(ss_2) \iff ss_1 = ss_2$
+- Empty script: $\text{P2SHPushOnlyCheck}(\emptyset) = \text{valid}$ (empty script is valid push-only)
+- Non-push opcode: If $\exists op \in ss : \neg \text{IsPushOpcode}(op)$, then $\text{P2SHPushOnlyCheck}(ss) = \text{invalid}$
 
 For P2SH scriptSig $ss$:
 
@@ -382,9 +436,88 @@ $$\forall ss, spk \in \mathbb{S}, f \in \mathbb{N}_{32} : (f \land 0x01) \neq 0 
 
 ---
 
-#### 5.2.2 Script Verification Flags
+#### 5.2.2 Signature Operation Counting
+
+Signature operations (sigops) are counted to enforce the `MAX_BLOCK_SIGOPS_COST` limit (80,000) per block. Sigops include OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CHECKMULTISIG, and OP_CHECKMULTISIGVERIFY operations.
+
+**CountSigOpsInScript**: $\mathbb{S} \times \{\text{true}, \text{false}\} \rightarrow \mathbb{N}$
+
+**Properties**:
+- Sigop count bounded: $\text{CountSigOpsInScript}(s, a) \leq |s|$ for all scripts $s$
+- Non-negativity: $\text{CountSigOpsInScript}(s, a) \geq 0$ for all scripts $s$
+- Empty script: $\text{CountSigOpsInScript}(\emptyset, a) = 0$
+
+For script $s$ and accurate flag $a$:
+
+$$\text{CountSigOpsInScript}(s, a) = \sum_{i=0}^{|s|-1} \text{SigOpCount}(s[i], s, i, a)$$
+
+Where $\text{SigOpCount}(op, s, i, a)$ returns:
+- $1$ if $op \in \{0xac, 0xad\}$ (OP_CHECKSIG, OP_CHECKSIGVERIFY)
+- $n$ if $op \in \{0xae, 0xaf\}$ (OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY) where:
+  - If $a = \text{true}$ and $i > 0$ and $s[i-1] \in [0x51, 0x60]$ (OP_1 to OP_16), then $n = s[i-1] - 0x50$
+  - Otherwise, $n = 20$ (MAX_PUBKEYS_PER_MULTISIG)
+- $0$ otherwise
+
+**GetLegacySigOpCount**: $\mathcal{TX} \rightarrow \mathbb{N}$
+
+**Properties**:
+- Non-negativity: $\text{GetLegacySigOpCount}(tx) \geq 0$ for all transactions $tx$
+- Coinbase sigops: $\text{IsCoinbase}(tx) = \text{true} \implies \text{GetLegacySigOpCount}(tx) \geq 0$ (coinbase may have sigops in scriptSig)
+
+For transaction $tx$:
+
+$$\text{GetLegacySigOpCount}(tx) = \sum_{i \in tx.\text{inputs}} \text{CountSigOpsInScript}(i.\text{scriptSig}, \text{false}) + \sum_{o \in tx.\text{outputs}} \text{CountSigOpsInScript}(o.\text{scriptPubkey}, \text{false})$$
+
+**GetP2SHSigOpCount**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathbb{N}$
+
+**Properties**:
+- Coinbase zero: $\text{IsCoinbase}(tx) = \text{true} \implies \text{GetP2SHSigOpCount}(tx, us) = 0$
+- Non-negativity: $\text{GetP2SHSigOpCount}(tx, us) \geq 0$ for all transactions $tx$ and UTXO sets $us$
+- P2SH only: $\text{GetP2SHSigOpCount}(tx, us) > 0 \implies \exists i \in tx.inputs: \text{IsP2SH}(us(i.prevout).scriptPubkey)$
+
+For transaction $tx$ and UTXO set $us$:
+
+$$\text{GetP2SHSigOpCount}(tx, us) = \begin{cases}
+0 & \text{if } \text{IsCoinbase}(tx) \\
+\sum_{i \in tx.\text{inputs}} \text{P2SHSigOps}(i, us) & \text{otherwise}
+\end{cases}$$
+
+Where $\text{P2SHSigOps}(i, us) = \begin{cases}
+\text{CountSigOpsInScript}(r, \text{true}) & \text{if } \text{IsP2SH}(us(i.\text{prevout}).\text{scriptPubkey}) \land \text{ExtractRedeemScript}(i.\text{scriptSig}) = r \\
+0 & \text{otherwise}
+\end{cases}$
+
+**GetTransactionSigOpCost**: $\mathcal{TX} \times \mathcal{US} \times \mathcal{W}^? \times \mathbb{N}_{32} \rightarrow \mathbb{N}$
+
+**Properties**:
+- Non-negativity: $\text{GetTransactionSigOpCost}(tx, us, w, f) \geq 0$ for all valid inputs
+- Cost formula: $\text{GetTransactionSigOpCost}(tx, us, w, f) = \text{GetLegacySigOpCount}(tx) \times 4 + \text{GetP2SHSigOpCount}(tx, us) \times 4 \times \text{IsP2SHEnabled}(f) + \text{CountWitnessSigOps}(tx, w, us, f)$
+- Block limit: $\sum_{tx \in block.transactions} \text{GetTransactionSigOpCost}(tx, us, w, f) \leq M_{\text{max\_block\_sigops}}$ for valid blocks
+
+For transaction $tx$, UTXO set $us$, witness $w$, and flags $f$:
+
+$$\text{GetTransactionSigOpCost}(tx, us, w, f) = \text{GetLegacySigOpCount}(tx) \times 4 + \text{GetP2SHSigOpCount}(tx, us) \times 4 \times \text{IsP2SHEnabled}(f) + \text{CountWitnessSigOps}(tx, w, us, f)$$
+
+Where:
+- $\text{IsP2SHEnabled}(f) = (f \land 0x01) \neq 0$
+- $\text{CountWitnessSigOps}(tx, w, us, f)$ counts sigops in witness scripts for SegWit transactions
+
+**Block SigOps Limit**: For block $b$:
+
+$$\sum_{tx \in b.\text{transactions}} \text{GetTransactionSigOpCost}(tx, us, w_{tx}, f) \leq S_{max}$$
+
+Where $S_{max} = 80,000$ (MAX_BLOCK_SIGOPS_COST).
+
+---
+
+#### 5.2.3 Script Verification Flags
 
 **CalculateScriptFlags**: $\mathcal{TX} \times \mathcal{W}^? \times \mathbb{N} \times \text{Network} \rightarrow \mathbb{N}_{32}$
+
+**Properties**:
+- Flag activation: $\text{CalculateScriptFlags}(tx, w, h, n) = f \implies \forall flag \in f: h \geq H_{flag}(n)$
+- Per-transaction calculation: $\text{CalculateScriptFlags}(tx_1, w_1, h, n) \neq \text{CalculateScriptFlags}(tx_2, w_2, h, n)$ (may differ for different transactions)
+- Flag monotonicity: $h_1 \leq h_2 \implies \text{CalculateScriptFlags}(tx, w, h_1, n) \subseteq \text{CalculateScriptFlags}(tx, w, h_2, n)$
 
 For transaction $tx$, witness $w$, height $h$, and network $n$:
 
@@ -435,6 +568,18 @@ $$\forall tx_1, tx_2 \in \mathcal{TX}, tx_1 \neq tx_2 : \text{CalculateScriptFla
 ### 5.3 Block Validation
 
 **ConnectBlock**: $\mathcal{B} \times \mathcal{US} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\} \times \mathcal{US}$
+
+**Properties**:
+- Block structure: $\text{ConnectBlock}(b, us, height) = \text{valid} \implies |b.transactions| > 0$ (block must have transactions)
+- Coinbase requirement: $\text{ConnectBlock}(b, us, height) = \text{valid} \implies \text{IsCoinbase}(b.transactions[0]) = \text{true}$ (first transaction must be coinbase)
+- UTXO consistency: $\text{ConnectBlock}(b, us, height) = (\text{valid}, us') \implies$ UTXO set $us'$ reflects all transactions in block $b$
+- Transaction validation: $\text{ConnectBlock}(b, us, height) = \text{valid} \implies \forall tx \in b.transactions : \text{CheckTransaction}(tx) = \text{valid}$
+- Input validation: $\text{ConnectBlock}(b, us, height) = \text{valid} \implies \forall tx \in b.transactions : \text{CheckTxInputs}(tx, us, height) = (\text{valid}, fee)$
+- Script verification: $\text{ConnectBlock}(b, us, height) = \text{valid} \implies \forall tx \in b.transactions :$ all scripts verify successfully
+- Coinbase fee: $\text{ConnectBlock}(b, us, height) = \text{valid} \implies$ coinbase output $\leq$ fees + subsidy
+- Result type: $\text{ConnectBlock}(b, us, height) \in \{(\text{valid}, \mathcal{US}), (\text{invalid}, \mathcal{US})\}$
+- Deterministic: $\text{ConnectBlock}(b_1, us_1, height_1) = \text{ConnectBlock}(b_2, us_2, height_2) \iff b_1 = b_2 \land us_1 = us_2 \land height_1 = height_2$
+- UTXO set growth: $\text{ConnectBlock}(b, us, height) = (\text{valid}, us') \implies |us'| = |us| - \sum_{tx \in b.transactions, \neg \text{IsCoinbase}(tx)} |tx.inputs| + \sum_{tx \in b.transactions} |tx.outputs|$
 
 For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
 
@@ -497,6 +642,17 @@ flowchart TD
 
 **ApplyTransaction**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathcal{US}$
 
+**Properties**:
+- Undo entries match inputs: $\text{ApplyTransaction}(tx, us) = (us', ul) \implies |ul| = |tx.inputs|$ (undo log has one entry per input)
+- Coinbase undo: $\text{IsCoinbase}(tx) = \text{true} \implies \text{ApplyTransaction}(tx, us) = (us', \emptyset)$ (coinbase has no undo entries)
+- UTXO consistency: $\text{ApplyTransaction}(tx, us) = (us', ul) \implies$ UTXO set $us'$ reflects transaction $tx$ applied to $us$
+- Spent inputs removed: $\text{ApplyTransaction}(tx, us) = (us', ul) \land \neg \text{IsCoinbase}(tx) \implies \forall i \in tx.inputs : i.prevout \notin us'$ (spent inputs removed)
+- Outputs added: $\text{ApplyTransaction}(tx, us) = (us', ul) \implies \forall i \in [0, |tx.outputs|) : (tx.id, i) \in us'$ (all outputs added)
+- UTXO set size: $\text{ApplyTransaction}(tx, us) = (us', ul) \land \neg \text{IsCoinbase}(tx) \implies |us'| = |us| - |tx.inputs| + |tx.outputs|$
+- Coinbase UTXO set size: $\text{ApplyTransaction}(tx, us) = (us', ul) \land \text{IsCoinbase}(tx) \implies |us'| = |us| + |tx.outputs|$
+- Deterministic: $\text{ApplyTransaction}(tx_1, us_1) = \text{ApplyTransaction}(tx_2, us_2) \iff tx_1 = tx_2 \land us_1 = us_2$
+- Idempotency with undo: $\text{DisconnectBlock}(b, ul, \text{ConnectBlock}(b, us, h)) = us$ where $ul$ is undo log from ConnectBlock
+
 For transaction $tx$ and UTXO set $us$:
 
 1. If $tx$ is coinbase: $us' = us \cup \{(tx.id, i) \mapsto tx.outputs[i] : i \in [0, |tx.outputs|)\}$
@@ -546,6 +702,11 @@ This section specifies the mathematical properties of critical Bitcoin Improveme
 
 **BIP30Check**: $\mathcal{B} \times \mathcal{US} \times \mathbb{N} \times \text{Network} \rightarrow \{\text{valid}, \text{invalid}\}$
 
+**Properties**:
+- Deactivation height: $\text{BIP30Check}(b, us, h, n) = \text{valid} \implies h > H_{30\_deact}(n)$ (after deactivation, always valid)
+- Duplicate coinbase prevention: $\text{BIP30Check}(b, us, h, n) = \text{invalid} \implies$ duplicate coinbase transaction detected
+- Validation correctness: $\text{BIP30Check}(b, us, h, n)$ prevents duplicate coinbase transactions before deactivation height
+
 For block $b = (h, txs)$ with UTXO set $us$, height $h$, and network $n$:
 
 $$\text{BIP30Check}(b, us, h, n) = \begin{cases}
@@ -583,6 +744,11 @@ $$\forall b_1, b_2 \in \mathcal{B}, b_1 \neq b_2, h \leq H_{30\_deact}(n) : \tex
 
 **BIP34Check**: $\mathcal{B} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
 
+**Properties**:
+- Height requirement: $\text{BIP34Check}(b, h) = \text{valid} \implies h < H_{34} \lor (\forall tx \in b.transactions : \text{IsCoinbase}(tx) \implies \text{ExtractHeight}(tx) = h)$
+- Coinbase height: $\text{BIP34Check}(b, h) = \text{invalid} \implies h \geq H_{34} \land \exists tx \in b.transactions : \text{IsCoinbase}(tx) \land \text{ExtractHeight}(tx) \neq h$
+- Validation correctness: $\text{BIP34Check}(b, h)$ ensures coinbase contains correct block height after activation
+
 For block $b = (h, txs)$ at height $h$:
 
 $$\text{BIP34Check}(b, h) = \begin{cases}
@@ -619,6 +785,11 @@ $$\forall b = (h, txs) \in \mathcal{B}, h \geq H_{34} : \text{IsCoinbase}(tx) \i
 
 **BIP66Check**: $\mathbb{S} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
 
+**Properties**:
+- Strict DER requirement: $\text{BIP66Check}(sig, h) = \text{valid} \implies h < H_{66} \lor \text{IsStrictDER}(sig)$
+- DER validation: $\text{BIP66Check}(sig, h) = \text{invalid} \implies h \geq H_{66} \land \neg \text{IsStrictDER}(sig)$
+- Validation correctness: $\text{BIP66Check}(sig, h)$ enforces strict DER encoding after activation height
+
 For signature $sig \in \mathbb{S}$ at block height $h$:
 
 $$\text{BIP66Check}(sig, h) = \begin{cases}
@@ -654,6 +825,11 @@ $$\forall sig \in \mathbb{S}, h \geq H_{66} : \text{BIP66Check}(sig, h) = \text{
 #### 5.4.4 BIP90: Block Version Enforcement
 
 **BIP90Check**: $\mathcal{H} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- Version requirement: $\text{BIP90Check}(h, height) = \text{valid} \implies height < H_{34} \lor h.version \geq 2$
+- Version enforcement: $\text{BIP90Check}(h, height) = \text{invalid} \implies height \geq H_{34} \land h.version < 2$
+- Validation correctness: $\text{BIP90Check}(h, height)$ enforces minimum block version after BIP34 activation
 
 For block header $h = (version, \ldots)$ at height $height$:
 
@@ -697,6 +873,11 @@ $$\text{MinVersion}(height) = \begin{cases}
 
 **BIP147Check**: $\mathbb{S} \times \mathbb{S} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
 
+**Properties**:
+- NULLDUMMY requirement: $\text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{valid} \implies h < H_{147} \lor \neg \text{ContainsMultisig}(scriptPubkey) \lor \text{IsNullDummy}(scriptSig)$
+- Multisig validation: $\text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{invalid} \implies h \geq H_{147} \land \text{ContainsMultisig}(scriptPubkey) \land \neg \text{IsNullDummy}(scriptSig)$
+- Validation correctness: $\text{BIP147Check}(scriptSig, scriptPubkey, h)$ enforces NULLDUMMY for multisig after activation
+
 For scriptSig $scriptSig$, scriptPubkey $scriptPubkey$ containing OP_CHECKMULTISIG, and block height $h$:
 
 $$\text{BIP147Check}(scriptSig, scriptPubkey, h) = \begin{cases}
@@ -734,6 +915,11 @@ $$\forall scriptSig, scriptPubkey \in \mathbb{S}, h \geq H_{147} : \text{Contain
 #### 5.4.6 BIP119: OP_CHECKTEMPLATEVERIFY (CTV)
 
 **BIP119Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- Template hash validation: $\text{BIP119Check}(tx, i, h) = \text{valid} \iff \text{TemplateHash}(tx, i) = h$
+- Input index requirement: $\text{BIP119Check}(tx, i, h)$ requires $i < |tx.inputs|$ (valid input index)
+- Validation correctness: $\text{BIP119Check}(tx, i, h)$ validates template hash matches expected value
 
 For transaction $tx$, input index $i$, and template hash $h$:
 
@@ -868,7 +1054,7 @@ $$\text{LocktimeType}(lt) = \begin{cases}
 
 $$\forall lt \in \mathbb{N}_{32}: \text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt$$
 
-*Proof*: By construction, the encoding uses minimal little-endian representation and decoding reconstructs the value from the byte string. This is proven by Kani formal verification (see `kani_locktime_encoding_round_trip`).
+*Proof*: By construction, the encoding uses minimal little-endian representation and decoding reconstructs the value from the byte string. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 5.4.7.2** (Locktime Type Determination Correctness): Locktime type determination is correct:
 
@@ -877,19 +1063,19 @@ $$\forall lt \in \mathbb{N}_{32}: \text{LocktimeType}(lt) = \begin{cases}
 \text{Timestamp} & \text{otherwise}
 \end{cases}$$
 
-*Proof*: By construction, the threshold $500000000$ correctly separates block heights (which are always $< 500000000$) from Unix timestamps (which are always $\geq 500000000$). This is proven by Kani formal verification (see `kani_locktime_type_determination`).
+*Proof*: By construction, the threshold $500000000$ correctly separates block heights (which are always $< 500000000$) from Unix timestamps (which are always $\geq 500000000$). This is proven by blvm-spec-lock formal verification.
 
 **Theorem 5.4.7.3** (CLTV Type Matching Requirement): CLTV requires matching locktime types:
 
 $$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$$
 
-*Proof*: By construction, if the types don't match, $\text{BIP65Check}$ returns $\text{invalid}$. This ensures that block height locktimes are only compared with block heights, and timestamps are only compared with timestamps. This is proven by Kani formal verification (see `kani_locktime_types_match_correctness`, `kani_bip65_cltv_type_mismatch_fails`).
+*Proof*: By construction, if the types don't match, $\text{BIP65Check}$ returns $\text{invalid}$. This ensures that block height locktimes are only compared with block heights, and timestamps are only compared with timestamps. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 5.4.7.4** (CLTV Zero Locktime Rejection): CLTV always fails when transaction locktime is zero:
 
 $$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: tx.\text{lockTime} = 0 \implies \text{BIP65Check}(tx, i, lt, h) = \text{invalid}$$
 
-*Proof*: By construction, if $tx.\text{lockTime} = 0$, the check immediately returns $\text{invalid}$ regardless of the stack locktime value. This is proven by Kani formal verification (see `kani_bip65_cltv_zero_locktime_fails`).
+*Proof*: By construction, if $tx.\text{lockTime} = 0$, the check immediately returns $\text{invalid}$ regardless of the stack locktime value. This is proven by blvm-spec-lock formal verification.
 
 **Activation Heights**:
 - Mainnet: Block 388,381
@@ -915,17 +1101,37 @@ The sequence number encodes:
 
 **ExtractSequenceLocktimeValue**: $\mathbb{N}_{32} \rightarrow \mathbb{N}_{16}$
 
+**Properties**:
+- Value extraction: $\text{ExtractSequenceLocktimeValue}(seq) = seq \land 0x0000ffff$ (bits 0-15)
+- Value range: $0 \leq \text{ExtractSequenceLocktimeValue}(seq) \leq 65535$ for all $seq \in \mathbb{N}_{32}$
+- Bit masking: $\text{ExtractSequenceLocktimeValue}(seq)$ extracts lower 16 bits
+
 $$\text{ExtractSequenceLocktimeValue}(seq) = seq \land 0x0000ffff$$
 
 **ExtractSequenceTypeFlag**: $\mathbb{N}_{32} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Type flag extraction: $\text{ExtractSequenceTypeFlag}(seq) = \text{true} \iff (seq \land 0x00400000) \neq 0$
+- Boolean result: $\text{ExtractSequenceTypeFlag}(seq) \in \{\text{true}, \text{false}\}$
+- Bit 22: $\text{ExtractSequenceTypeFlag}(seq)$ extracts bit 22 (type flag)
 
 $$\text{ExtractSequenceTypeFlag}(seq) = (seq \land 0x00400000) \neq 0$$
 
 **IsSequenceDisabled**: $\mathbb{N}_{32} \rightarrow \{\text{true}, \text{false}\}$
 
+**Properties**:
+- Disabled flag extraction: $\text{IsSequenceDisabled}(seq) = \text{true} \iff (seq \land 0x80000000) \neq 0$
+- Boolean result: $\text{IsSequenceDisabled}(seq) \in \{\text{true}, \text{false}\}$
+- Bit 31: $\text{IsSequenceDisabled}(seq)$ extracts bit 31 (disable flag)
+
 $$\text{IsSequenceDisabled}(seq) = (seq \land 0x80000000) \neq 0$$
 
 **CalculateSequenceLocks**: $\mathcal{TX} \times \mathbb{N} \times [\mathbb{N}] \times [\mathcal{H}]^? \rightarrow (\mathbb{Z}, \mathbb{Z})$
+
+**Properties**:
+- Heights match inputs: $\text{CalculateSequenceLocks}(tx, f, ph, rh) = (min\_h, min\_t) \implies |ph| = |tx.inputs|$ (heights must match input count)
+- Lock calculation: $\text{CalculateSequenceLocks}(tx, f, ph, rh)$ calculates minimum height and time locks from sequence numbers
+- Negative locks: $\text{CalculateSequenceLocks}(tx, f, ph, rh) = (min\_h, min\_t) \implies min\_h \geq -1 \land min\_t \geq -1$ (locks can be -1 if disabled)
 
 For transaction $tx$, flags $f$, previous heights $ph \in [\mathbb{N}]$, and recent headers $rh \in [\mathcal{H}]^?$:
 
@@ -948,6 +1154,11 @@ Where:
 
 **EvaluateSequenceLocks**: $\mathbb{N} \times \mathbb{N} \times (\mathbb{Z}, \mathbb{Z}) \rightarrow \{\text{true}, \text{false}\}$
 
+**Properties**:
+- Lock evaluation: $\text{EvaluateSequenceLocks}(height, time, (min\_h, min\_t)) = \text{true} \iff (min\_h < 0 \lor height > min\_h) \land (min\_t < 0 \lor time > min\_t)$
+- Boolean result: $\text{EvaluateSequenceLocks}(height, time, (min\_h, min\_t)) \in \{\text{true}, \text{false}\}$
+- Disabled locks: $\text{EvaluateSequenceLocks}(height, time, (-1, -1)) = \text{true}$ (disabled locks always pass)
+
 $$\text{EvaluateSequenceLocks}(height, time, (min\_h, min\_t)) = \begin{cases}
 \text{true} & \text{if } (min\_h < 0 \lor height > min\_h) \land (min\_t < 0 \lor time > min\_t) \\
 \text{false} & \text{otherwise}
@@ -963,7 +1174,7 @@ Where:
 $$\forall tx \in \mathcal{TX}, ph \in [\mathbb{N}], seq \in \mathbb{N}_{32}:$$
 $$\text{CalculateSequenceLocks}(tx, f, ph, rh) \text{ does not overflow}$$
 
-*Proof*: By construction, all arithmetic operations use checked addition/subtraction. The locktime value is bounded to 16 bits (0-65535), and block heights/times are bounded to 64-bit integers. This is proven by Kani formal verification (see `kani_sequence_lock_arithmetic_safety`).
+*Proof*: By construction, all arithmetic operations use checked addition/subtraction. The locktime value is bounded to 16 bits (0-65535), and block heights/times are bounded to 64-bit integers. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 5.5.2** (Sequence Lock Correctness): Sequence locks correctly enforce relative locktime:
 
@@ -974,13 +1185,25 @@ $$\forall i \in tx.\text{inputs}: \text{IsSequenceDisabled}(i.\text{sequence}) \
 
 Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is met.
 
-*Proof*: By construction, $\text{CalculateSequenceLocks}$ computes the minimum height/time required by all inputs, and $\text{EvaluateSequenceLocks}$ checks if current height/time meets these requirements. This is proven by Kani formal verification (see `kani_sequence_locks_calculation_correctness` and `kani_sequence_locks_evaluation_correctness`).
+*Proof*: By construction, $\text{CalculateSequenceLocks}$ computes the minimum height/time required by all inputs, and $\text{EvaluateSequenceLocks}$ checks if current height/time meets these requirements. This is proven by blvm-spec-lock formal verification.
 
 ## 6. Economic Model
 
 ### 6.1 Block Subsidy
 
 **GetBlockSubsidy**: $\mathbb{N} \rightarrow \mathbb{Z}$
+
+**Properties**:
+- Non-negative: $\text{GetBlockSubsidy}(h) \geq 0$ for all $h \in \mathbb{N}$
+- Upper bound: $\text{GetBlockSubsidy}(h) \leq \text{INITIAL\_SUBSIDY}$ for all $h \in \mathbb{N}$
+- Genesis block: $h = 0 \implies \text{GetBlockSubsidy}(h) = \text{INITIAL\_SUBSIDY}$
+- After 64 halvings: $h \geq \text{HALVING\_INTERVAL} \times 64 \implies \text{GetBlockSubsidy}(h) = 0$
+- Halving schedule: For $h < \text{HALVING\_INTERVAL} \times 64$, $\text{GetBlockSubsidy}(h) = \text{INITIAL\_SUBSIDY} \gg \lfloor h / \text{HALVING\_INTERVAL} \rfloor$
+- First halving boundary: $h = \text{HALVING\_INTERVAL} \implies \text{GetBlockSubsidy}(h) = \text{INITIAL\_SUBSIDY} / 2$
+- Second halving boundary: $h = \text{HALVING\_INTERVAL} \times 2 \implies \text{GetBlockSubsidy}(h) = \text{INITIAL\_SUBSIDY} / 4$
+- Before 64 halvings: $h < \text{HALVING\_INTERVAL} \times 64 \implies \text{GetBlockSubsidy}(h) > 0$
+- Deterministic: $\text{GetBlockSubsidy}(h_1) = \text{GetBlockSubsidy}(h_2) \iff h_1 = h_2$ (same height → same subsidy)
+- Monotonic decreasing: For $h_1 < h_2 < \text{HALVING\_INTERVAL} \times 64$ within same halving period, $\text{GetBlockSubsidy}(h_1) = \text{GetBlockSubsidy}(h_2)$
 
 $$\text{GetBlockSubsidy}(h) = \begin{cases}
 0 & \text{if } h \geq 64 \times H \\
@@ -1005,17 +1228,37 @@ xychart-beta
 - **Blocks 840,000+**: 3.125 BTC per block
 - **Blocks 13,440,000+**: 0 BTC per block (after 64 halvings)
 
+**Properties**:
+- Non-negativity: $\text{GetBlockSubsidy}(h) \geq 0$ for all $h \in \mathbb{N}$
+- Upper bound: $\text{GetBlockSubsidy}(h) \leq 50 \times C$ for all $h \in \mathbb{N}$
+- Genesis block: $\text{GetBlockSubsidy}(0) = 50 \times C$
+- After 64 halvings: $\text{GetBlockSubsidy}(h) = 0$ for all $h \geq 64 \times H$
+- First halving: $\text{GetBlockSubsidy}(H) = 25 \times C$
+- Second halving: $\text{GetBlockSubsidy}(2 \times H) = 12.5 \times C$
+- Non-zero before 64 halvings: $\text{GetBlockSubsidy}(h) > 0$ for all $h < 64 \times H$
+
 **Theorem 6.1.1** (Halving Schedule Correctness): The block subsidy halves every 210,000 blocks:
 
 $$\forall h \in \mathbb{N}, h < 64 \times H: \text{GetBlockSubsidy}(h + H) = \frac{\text{GetBlockSubsidy}(h)}{2}$$
 
 Where $H = 210,000$ is the halving interval.
 
-*Proof*: By construction, $\text{GetBlockSubsidy}(h) = 50 \times C \times 2^{-\lfloor h/H \rfloor}$. For $h + H$, we have $\lfloor (h+H)/H \rfloor = \lfloor h/H \rfloor + 1$, so $\text{GetBlockSubsidy}(h + H) = 50 \times C \times 2^{-(\lfloor h/H \rfloor + 1)} = \frac{50 \times C \times 2^{-\lfloor h/H \rfloor}}{2} = \frac{\text{GetBlockSubsidy}(h)}{2}$. This is proven by Kani formal verification (see `kani_get_block_subsidy_halving_schedule`).
+*Proof*: By construction, $\text{GetBlockSubsidy}(h) = 50 \times C \times 2^{-\lfloor h/H \rfloor}$. For $h + H$, we have $\lfloor (h+H)/H \rfloor = \lfloor h/H \rfloor + 1$, so $\text{GetBlockSubsidy}(h + H) = 50 \times C \times 2^{-(\lfloor h/H \rfloor + 1)} = \frac{50 \times C \times 2^{-\lfloor h/H \rfloor}}{2} = \frac{\text{GetBlockSubsidy}(h)}{2}$. This is proven by blvm-spec-lock formal verification.
 
 ### 6.2 Total Supply
 
 **TotalSupply**: $\mathbb{N} \rightarrow \mathbb{Z}$
+
+**Properties**:
+- Non-negativity: $\text{TotalSupply}(h) \geq 0$ for all $h \in \mathbb{N}$
+- Supply limit: $\text{TotalSupply}(h) \leq \text{MAX\_MONEY}$ for all $h \in \mathbb{N}$ (critical security invariant)
+- Genesis block: $\text{TotalSupply}(0) = 50 \times C = \text{INITIAL\_SUBSIDY}$
+- Monotonicity: $\text{TotalSupply}(h_1) \leq \text{TotalSupply}(h_2)$ for all $h_1 \leq h_2$ (monotonically increasing)
+- Supply increase: For $h_2 > h_1$, $\text{TotalSupply}(h_2) = \text{TotalSupply}(h_1) + \sum_{i=h_1+1}^{h_2} \text{GetBlockSubsidy}(i)$
+- Supply convergence: $\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$ (converges to 21M BTC)
+- After 64 halvings: For $h \geq \text{HALVING\_INTERVAL} \times 64$, $\text{TotalSupply}(h) = \text{TotalSupply}(\text{HALVING\_INTERVAL} \times 64)$ (constant after halvings stop)
+- Deterministic: $\text{TotalSupply}(h_1) = \text{TotalSupply}(h_2) \iff h_1 = h_2$ (same height → same supply)
+- Supply increase bounded: $\text{TotalSupply}(h+1) - \text{TotalSupply}(h) = \text{GetBlockSubsidy}(h+1) \leq \text{INITIAL\_SUBSIDY}$
 
 $$\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$$
 
@@ -1023,7 +1266,7 @@ $$\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$$
 
 $$\forall h_1, h_2 \in \mathbb{N}, h_1 \leq h_2: \text{TotalSupply}(h_1) \leq \text{TotalSupply}(h_2)$$
 
-*Proof*: By construction, $\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$. Since $\text{GetBlockSubsidy}(i) \geq 0$ for all $i$, adding more terms can only increase the sum. This is proven by Kani formal verification (see `kani_total_supply_monotonic`).
+*Proof*: By construction, $\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$. Since $\text{GetBlockSubsidy}(i) \geq 0$ for all $i$, adding more terms can only increase the sum. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 6.2.2** (Total Supply Bounded): Total supply never exceeds MAX_MONEY:
 
@@ -1031,7 +1274,7 @@ $$\forall h \in \mathbb{N}: \text{TotalSupply}(h) \leq \text{MAX\_MONEY}$$
 
 Where $\text{MAX\_MONEY} = 21 \times 10^6 \times C$ is the maximum Bitcoin supply.
 
-*Proof*: By construction, the total supply converges to $21 \times 10^6 \times C$ as $h \to \infty$, and all block subsidies are non-negative. The implementation uses checked arithmetic to prevent overflow. This is proven by Kani formal verification (see `kani_supply_limit_respected`).
+*Proof*: By construction, the total supply converges to $21 \times 10^6 \times C$ as $h \to \infty$, and all block subsidies are non-negative. The implementation uses checked arithmetic to prevent overflow. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 6.2.3** (Supply Convergence): $\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$
 
@@ -1043,13 +1286,82 @@ $$\text{TotalSupply}(\infty) = \sum_{k=0}^{63} H \times 50 \times C \times 2^{-k
 Since $\sum_{k=0}^{63} 2^{-k} = 2 - 2^{-63} \approx 2$ for large $k$:
 $$\text{TotalSupply}(\infty) \approx H \times 50 \times C \times 2 = 210,000 \times 50 \times 10^8 \times 2 = 21 \times 10^6 \times 10^8 = 21 \times 10^6 \times C$$
 
-### 6.3 Fee Market
+### 6.3 Supply Limit Validation
+
+**ValidateSupplyLimit**: $\mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+$$\text{ValidateSupplyLimit}(h) = \begin{cases}
+\text{valid} & \text{if } \text{TotalSupply}(h) \leq \text{MAX\_MONEY} \\
+\text{invalid} & \text{otherwise}
+\end{cases}$$
+
+Validates that the total supply at height $h$ does not exceed the maximum money supply.
+
+**Properties**:
+- Validation correctness: $\text{ValidateSupplyLimit}(h) = \text{valid} \iff \text{TotalSupply}(h) \leq \text{MAX\_MONEY}$
+- Supply limit invariant: $\text{ValidateSupplyLimit}(h) = \text{valid}$ for all $h \in \mathbb{N}$ (critical security property)
+- Boolean result: $\text{ValidateSupplyLimit}(h) \in \{\text{valid}, \text{invalid}\}$
+- Deterministic: $\text{ValidateSupplyLimit}(h_1) = \text{ValidateSupplyLimit}(h_2) \iff \text{TotalSupply}(h_1) \leq \text{MAX\_MONEY} \iff \text{TotalSupply}(h_2) \leq \text{MAX\_MONEY}$
+- Always valid: Since $\text{TotalSupply}(h) \leq \text{MAX\_MONEY}$ for all $h$, $\text{ValidateSupplyLimit}(h) = \text{valid}$ for all $h$
+
+**Theorem 6.3.1** (Supply Limit Correctness): The supply limit validation is correct:
+
+$$\forall h \in \mathbb{N}: \text{ValidateSupplyLimit}(h) = \text{valid} \iff \text{TotalSupply}(h) \leq \text{MAX\_MONEY}$$
+
+*Proof*: By construction, the validation function directly checks the condition. This is proven by blvm-spec-lock formal verification.
+
+### 6.4 Coinbase Detection
+
+**IsCoinbase**: $\mathcal{TX} \rightarrow \{\text{true}, \text{false}\}$
+
+A transaction $tx = (v, ins, outs, lt)$ is a coinbase transaction if and only if:
+
+$$\text{IsCoinbase}(tx) = \begin{cases}
+\text{true} & \text{if } |ins| = 1 \land ins[0].\text{prevout}.\text{hash} = 0^{32} \land ins[0].\text{prevout}.\text{index} = 2^{32} - 1 \\
+\text{false} & \text{otherwise}
+\end{cases}$$
+
+Where:
+- $0^{32}$ is the 32-byte zero hash (all zeros)
+- $2^{32} - 1$ is the maximum 32-bit unsigned integer (0xFFFFFFFF)
+
+**Properties**:
+- Definition correctness: $\text{IsCoinbase}(tx) = \text{true} \iff |tx.\text{inputs}| = 1 \land tx.\text{inputs}[0].\text{prevout}.\text{hash} = 0^{32} \land tx.\text{inputs}[0].\text{prevout}.\text{index} = 2^{32} - 1$
+- Input count: $\text{IsCoinbase}(tx) = \text{true} \implies |tx.\text{inputs}| = 1$ (coinbase has exactly one input)
+- Zero hash: $\text{IsCoinbase}(tx) = \text{true} \implies tx.\text{inputs}[0].\text{prevout}.\text{hash} = 0^{32}$ (null hash)
+- Max index: $\text{IsCoinbase}(tx) = \text{true} \implies tx.\text{inputs}[0].\text{prevout}.\text{index} = 2^{32} - 1$ (0xFFFFFFFF)
+- Boolean result: $\text{IsCoinbase}(tx) \in \{\text{true}, \text{false}\}$
+- Deterministic: $\text{IsCoinbase}(tx_1) = \text{IsCoinbase}(tx_2) \iff tx_1 = tx_2$ (same transaction → same result)
+- Coinbase uniqueness: In any valid block $b$, exactly one transaction satisfies $\text{IsCoinbase}(tx) = \text{true}$
+- Coinbase position: In valid blocks, coinbase is always the first transaction: $\text{IsCoinbase}(b.transactions[0]) = \text{true}$
+- ScriptSig length: $\text{IsCoinbase}(tx) = \text{true} \land \text{CheckTransaction}(tx) = \text{valid} \implies 2 \leq |tx.inputs[0].scriptSig| \leq 100$
+
+**Theorem 6.4.1** (Coinbase Uniqueness): Each block contains exactly one coinbase transaction:
+
+$$\forall b = (h, txs) \in \mathcal{B}: \sum_{tx \in txs} \text{IsCoinbase}(tx) = 1$$
+
+*Proof*: By Bitcoin consensus rules, each block must have exactly one coinbase transaction as its first transaction. This is proven by blvm-spec-lock formal verification.
+
+### 6.5 Fee Market
 
 **Transaction Fee**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathbb{Z}$
+
+**Properties**:
+- Fee formula: $\text{Fee}(tx, us) = \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} - \sum_{o \in tx.\text{outputs}} o.\text{value}$
+- Coinbase fee: $\text{IsCoinbase}(tx) = \text{true} \implies \text{Fee}(tx, us) = 0$
+- Non-negative fee: $\text{Fee}(tx, us) \geq 0$ for valid transactions (inputs ≥ outputs)
+- Value conservation: $\text{Fee}(tx, us) \geq 0 \implies \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} = \sum_{o \in tx.\text{outputs}} o.\text{value} + \text{Fee}(tx, us)$
+- Deterministic: $\text{Fee}(tx_1, us_1) = \text{Fee}(tx_2, us_2) \iff tx_1 = tx_2 \land us_1 = us_2$
 
 $$\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in tx.outputs} o.value$$
 
 **Fee Rate**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathbb{Q}$
+
+**Properties**:
+- Fee rate formula: $\text{FeeRate}(tx, us) = \frac{\text{Fee}(tx, us)}{\text{Weight}(tx)}$
+- Non-negative rate: $\text{FeeRate}(tx, us) \geq 0$ for valid transactions
+- Zero fee rate: $\text{IsCoinbase}(tx) = \text{true} \implies \text{FeeRate}(tx, us) = 0$
+- Deterministic: $\text{FeeRate}(tx_1, us_1) = \text{FeeRate}(tx_2, us_2) \iff tx_1 = tx_2 \land us_1 = us_2$
 
 $$\text{FeeRate}(tx, us) = \frac{\text{Fee}(tx, us)}{\text{Weight}(tx)}$$
 
@@ -1057,7 +1369,7 @@ $$\text{FeeRate}(tx, us) = \frac{\text{Fee}(tx, us)}{\text{Weight}(tx)}$$
 
 $$\forall tx \in \mathcal{TX}, us \in \mathcal{US}: \text{Fee}(tx, us) \geq 0$$
 
-*Proof*: By construction, $\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in tx.outputs} o.value$. For a valid transaction, the sum of input values must be at least the sum of output values (otherwise the transaction would be invalid). This is proven by Kani formal verification (see `kani_calculate_fee_correctness`).
+*Proof*: By construction, $\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in tx.outputs} o.value$. For a valid transaction, the sum of input values must be at least the sum of output values (otherwise the transaction would be invalid). This is proven by blvm-spec-lock formal verification.
 
 ```mermaid
 flowchart TD
@@ -1090,7 +1402,33 @@ flowchart TD
 
 ### 7.1 Difficulty Adjustment
 
+**ExpandTarget**: $\mathbb{N} \rightarrow \mathbb{U256}$
+
+**Properties**:
+- Positive bits: $\text{ExpandTarget}(bits)$ requires $bits > 0$ (bits must be positive)
+- Target expansion: $\text{ExpandTarget}(bits)$ expands compact difficulty representation to full 256-bit target
+- Formula correctness: $\text{ExpandTarget}(bits) = \text{mantissa} \times 2^{8 \times (\text{exponent} - 3)}$ where exponent and mantissa extracted from bits
+
+$$\text{ExpandTarget}(bits) = \text{mantissa} \times 2^{8 \times (\text{exponent} - 3)}$$
+
+Where:
+- $\text{exponent} = (bits \gg 24) \land 0xff$
+- $\text{mantissa} = bits \land 0x00ffffff$
+
+*Proof*: This function converts the compact difficulty representation (used in block headers) to a full 256-bit target value. The compact format uses 3 bytes for the exponent and 3 bytes for the mantissa. This is proven by blvm-spec-lock formal verification.
+
+**Properties**:
+- Valid bits range: $\text{GetNextWorkRequired}(h, prev) \implies 0 < \text{result} \leq \text{MAX\_TARGET}$
+- Bits positivity: $\text{GetNextWorkRequired}(h, prev) > 0$
+
 **GetNextWorkRequired**: $\mathcal{H} \times \mathcal{H}^* \rightarrow \mathbb{N}$
+
+**Properties**:
+- Minimum headers: $\text{GetNextWorkRequired}(h, prev)$ requires $|prev| \geq 2$ for adjustment (otherwise returns initial difficulty)
+- Difficulty bounds: $\text{GetNextWorkRequired}(h, prev) \leq \text{maxTarget}$ (difficulty never exceeds maximum)
+- Positive difficulty: $\text{GetNextWorkRequired}(h, prev) > 0$ (difficulty is always positive)
+- Deterministic: $\text{GetNextWorkRequired}(h_1, prev_1) = \text{GetNextWorkRequired}(h_2, prev_2) \iff h_1 = h_2 \land prev_1 = prev_2$
+- Time-based adjustment: $\text{GetNextWorkRequired}(h, prev)$ adjusts difficulty based on time span between blocks
 
 For block header $h$ and previous headers $prev$:
 
@@ -1152,14 +1490,14 @@ $$\text{ExpandTarget}(bits) \text{ produces valid target } \land \text{ExpandTar
 
 Where $exponent = (bits \gg 24) \land 0xff$ and $mantissa = bits \land 0x00ffffff$.
 
-*Proof*: By construction, the target expansion formula ensures that valid bits produce valid targets within the specified bounds. Invalid bits may produce errors, which is acceptable. This is proven by Kani formal verification (see `kani_expand_target_valid_range`).
+*Proof*: By construction, the target expansion formula ensures that valid bits produce valid targets within the specified bounds. Invalid bits may produce errors, which is acceptable. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 7.1.2** (Difficulty Adjustment Bounds Enforcement): Difficulty adjustment respects maximum and minimum bounds:
 
 $$\forall h \in \mathcal{H}, prev \in [\mathcal{H}]:$$
 $$\text{GetNextWorkRequired}(h, prev) \leq \text{MAX\_TARGET} \land \text{GetNextWorkRequired}(h, prev) > 0$$
 
-*Proof*: By construction, the difficulty adjustment algorithm clamps the result to ensure it never exceeds $\text{MAX\_TARGET}$ and is always positive. This is proven by Kani formal verification (see `kani_get_next_work_required_bounds`).
+*Proof*: By construction, the difficulty adjustment algorithm clamps the result to ensure it never exceeds $\text{MAX\_TARGET}$ and is always positive. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 7.2** (Difficulty Convergence): Under constant hash rate, the difficulty converges to the target block time.
 
@@ -1175,6 +1513,14 @@ If $E[T] > targetTime$, then $timeSpan > expectedTime$, so $adjustment > 1$, inc
 $$\text{CheckProofOfWork}(h) = \text{SHA256}(\text{SHA256}(h)) < \text{ExpandTarget}(h.bits)$$
 
 Where [SHA256](https://en.wikipedia.org/wiki/SHA-2) is the [Secure Hash Algorithm](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf) and $\text{ExpandTarget}$ converts the compact difficulty representation to a full 256-bit target.
+
+**Properties**:
+- PoW correctness: $\text{CheckProofOfWork}(h) = \text{true} \iff \text{SHA256}(\text{SHA256}(h)) < \text{ExpandTarget}(h.bits)$
+- Hash comparison: $\text{CheckProofOfWork}(h)$ compares double-SHA256 hash against expanded target
+- Boolean result: $\text{CheckProofOfWork}(h) \in \{\text{true}, \text{false}\}$
+- Deterministic: $\text{CheckProofOfWork}(h_1) = \text{CheckProofOfWork}(h_2) \iff h_1 = h_2$ (same header → same result)
+- Target requirement: $\text{CheckProofOfWork}(h)$ requires valid target expansion (bits must be valid)
+- Hash length: $\text{SHA256}(\text{SHA256}(h))$ produces 32-byte hash for comparison
 
 ## 8. Security Properties
 
@@ -1214,7 +1560,58 @@ $$\text{TotalSupply}(13,440,000) = 50 \times C \times \sum_{i=0}^{63} \left(\fra
 
 For practical purposes, $2^{-64} \approx 0$, so the total supply is effectively 21 million BTC.
 
-### 8.2 Cryptographic Security
+### 8.2 Integration and Round-Trip Properties
+
+#### 8.2.1 Integration Properties
+
+Integration properties verify that multiple functions work together correctly in multi-function workflows.
+
+**Property** (Economic Block Integration): For valid blocks, economic rules are consistently enforced:
+
+$$\forall b \in \mathcal{B}, h \in \mathbb{N}: \text{ConnectBlock}(b, us, h) = \text{valid} \implies$$
+$$\text{GetBlockSubsidy}(h) + \sum_{tx \in b.transactions} \text{Fee}(tx, us) \geq \sum_{o \in b.transactions[0].outputs} o.value$$
+
+Where $b.transactions[0]$ is the coinbase transaction.
+
+**Property** (ConnectBlock-DisconnectBlock Idempotency): Connect and disconnect operations are perfect inverses:
+
+$$\forall b \in \mathcal{B}, us \in \mathcal{US}, h \in \mathbb{N}, ul \in \mathcal{UL}:$$
+$$\text{ConnectBlock}(b, us, h) = (\text{valid}, us') \implies$$
+$$\text{DisconnectBlock}(b, ul, us') = us$$
+
+Where $ul$ is the undo log created during $\text{ConnectBlock}$.
+
+**Property** (BIP65 + BIP112 Locktime Consistency): Locktime encoding/decoding is consistent across BIPs:
+
+$$\forall lt \in \mathbb{N}_{32}: \text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt$$
+
+**Property** (RBF Conflict Requirement): RBF replacement requires transaction conflict:
+
+$$\forall tx_1, tx_2 \in \mathcal{TX}:$$
+$$\text{ReplacementChecks}(tx_1, tx_2) = \text{true} \implies$$
+$$\exists i \in tx_1.inputs, j \in tx_2.inputs: i.prevout = j.prevout$$
+
+#### 8.2.2 Round-Trip Properties
+
+Round-trip properties ensure that encoding/decoding and serialization/deserialization operations are inverse operations.
+
+**Property** (Transaction Serialization Round-Trip): Transaction serialization and deserialization are inverse operations:
+
+$$\forall tx \in \mathcal{TX}: \text{DeserializeTransaction}(\text{SerializeTransaction}(tx)) = tx$$
+
+**Property** (Block Header Serialization Round-Trip): Block header serialization and deserialization are inverse operations:
+
+$$\forall h \in \mathcal{H}: \text{DeserializeHeader}(\text{SerializeHeader}(h)) = h$$
+
+**Property** (Serialization Determinism): Serialization is deterministic:
+
+$$\forall tx_1, tx_2 \in \mathcal{TX}: tx_1 = tx_2 \iff \text{SerializeTransaction}(tx_1) = \text{SerializeTransaction}(tx_2)$$
+
+**Property** (Locktime Encoding Round-Trip): Locktime encoding and decoding are inverse operations:
+
+$$\forall lt \in \mathbb{N}_{32}: \text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt$$
+
+### 8.3 Cryptographic Security
 
 **Signature Verification**: For public key $pk$, signature $sig$, and message hash $m$:
 $$\text{VerifySignature}(pk, sig, m) = \text{secp256k1\_verify}(pk, sig, m)$$
@@ -1237,7 +1634,7 @@ $$\text{ScriptSecure}(s, f) = |s| \leq L_{script} \land \text{OpCount}(s) \leq L
 
 Since each operation takes constant time and the stack size is bounded, script execution is [$O(L_{ops}) = O(1)$](https://en.wikipedia.org/wiki/Big_O_notation) in the worst case.
 
-### 8.3 Merkle Tree Security
+### 8.4 Merkle Tree Security
 
 **Theorem 8.5** (Merkle Tree Integrity): The [merkle root](https://en.wikipedia.org/wiki/Merkle_tree) commits to all transactions in the block.
 
@@ -1260,14 +1657,14 @@ Many consensus functions must be deterministic to ensure all nodes reach the sam
 
 $$\forall h \in \mathcal{H}: \text{CheckProofOfWork}(h) \text{ is deterministic}$$
 
-*Proof*: The function uses only the block header and deterministic hash functions (SHA256). Given the same header, it always produces the same result. This is proven by Kani formal verification (see `kani_check_proof_of_work_deterministic`).
+*Proof*: The function uses only the block header and deterministic hash functions (SHA256). Given the same header, it always produces the same result. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 8.4.2** (Transaction Application Determinism): Transaction application is deterministic:
 
 $$\forall tx \in \mathcal{TX}, us \in \mathcal{US}, h \in \mathbb{N}:$$
 $$\text{ApplyTransaction}(tx, us, h) \text{ is deterministic}$$
 
-*Proof*: Transaction application uses only the transaction, UTXO set, and height. All operations (UTXO removal, UTXO addition) are deterministic. The consistency and correctness of transaction application is proven by Kani formal verification (see `kani_apply_transaction_consistency`, `kani_apply_transaction_with_id_correctness`, `kani_apply_transaction_mathematical_correctness`).
+*Proof*: Transaction application uses only the transaction, UTXO set, and height. All operations (UTXO removal, UTXO addition) are deterministic. The consistency and correctness of transaction application is proven by blvm-spec-lock formal verification.
 
 **Theorem 8.4.3** (Block Connection Determinism): Block connection is deterministic:
 
@@ -1282,6 +1679,11 @@ $$\text{ConnectBlock}(b, us, h) \text{ is deterministic}$$
 
 **AcceptToMemoryPool**: $\mathcal{TX} \times \mathcal{US} \rightarrow \{\text{accepted}, \text{rejected}\}$
 
+**Properties**:
+- Acceptance correctness: $\text{AcceptToMemoryPool}(tx, us) = \text{accepted} \implies \text{CheckTransaction}(tx) = \text{valid} \land \neg \text{IsCoinbase}(tx)$
+- Coinbase rejection: $\text{IsCoinbase}(tx) = \text{true} \implies \text{AcceptToMemoryPool}(tx, us) = \text{rejected}$
+- Result type: $\text{AcceptToMemoryPool}(tx, us) \in \{\text{accepted}, \text{rejected}\}$
+
 A transaction $tx$ is accepted to the mempool if and only if:
 
 1. **Basic Validation**: $tx$ passes [CheckTransaction](#51-transaction-validation)
@@ -1295,6 +1697,14 @@ A transaction $tx$ is accepted to the mempool if and only if:
 ### 9.2 Standard Transaction Rules
 
 **IsStandardTx**: $\mathcal{TX} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Standard version: $\text{IsStandardTx}(tx) = \text{true} \implies tx.version \in \{1, 2\}$ (version must be 1 or 2)
+- Standard scripts: $\text{IsStandardTx}(tx) = \text{true} \implies$ all outputs use standard script types (P2PKH, P2SH, P2WPKH, P2WSH, P2TR)
+- Boolean result: $\text{IsStandardTx}(tx) \in \{\text{true}, \text{false}\}$
+- Deterministic: $\text{IsStandardTx}(tx_1) = \text{IsStandardTx}(tx_2) \iff tx_1 = tx_2$ (same transaction → same result)
+- Standard transaction subset: $\text{IsStandardTx}(tx) = \text{true} \implies \text{CheckTransaction}(tx) = \text{valid}$ (standard implies valid)
+- Non-standard rejection: $\text{IsStandardTx}(tx) = \text{false} \implies$ transaction may be rejected by mempool
 
 A transaction is standard if:
 
@@ -1312,6 +1722,14 @@ A transaction is standard if:
 ### 9.3 Replace-By-Fee (RBF)
 
 **ReplacementChecks**: $\mathcal{TX} \times \mathcal{TX} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- RBF requirement: $\text{ReplacementChecks}(tx_1, tx_2) = \text{true} \implies \exists i \in tx_1.inputs : i.sequence < \text{SEQUENCE\_FINAL}$ (RBF signaling required)
+- Fee bump requirement: $\text{ReplacementChecks}(tx_1, tx_2) = \text{true} \implies \text{FeeRate}(tx_2) > \text{FeeRate}(tx_1)$ (higher fee rate required)
+- Boolean result: $\text{ReplacementChecks}(tx_1, tx_2) \in \{\text{true}, \text{false}\}$
+- Deterministic: $\text{ReplacementChecks}(tx_{1a}, tx_{2a}) = \text{ReplacementChecks}(tx_{1b}, tx_{2b}) \iff tx_{1a} = tx_{1b} \land tx_{2a} = tx_{2b}$
+- Conflict requirement: $\text{ReplacementChecks}(tx_1, tx_2) = \text{true} \implies$ $tx_1$ and $tx_2$ must conflict (share inputs)
+- Same transaction ID: $\text{ReplacementChecks}(tx_1, tx_2) = \text{true} \implies tx_1.id \neq tx_2.id$ (different transactions)
 
 Transaction $tx_2$ can replace $tx_1$ if:
 
@@ -1459,7 +1877,7 @@ The random peer selection ensures uniform probability distribution over all poss
 
 **Proof**: The algorithm returns $\text{Option}<\text{Peer}>$ where $\text{Some}(\text{peer})$ indicates single-peer relay and $\text{None}$ indicates transition to fluff. The fluff phase is the only mechanism for broadcast.
 
-**Implementation Invariants (Kani-Verified)**:
+**Implementation Invariants (BLVM Specification Lock Verified)**:
 1. **No Premature Broadcast**: $\forall tx, \text{phase}: \text{phase} = \text{Stem} \implies \text{broadcast\_count}(tx) = 0$
 2. **Bounded Stem Length**: $\forall tx: \text{stem\_hops}(tx) \leq \text{max\_stem\_hops}$
 3. **Timeout Enforcement**: $\forall tx: \text{elapsed\_time}(tx) > \text{stem\_timeout} \implies \text{phase}(tx) = \text{Fluff}$
@@ -1478,7 +1896,212 @@ $$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{Hash}(tx.witness) : tx \
 **Weight Calculation**: 
 $$\text{Weight}(tx) = 4 \times |\text{Serialize}(tx \setminus witness)| + |\text{Serialize}(tx)|$$
 
-#### 11.1.1 Nested SegWit (P2WSH-in-P2SH, P2WPKH-in-P2SH)
+#### 11.1.1 Weight and Size Calculations
+
+**CalculateTransactionWeight**: $\mathcal{TX} \times \mathcal{W}^? \rightarrow \mathbb{N}$
+
+**Properties**:
+- Weight formula: $\text{CalculateTransactionWeight}(tx, w) = 4 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$
+- Non-negativity: $\text{CalculateTransactionWeight}(tx, w) \geq 0$ for all valid transactions
+- Minimum weight: $\text{CalculateTransactionWeight}(tx, w) \geq 4$ (at least 4 bytes base size)
+- Weight bounds: $\text{CalculateTransactionWeight}(tx, w) \leq W_{\text{max\_tx\_weight}}$ for valid transactions
+- Base size component: $\text{CalculateTransactionWeight}(tx, w) \geq 4 \times \text{BaseSize}(tx)$ (base size is always included)
+- Total size component: $\text{CalculateTransactionWeight}(tx, w) \geq \text{TotalSize}(tx, w)$ (total size is always included)
+- Deterministic: $\text{CalculateTransactionWeight}(tx_1, w_1) = \text{CalculateTransactionWeight}(tx_2, w_2) \iff tx_1 = tx_2 \land w_1 = w_2$
+- Witness impact: $\text{CalculateTransactionWeight}(tx, \text{Some}(w)) \geq \text{CalculateTransactionWeight}(tx, \text{None})$ (witness increases weight)
+
+For transaction $tx$ and witness $w$:
+
+$$\text{CalculateTransactionWeight}(tx, w) = 4 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$$
+
+Where:
+- $\text{BaseSize}(tx) = |\text{Serialize}(tx \setminus witness)|$ (transaction size without witness data)
+- $\text{TotalSize}(tx, w) = |\text{Serialize}(tx)|$ (transaction size with witness data)
+
+**Properties**:
+- Weight formula: $\text{CalculateTransactionWeight}(tx, w) = 4 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$
+- Weight positivity: $\text{CalculateTransactionWeight}(tx, w) > 0$ for all valid transactions
+- Minimum weight: $\text{CalculateTransactionWeight}(tx, w) \geq 4$ (at least 4 bytes base size)
+- Weight bounds: $\text{CalculateTransactionWeight}(tx, w) \leq M_{\text{max\_tx\_weight}}$ for valid transactions
+- Base size component: $\text{CalculateTransactionWeight}(tx, w) \geq 4 \times \text{BaseSize}(tx)$ (base size is always included)
+- Total size component: $\text{CalculateTransactionWeight}(tx, w) \geq \text{TotalSize}(tx, w)$ (total size is always included)
+- Deterministic: $\text{CalculateTransactionWeight}(tx_1, w_1) = \text{CalculateTransactionWeight}(tx_2, w_2) \iff tx_1 = tx_2 \land w_1 = w_2$
+- Witness impact: $\text{CalculateTransactionWeight}(tx, \text{Some}(w)) \geq \text{CalculateTransactionWeight}(tx, \text{None})$ (witness increases weight)
+- Non-negativity: $\text{CalculateTransactionWeight}(tx, w) \geq 0$ for all valid transactions
+
+**WeightToVSize**: $\mathbb{N} \rightarrow \mathbb{N}$
+
+**Properties**:
+- Ceiling division: $\text{WeightToVSize}(w) = \lceil w / 4 \rceil = (w + 3) / 4$
+- Lower bound: $\text{WeightToVSize}(w) \geq w / 4$ for all $w \in \mathbb{N}$
+- Upper bound: $\text{WeightToVSize}(w) \leq (w / 4) + 1$ for all $w \in \mathbb{N}$
+- Zero weight: $\text{WeightToVSize}(0) = 0$
+- Exact division: $w \bmod 4 = 0 \implies \text{WeightToVSize}(w) = w / 4$
+
+For weight $w$:
+
+$$\text{WeightToVSize}(w) = \lceil w / 4 \rceil$$
+
+Implemented as: $\text{WeightToVSize}(w) = (w + 3) / 4$ (integer ceiling division).
+
+**CalculateBlockWeight**: $\mathcal{B} \times \mathcal{W}^* \rightarrow \mathbb{N}$
+
+**Properties**:
+- Weight positivity: $\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) > 0$ for all valid blocks
+- Minimum weight: $\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \geq |b.transactions| \times 4$ (minimum weight per transaction)
+- Block limit: $\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{\text{max}}$ for valid blocks
+- Sum property: $\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) = \sum_{i=1}^{|b.transactions|} \text{CalculateTransactionWeight}(b.transactions[i], w_i)$
+- Deterministic: $\text{CalculateBlockWeight}(b_1, w_{1a}, \ldots) = \text{CalculateBlockWeight}(b_2, w_{2a}, \ldots) \iff b_1 = b_2 \land w_{1a} = w_{2a} \land \ldots$
+- Witness count: $\text{CalculateBlockWeight}(b, w_1, \ldots, w_n)$ requires $|w_1, \ldots, w_n| = |b.transactions|$ (witnesses match transaction count)
+- Monotonicity: Adding transactions increases weight: $|b_1.transactions| < |b_2.transactions| \implies \text{CalculateBlockWeight}(b_1, \ldots) < \text{CalculateBlockWeight}(b_2, \ldots)$
+
+For block $b$ and witnesses $w_1, \ldots, w_n$:
+
+$$\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) = \sum_{i=1}^{|b.\text{transactions}|} \text{CalculateTransactionWeight}(b.\text{transactions}[i], w_i)$$
+
+**Block Weight Limit**: For block $b$:
+
+$$\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{max}$$
+
+Where $W_{max} = 4,000,000$ (MAX_BLOCK_WEIGHT).
+
+#### 11.1.2 Witness Structure Validation
+
+**ValidateSegWitWitnessStructure**: $\mathcal{W} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Element size bounds: $\text{ValidateSegWitWitnessStructure}(w) = \text{true} \iff \forall e \in w : |e| \leq 520$
+- Empty witness: $\text{ValidateSegWitWitnessStructure}(\emptyset) = \text{true}$ (empty witness is valid)
+- Structure validation: $\text{ValidateSegWitWitnessStructure}(w) = \text{true} \implies$ all witness elements respect size limits
+
+For witness $w$:
+
+$$\text{ValidateSegWitWitnessStructure}(w) = \forall e \in w : |e| \leq 520$$
+
+Where 520 is MAX_SCRIPT_ELEMENT_SIZE (maximum witness element size per BIP141).
+
+**IsWitnessEmpty**: $\mathcal{W} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Empty definition: $\text{IsWitnessEmpty}(w) = \text{true} \iff (|w| = 0) \lor (\forall e \in w : |e| = 0)$
+- Boolean result: $\text{IsWitnessEmpty}(w) \in \{\text{true}, \text{false}\}$
+- Empty witness: $\text{IsWitnessEmpty}(\emptyset) = \text{true}$
+
+For witness $w$:
+
+$$\text{IsWitnessEmpty}(w) = (|w| = 0) \lor (\forall e \in w : |e| = 0)$$
+
+#### 11.1.3 Witness Program Extraction
+
+**ExtractWitnessVersion**: $\mathbb{S} \rightarrow \{\text{None}, \text{SegWitV0}, \text{TaprootV1}\}$
+
+**Properties**:
+- Version range: $\text{ExtractWitnessVersion}(s) \neq \text{None} \implies |s| \geq 2 \land (s[0] = 0x00 \lor s[0] = 0x51)$
+- Valid version: $\text{ExtractWitnessVersion}(s) = \text{SegWitV0} \implies s[0] = 0x00 \land |s| \geq 2$
+- Taproot version: $\text{ExtractWitnessVersion}(s) = \text{TaprootV1} \implies s[0] = 0x51 \land |s| \geq 2$
+
+For script $s$:
+
+$$\text{ExtractWitnessVersion}(s) = \begin{cases}
+\text{SegWitV0} & \text{if } |s| \geq 2 \land s[0] = 0x00 \\
+\text{TaprootV1} & \text{if } |s| \geq 2 \land s[0] = 0x51 \\
+\text{None} & \text{otherwise}
+\end{cases}$$
+
+**ExtractWitnessProgram**: $\mathbb{S} \times \{\text{SegWitV0}, \text{TaprootV1}\} \rightarrow \mathbb{S}^?$
+
+**Properties**:
+- Program extraction: $\text{ExtractWitnessProgram}(s, v) = \text{Some}(p) \implies |s| \geq 3$ (minimum script length)
+- SegWit program: $\text{ExtractWitnessProgram}(s, \text{SegWitV0}) = \text{Some}(p) \implies s[1]] \in \{0x14, 0x20\} \land |s| \geq 3$
+- Taproot program: $\text{ExtractWitnessProgram}(s, \text{TaprootV1}) = \text{Some}(p) \implies s[1] = 0x20 \land |s| \geq 3$
+
+For script $s$ and version $v$:
+
+$$\text{ExtractWitnessProgram}(s, v) = \begin{cases}
+s[2..|s|] & \text{if } v = \text{SegWitV0} \land s[1] \in \{0x14, 0x20\} \\
+s[2..|s|] & \text{if } v = \text{TaprootV1} \land s[1] = 0x20 \\
+\text{None} & \text{otherwise}
+\end{cases}$$
+
+**ValidateWitnessProgramLength**: $\mathbb{S} \times \{\text{SegWitV0}, \text{TaprootV1}\} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Valid program length: $\text{ValidateWitnessProgramLength}(p, v) = \text{true} \implies |p| > 0$
+- SegWit length: $\text{ValidateWitnessProgramLength}(p, \text{SegWitV0}) = \text{true} \iff |p| = 20 \lor |p| = 32$
+- Taproot length: $\text{ValidateWitnessProgramLength}(p, \text{TaprootV1}) = \text{true} \iff |p| = 32$
+
+For program $p$ and version $v$:
+
+$$\text{ValidateWitnessProgramLength}(p, v) = \begin{cases}
+|p| = 20 \lor |p| = 32 & \text{if } v = \text{SegWitV0} \\
+|p| = 32 & \text{if } v = \text{TaprootV1} \\
+\text{false} & \text{otherwise}
+\end{cases}$$
+
+#### 11.1.4 Witness Merkle Root
+
+**ComputeWitnessMerkleRoot**: $\mathcal{B} \times \mathcal{W}^* \rightarrow \mathbb{H}$
+
+**Properties**:
+- Root length: $\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = root \implies |root| = 32$ (32-byte hash)
+- Non-zero root: $\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = root \implies root \neq 0^{32}$ (unless all witnesses empty)
+- Block requirement: $\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n)$ requires $|b.transactions| > 0$
+
+For block $b$ and witnesses $w_1, \ldots, w_n$:
+
+$$\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = \text{ComputeMerkleRoot}(\{\text{Hash}(w_i) : i \in [1, |b.\text{transactions}|]\})$$
+
+Where:
+- $\text{Hash}(w_1) = [0]^{32}$ (coinbase witness is empty, hash is zero)
+- $\text{Hash}(w_i) = \text{SHA256}(\text{SHA256}(\text{Serialize}(w_i)))$ for $i > 1$
+
+#### 11.1.5 Witness Commitment Validation
+
+**ValidateWitnessCommitment**: $\mathcal{TX} \times \mathbb{H} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Coinbase requirement: $\text{ValidateWitnessCommitment}(tx, root) = \text{true} \implies \text{IsCoinbase}(tx) = \text{true}$
+- Commitment existence: $\text{ValidateWitnessCommitment}(tx, root) = \text{true} \iff \exists o \in tx.outputs : \text{IsWitnessCommitment}(o.scriptPubkey, root)$
+- Boolean result: $\text{ValidateWitnessCommitment}(tx, root) \in \{\text{true}, \text{false}\}$
+
+For coinbase transaction $tx$ and witness root $root$:
+
+$$\text{ValidateWitnessCommitment}(tx, root) = \exists o \in tx.\text{outputs} : \text{IsWitnessCommitment}(o.\text{scriptPubkey}, root)$$
+
+Where $\text{IsWitnessCommitment}(spk, root) = (|spk| = 38) \land (spk[0] = 0x6a) \land (spk[1] = 0x24) \land (spk[2..34] = root) \land (spk[34..38] = [0x00, 0x00, 0x00, 0x00])$
+
+#### 11.1.6 SegWit Transaction Detection
+
+**IsSegWitTransaction**: $\mathcal{TX} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Output detection: $\text{IsSegWitTransaction}(tx) = \text{true} \iff \exists o \in tx.outputs : \text{IsSegWitOutput}(o.scriptPubkey)$
+- Boolean result: $\text{IsSegWitTransaction}(tx) \in \{\text{true}, \text{false}\}$
+- Witness presence: $\text{IsSegWitTransaction}(tx) = \text{true} \implies$ transaction may have witness data
+
+For transaction $tx$:
+
+$$\text{IsSegWitTransaction}(tx) = \exists o \in tx.\text{outputs} : \text{IsSegWitOutput}(o.\text{scriptPubkey})$$
+
+Where $\text{IsSegWitOutput}(spk) = (|spk| \in \{22, 34\}) \land (spk[0] = 0x00) \land ((spk[1] = 0x14) \lor (spk[1] = 0x20))$
+
+#### 11.1.7 Block Validation
+
+**ValidateSegWitBlock**: $\mathcal{B} \times \mathcal{W}^* \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- Validation correctness: $\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, root) = \text{valid} \iff \text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = root \land \text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{\text{max}}$
+- Boolean result: $\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, root) \in \{\text{valid}, \text{invalid}\}$
+- Weight limit: $\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, root) = \text{valid} \implies \text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{\text{max}}$
+
+For block $b$, witnesses $w_1, \ldots, w_n$, and witness root $root$:
+
+$$\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, root) = \begin{cases}
+\text{valid} & \text{if } \text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = root \land \text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{max} \\
+\text{invalid} & \text{otherwise}
+\end{cases}$$
+
+#### 11.1.8 Nested SegWit (P2WSH-in-P2SH, P2WPKH-in-P2SH)
 
 **Nested SegWit**: SegWit outputs can be wrapped in P2SH, creating nested SegWit transactions.
 
@@ -1527,6 +2150,131 @@ $$\text{OutputKey} = \text{InternalPubKey} + \text{TaprootTweak}(\text{MerkleRoo
 
 **Script Path**: Alternative spending path using merkle proof
 
+#### 11.2.1 Taproot Script Validation
+
+**ValidateTaprootScript**: $\mathbb{S} \rightarrow \{\text{true}, \text{false}\}$
+
+For script $s$:
+
+$$\text{ValidateTaprootScript}(s) = (|s| = 34) \land (s[0] = 0x51) \land (s[1] = 0x20)$$
+
+**Properties**:
+- Length validation: $\text{ValidateTaprootScript}(s) = \text{true} \iff |s| = 34$
+- Format correctness: $\text{ValidateTaprootScript}(s) = \text{true} \implies s[0] = 0x51 \land s[1] = 0x20$
+- Invalid length: $|s| \neq 34 \implies \text{ValidateTaprootScript}(s) = \text{false}$
+
+**ExtractTaprootOutputKey**: $\mathbb{S} \rightarrow \{[0,1]^{256}\}^?$
+
+**Properties**:
+- Key extraction: $\text{ExtractTaprootOutputKey}(s) = \text{Some}(k) \implies \text{ValidateTaprootScript}(s) = \text{true}$
+- Key length: $\text{ExtractTaprootOutputKey}(s) = \text{Some}(k) \implies |k| = 32$ (32-byte public key)
+- Script validation: $\text{ExtractTaprootOutputKey}(s) = \text{Some}(k) \implies |s| = 34 \land s[0] = 0x51 \land s[1] = 0x20$
+
+For script $s$:
+
+$$\text{ExtractTaprootOutputKey}(s) = \begin{cases}
+s[2..34] & \text{if } \text{ValidateTaprootScript}(s) \\
+\text{None} & \text{otherwise}
+\end{cases}$$
+
+**IsTaprootOutput**: $\mathcal{T} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Output detection: $\text{IsTaprootOutput}(o) = \text{true} \iff \text{ValidateTaprootScript}(o.scriptPubkey) = \text{true}$
+- Boolean result: $\text{IsTaprootOutput}(o) \in \{\text{true}, \text{false}\}$
+- Script validation: $\text{IsTaprootOutput}(o) = \text{true} \implies |o.scriptPubkey| = 34 \land o.scriptPubkey[0] = 0x51$
+
+For transaction output $o$:
+
+$$\text{IsTaprootOutput}(o) = \text{ValidateTaprootScript}(o.\text{scriptPubkey})$$
+
+#### 11.2.2 Taproot Key Operations
+
+**ComputeTaprootTweak**: $[0,1]^{256} \times \mathbb{H} \rightarrow [0,1]^{256}$
+
+**Properties**:
+- Tweak length: $\text{ComputeTaprootTweak}(pk, root) = t \implies |t| = 32$ (32-byte tweak)
+- Deterministic: $\text{ComputeTaprootTweak}(pk_1, root_1) = \text{ComputeTaprootTweak}(pk_2, root_2) \iff pk_1 = pk_2 \land root_1 = root_2$
+- Hash property: $\text{ComputeTaprootTweak}(pk, root)$ uses tagged hash for domain separation
+
+For internal public key $pk$ and merkle root $root$:
+
+$$\text{ComputeTaprootTweak}(pk, root) = \text{TaggedHash}(\text{"TapTweak"}, pk, root)$$
+
+Where $\text{TaggedHash}$ is BIP340 tagged hash function.
+
+**ValidateTaprootKeyAggregation**: $[0,1]^{256} \times [0,1]^{256} \times \mathbb{H} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Key aggregation correctness: $\text{ValidateTaprootKeyAggregation}(pk, out, root) = \text{true} \iff out = pk + \text{ComputeTaprootTweak}(pk, root) \times G$
+- Boolean result: $\text{ValidateTaprootKeyAggregation}(pk, out, root) \in \{\text{true}, \text{false}\}$
+- Elliptic curve operation: $\text{ValidateTaprootKeyAggregation}(pk, out, root)$ validates elliptic curve point addition
+
+For internal public key $pk$, output key $out$, and merkle root $root$:
+
+$$\text{ValidateTaprootKeyAggregation}(pk, out, root) = (out = pk + \text{ComputeTaprootTweak}(pk, root) \times G)$$
+
+#### 11.2.3 Taproot Script Path
+
+**ValidateTaprootScriptPath**: $\mathbb{S} \times [\mathbb{H}]^* \times [0,1]^{256} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Merkle proof validation: $\text{ValidateTaprootScriptPath}(s, proof, out) = \text{true} \iff \text{ComputeScriptMerkleRoot}(s, proof) = \text{ExtractMerkleRoot}(out)$
+- Boolean result: $\text{ValidateTaprootScriptPath}(s, proof, out) \in \{\text{true}, \text{false}\}$
+- Script path correctness: $\text{ValidateTaprootScriptPath}(s, proof, out)$ validates script is in Taproot merkle tree
+
+For script $s$, merkle proof $proof$, and output key $out$:
+
+$$\text{ValidateTaprootScriptPath}(s, proof, out) = \begin{cases}
+\text{true} & \text{if } \text{ComputeScriptMerkleRoot}(s, proof) = \text{ExtractMerkleRoot}(out) \\
+\text{false} & \text{otherwise}
+\end{cases}$$
+
+#### 11.2.4 Taproot Witness Structure
+
+**ValidateTaprootWitnessStructure**: $\mathcal{W} \times \{\text{true}, \text{false}\} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Key path structure: $\text{ValidateTaprootWitnessStructure}(w, \text{false}) = \text{true} \iff |w| = 1 \land |w[0]| = 64$ (single 64-byte signature)
+- Script path structure: $\text{ValidateTaprootWitnessStructure}(w, \text{true}) = \text{true} \iff |w| \geq 2 \land |w[|w|-1]| \geq 33 \land (|w[|w|-1]| - 33) \bmod 32 = 0$
+- Boolean result: $\text{ValidateTaprootWitnessStructure}(w, is\_script) \in \{\text{true}, \text{false}\}$
+
+For witness $w$ and script path flag $is\_script$:
+
+$$\text{ValidateTaprootWitnessStructure}(w, is\_script) = \begin{cases}
+|w| = 1 \land |w[0]| = 64 & \text{if } \neg is\_script \text{ (key path)} \\
+|w| \geq 2 \land |w[|w|-1]| \geq 33 \land (|w[|w|-1]| - 33) \bmod 32 = 0 & \text{if } is\_script \text{ (script path)}
+\end{cases}$$
+
+#### 11.2.5 Taproot Transaction Validation
+
+**ValidateTaprootTransaction**: $\mathcal{TX} \times \mathcal{W}^? \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- ScriptSig empty: $\text{ValidateTaprootTransaction}(tx, w) = \text{valid} \implies \forall i \in tx.inputs : \text{IsP2TR}(tx.outputs[j].scriptPubkey) \implies i.scriptSig = \emptyset$
+- Witness structure: $\text{ValidateTaprootTransaction}(tx, w) = \text{valid} \implies \text{ValidateTaprootWitnessStructure}(w, \text{IsScriptPath}(w)) = \text{true}$
+- Validation correctness: $\text{ValidateTaprootTransaction}(tx, w)$ validates all Taproot-specific rules
+
+For transaction $tx$ and witness $w$:
+
+$$\text{ValidateTaprootTransaction}(tx, w) = \begin{cases}
+\text{valid} & \text{if } \forall i \in tx.\text{inputs} : \text{IsP2TR}(tx.\text{outputs}[j].\text{scriptPubkey}) \implies i.\text{scriptSig} = \emptyset \land \text{ValidateTaprootWitnessStructure}(w, \text{IsScriptPath}(w)) \\
+\text{invalid} & \text{otherwise}
+\end{cases}$$
+
+#### 11.2.6 Taproot Signature Hash
+
+**ComputeTaprootSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \mathbb{N}_{32} \times \mathbb{H}^? \rightarrow \mathbb{H}$
+
+**Properties**:
+- Hash length: $\text{ComputeTaprootSignatureHash}(tx, i, us, type, leaf) = h \implies |h| = 32$ (32-byte hash)
+- Deterministic: $\text{ComputeTaprootSignatureHash}(tx_1, i_1, us_1, type_1, leaf_1) = \text{ComputeTaprootSignatureHash}(tx_2, i_2, us_2, type_2, leaf_2) \iff tx_1 = tx_2 \land i_1 = i_2 \land us_1 = us_2 \land type_1 = type_2 \land leaf_1 = leaf_2$
+- Tagged hash: $\text{ComputeTaprootSignatureHash}(tx, i, us, type, leaf)$ uses BIP340 tagged hash for domain separation
+
+For transaction $tx$, input index $i$, UTXO set $us$, sighash type $type$, and leaf hash $leaf$:
+
+$$\text{ComputeTaprootSignatureHash}(tx, i, us, type, leaf) = \text{TaggedHash}(\text{"TapSighash"}, tx, i, us(i.\text{prevout}), type, leaf)$$
+
 **Theorem 11.2.1** (Taproot Empty ScriptSig): Taproot transactions require empty scriptSig for all inputs spending P2TR outputs.
 
 *Proof*: By construction, Taproot validation happens entirely through witness data (key path or script path). The scriptPubKey `OP_1 <32-byte-hash>` is not executable as a script, so scriptSig must be empty. If scriptSig is non-empty, validation fails before witness processing.
@@ -1560,6 +2308,11 @@ A block undo log contains all undo entries for a block, stored in reverse order 
 
 **DisconnectBlock**: $\mathcal{B} \times \mathcal{UL} \times \mathcal{US} \rightarrow \mathcal{US}$
 
+**Properties**:
+- Undo correctness: $\text{DisconnectBlock}(b, ul, us) = us' \implies$ UTXO set $us'$ reflects state before block $b$ was connected
+- Idempotency: $\text{DisconnectBlock}(b, ul, \text{ConnectBlock}(b, us, h)) = us$ (perfect inverse)
+- Undo log length: $|\text{DisconnectBlock}(b, ul, us)| = |us| - |ul|$ (undo log entries match block changes)
+
 For block $b$, undo log $ul$, and UTXO set $us$:
 
 $$\text{DisconnectBlock}(b, ul, us) = \begin{cases}
@@ -1576,7 +2329,7 @@ Where $\text{ApplyUndoLog}$ processes each entry $e \in ul$ in order:
 $$\forall b \in \mathcal{B}, us \in \mathcal{US}, ul \in \mathcal{UL}:$$
 $$\text{DisconnectBlock}(b, ul, \text{ConnectBlock}(b, us)) = us$$
 
-*Proof*: By construction, the undo log $ul$ created during $\text{ConnectBlock}$ records all UTXO changes. When $\text{DisconnectBlock}$ applies the undo log, it reverses each change exactly, restoring the original UTXO set. This is proven by Kani formal verification (see `kani_disconnect_connect_idempotency_with_undo`).
+*Proof*: By construction, the undo log $ul$ created during $\text{ConnectBlock}$ records all UTXO changes. When $\text{DisconnectBlock}$ applies the undo log, it reverses each change exactly, restoring the original UTXO set. This is proven by blvm-spec-lock formal verification.
 
 **Corollary 11.3.1.1**: Undo logs enable perfect historical state restoration without re-validating blocks.
 
@@ -1600,6 +2353,16 @@ A UTXO commitment contains:
 
 **GenerateCommitment**: $\mathcal{US} \times \mathbb{H} \times \mathbb{N} \rightarrow \mathcal{UC}$
 
+**Properties**:
+- Merkle root correctness: $\text{GenerateCommitment}(us, bh, h).\text{merkle\_root} = \text{BuildMerkleTree}(us)$ (merkle root commits to entire UTXO set)
+- Height consistency: $\text{GenerateCommitment}(us, bh, h).\text{block\_height} = h$ (height matches input)
+- UTXO count: $\text{GenerateCommitment}(us, bh, h).\text{utxo\_count} = |us|$ (count matches UTXO set size)
+- Total supply: $\text{GenerateCommitment}(us, bh, h).\text{total\_supply} = \sum_{u \in us} u.\text{value}$ (total supply equals sum of UTXO values)
+- Block hash: $\text{GenerateCommitment}(us, bh, h).\text{block\_hash} = bh$ (block hash matches input)
+- Deterministic: $\text{GenerateCommitment}(us_1, bh_1, h_1) = \text{GenerateCommitment}(us_2, bh_2, h_2) \iff us_1 = us_2 \land bh_1 = bh_2 \land h_1 = h_2$
+- Merkle root length: $\text{GenerateCommitment}(us, bh, h).\text{merkle\_root}$ is 32 bytes (SHA256 hash)
+- Supply consistency: $\text{GenerateCommitment}(us, bh, h).\text{total\_supply} \leq \text{MAX\_MONEY}$ (supply respects maximum)
+
 For UTXO set $us$, block hash $bh$, and height $h$:
 
 $$\text{GenerateCommitment}(us, bh, h) = \begin{cases}
@@ -1612,6 +2375,15 @@ uc & \text{where } uc.\text{merkle\_root} = \text{BuildMerkleTree}(us) \\
 
 **FindConsensus**: $[\mathcal{UC}] \times [0,1] \rightarrow \mathcal{UC}^?$
 
+**Properties**:
+- Consensus existence: $\text{FindConsensus}(cs, t) = \text{Some}(c) \implies \frac{|\{c' \in cs : c' = c\}|}{|cs|} \geq t$ (consensus requires threshold agreement)
+- Threshold requirement: $\text{FindConsensus}(cs, t) = \text{Some}(c) \implies$ at least $\lceil |cs| \times t \rceil$ commitments match $c$ (integer threshold)
+- No consensus: $\text{FindConsensus}(cs, t) = \text{None} \implies \nexists c \in cs: \frac{|\{c' \in cs : c' = c\}|}{|cs|} \geq t$ (no commitment meets threshold)
+- Minimum peers: $\text{FindConsensus}(cs, t)$ requires $|cs| \geq \text{min\_peers}$ (enough peers for consensus)
+- Deterministic: $\text{FindConsensus}(cs_1, t_1) = \text{FindConsensus}(cs_2, t_2) \iff cs_1 = cs_2 \land t_1 = t_2$
+- Result type: $\text{FindConsensus}(cs, t) \in \{\text{Some}(\mathcal{UC}), \text{None}\}$
+- Threshold range: $\text{FindConsensus}(cs, t)$ requires $t \in [0, 1]$ (threshold must be valid probability)
+
 For commitments $cs \in [\mathcal{UC}]$ and threshold $t \in [0,1]$:
 
 $$\text{FindConsensus}(cs, t) = \begin{cases}
@@ -1620,6 +2392,15 @@ c & \text{if } \exists c \in cs: \frac{|\{c' \in cs : c' = c\}|}{|cs|} \geq t \\
 \end{cases}$$
 
 **VerifyConsensusCommitment**: $\mathcal{UC} \times [\mathcal{H}] \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- PoW verification: $\text{VerifyConsensusCommitment}(uc, hs) = \text{valid} \implies \text{VerifyPoW}(uc.\text{block\_hash}, hs) = \text{true}$ (PoW must be valid)
+- Header chain: $\text{VerifyConsensusCommitment}(uc, hs) = \text{valid} \implies uc.\text{block\_hash} \in hs$ (block hash in header chain)
+- Commitment validity: $\text{VerifyConsensusCommitment}(uc, hs) = \text{valid} \implies$ commitment $uc$ is cryptographically valid
+- Supply verification: $\text{VerifyConsensusCommitment}(uc, hs) = \text{valid} \implies \text{VerifySupply}(uc.\text{total\_supply}, uc.\text{block\_height}) = \text{true}$
+- Result type: $\text{VerifyConsensusCommitment}(uc, hs) \in \{\text{valid}, \text{invalid}\}$
+- Deterministic: $\text{VerifyConsensusCommitment}(uc_1, hs_1) = \text{VerifyConsensusCommitment}(uc_2, hs_2) \iff uc_1 = uc_2 \land hs_1 = hs_2$
+- Non-empty headers: $\text{VerifyConsensusCommitment}(uc, hs)$ requires $|hs| > 0$ (header chain must not be empty)
 
 For commitment $uc$ and headers $hs$:
 
@@ -1634,7 +2415,7 @@ $$\text{VerifyConsensusCommitment}(uc, hs) = \begin{cases}
 $$\forall cs \in [\mathcal{UC}], t \in [0,1]:$$
 $$\text{FindConsensus}(cs, t) = c \iff \lceil |cs| \times t \rceil \text{ peers agree on } c$$
 
-*Proof*: The threshold check uses integer arithmetic: $required = \lceil |cs| \times t \rceil$. If $agreement\_count \geq required$, then $agreement\_count / |cs| \geq t$ (within floating-point precision). This avoids floating-point precision issues and is proven by Kani formal verification (see `kani_integer_threshold_calculation`).
+*Proof*: The threshold check uses integer arithmetic: $required = \lceil |cs| \times t \rceil$. If $agreement\_count \geq required$, then $agreement\_count / |cs| \geq t$ (within floating-point precision). This avoids floating-point precision issues and is proven by blvm-spec-lock formal verification.
 
 **Integer Arithmetic for Threshold Calculations**: To avoid floating-point precision issues in consensus-critical calculations, we use integer arithmetic with ceiling operations. For threshold $t \in [0,1]$ and count $n \in \mathbb{N}$:
 
@@ -1649,7 +2430,7 @@ $$(agreement < required \implies \frac{agreement}{n} < t + \epsilon)$$
 
 Where $\epsilon$ is floating-point precision error (typically $< 10^{-15}$).
 
-*Proof*: By properties of ceiling function and floating-point arithmetic. The integer calculation ensures we err on the side of requiring more agreement, which is safer for consensus. This is proven by Kani formal verification (see `kani_integer_threshold_calculation`).
+*Proof*: By properties of ceiling function and floating-point arithmetic. The integer calculation ensures we err on the side of requiring more agreement, which is safer for consensus. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 11.4.3** (Commitment Verification): UTXO commitments can be verified without full UTXO set:
 
@@ -1665,6 +2446,16 @@ $$utxo \in us \land us[\text{outpoint}] = utxo$$
 ### 12.1 Block Template Generation
 
 **CreateNewBlock**: $\mathcal{US} \times \mathcal{TX}^* \rightarrow \mathcal{B}$
+
+**Properties**:
+- Block structure: $\text{CreateNewBlock}(us, mempool)$ returns a block with at least one transaction (coinbase)
+- Coinbase requirement: First transaction in block is coinbase: $\text{CreateNewBlock}(us, mempool) = block \implies \text{IsCoinbase}(block.transactions[0]) = \text{true}$
+- Transaction ordering: Coinbase is first, followed by mempool transactions
+- Block validity: $\text{CreateNewBlock}(us, mempool) = block \implies \text{CheckTransaction}(block.transactions[0]) = \text{valid}$ (coinbase is valid)
+- Difficulty validity: $\text{CreateNewBlock}(us, mempool) = block \implies block.header.bits > 0$ (valid difficulty)
+- Minimum transactions: $\text{CreateNewBlock}(us, mempool) = block \implies |block.transactions| \geq 1$ (at least coinbase)
+- Deterministic structure: Block structure follows deterministic rules (coinbase first, then mempool transactions)
+- Merkle root: $\text{CreateNewBlock}(us, mempool) = block \implies block.header.hashMerkleRoot = \text{BlockMerkleRoot}(block.transactions)$
 
 For UTXO set $us$ and mempool transactions $mempool$:
 
@@ -1694,6 +2485,16 @@ For UTXO set $us$ and mempool transactions $mempool$:
 ### 12.3 Mining Process
 
 **MineBlock**: $\mathcal{B} \times \mathbb{N} \rightarrow \mathcal{B} \times \{\text{success}, \text{failure}\}$
+
+**Properties**:
+- PoW success: $\text{MineBlock}(block, maxTries) = (block', \text{success}) \implies \text{CheckProofOfWork}(block') = \text{true}$ (mined block passes PoW)
+- Merkle root: $\text{MineBlock}(block, maxTries) = (block', \_) \implies block'.\text{hashMerkleRoot} = \text{BlockMerkleRoot}(block')$ (merkle root is correct)
+- Nonce modification: $\text{MineBlock}(block, maxTries) = (block', \text{success}) \implies block'.\text{nonce} \neq block.\text{nonce}$ (nonce changed during mining)
+- Max attempts: $\text{MineBlock}(block, maxTries)$ requires $maxTries > 0$ (must have at least one attempt)
+- Result type: $\text{MineBlock}(block, maxTries) \in \{(\mathcal{B}, \text{success}), (\mathcal{B}, \text{failure})\}$
+- Failure condition: $\text{MineBlock}(block, maxTries) = (block', \text{failure}) \implies$ all $maxTries$ attempts failed to find valid PoW
+- Success condition: $\text{MineBlock}(block, maxTries) = (block', \text{success}) \implies$ found valid PoW within $maxTries$ attempts
+- Block structure preserved: $\text{MineBlock}(block, maxTries) = (block', \_) \implies$ all block fields except nonce and hash remain unchanged
 
 For block template $block$ and max attempts $maxTries$:
 
@@ -1809,13 +2610,13 @@ $$\forall x \in \mathcal{D}: \text{deserialize}(\text{serialize}(x)) = x$$
 
 Where $\mathcal{D}$ is the domain of serializable data structures (block headers, transactions, etc.).
 
-*Proof*: By construction, the serialization format is designed to be lossless and reversible. All fields are encoded in a deterministic format that can be exactly reconstructed. This is proven by Kani formal verification (see `kani_block_header_serialization_round_trip`, `kani_transaction_serialization_round_trip`).
+*Proof*: By construction, the serialization format is designed to be lossless and reversible. All fields are encoded in a deterministic format that can be exactly reconstructed. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 13.3.2.2** (Serialization Determinism): Serialization is deterministic:
 
 $$\forall x \in \mathcal{D}: \text{serialize}(x) \text{ is deterministic (same input always produces same output)}$$
 
-*Proof*: The serialization process uses only the input data structure and deterministic encoding rules. There are no random elements or non-deterministic operations. This is proven by Kani formal verification (see `kani_block_header_serialization_determinism`, `kani_transaction_serialization_determinism`).
+*Proof*: The serialization process uses only the input data structure and deterministic encoding rules. There are no random elements or non-deterministic operations. This is proven by blvm-spec-lock formal verification.
 
 #### 13.3.3 Resource Limit Enforcement
 
@@ -1852,21 +2653,21 @@ $$\forall lt \in \mathbb{N}_{32}:$$
 $$\text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt \land$$
 $$\text{LocktimeType}(lt) \text{ is consistent for CLTV and CSV}$$
 
-*Proof*: Both BIP65 and BIP112 use the same locktime encoding/decoding and type determination functions. The shared implementation ensures consistency. This is proven by Kani formal verification (see `kani_bip65_bip112_locktime_consistency`).
+*Proof*: Both BIP65 and BIP112 use the same locktime encoding/decoding and type determination functions. The shared implementation ensures consistency. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 13.3.5.2** (Locktime/Script Integration): Locktime validation integrates correctly with script execution:
 
 $$\forall tx \in \mathcal{TX}, script \in \mathcal{SC}, lt \in \mathbb{N}_{32}:$$
 $$\text{ExecuteScript}(script, tx, lt) \text{ uses consistent locktime validation}$$
 
-*Proof*: Script execution uses the same locktime validation functions as standalone locktime checks, ensuring consistency between script-level and transaction-level locktime validation. This is proven by Kani formal verification (see `kani_locktime_script_integration`).
+*Proof*: Script execution uses the same locktime validation functions as standalone locktime checks, ensuring consistency between script-level and transaction-level locktime validation. This is proven by blvm-spec-lock formal verification.
 
 **Theorem 13.3.5.3** (Economic/Block Integration): Economic rules integrate correctly with block validation:
 
 $$\forall b \in \mathcal{B}, h \in \mathbb{N}:$$
 $$\text{ConnectBlock}(b, us, h) \text{ enforces economic invariants (subsidy, fees, supply limits)}$$
 
-*Proof*: Block connection validates economic rules (subsidy calculation, fee validation, supply limits) as part of the block validation process, ensuring economic correctness is maintained. This is proven by Kani formal verification (see `kani_economic_block_integration`).
+*Proof*: Block connection validates economic rules (subsidy calculation, fee validation, supply limits) as part of the block validation process, ensuring economic correctness is maintained. This is proven by blvm-spec-lock formal verification.
 
 ## 15. Governance Model
 
