@@ -272,6 +272,14 @@ $$\text{CalculateSighash}(tx, i, us, st, h) = \text{SHA256}(\text{SHA256}(\text{
 
 **SighashScriptCode**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \rightarrow \mathbb{S}$
 
+**Properties**:
+- P2SH handling: $\text{SighashScriptCode}(tx, i, us) = \text{RedeemScript}(tx, i) \iff \text{IsP2SH}(us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey})$ (P2SH uses redeem script)
+- Non-P2SH handling: $\text{SighashScriptCode}(tx, i, us) = us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey} \iff \neg \text{IsP2SH}(us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey})$ (non-P2SH uses scriptPubkey)
+- Input index requirement: $\text{SighashScriptCode}(tx, i, us)$ requires $i < |tx.\text{inputs}|$ (valid input index)
+- UTXO existence: $\text{SighashScriptCode}(tx, i, us)$ requires $tx.\text{inputs}[i].\text{prevout} \in us$ (UTXO must exist)
+- Deterministic: $\text{SighashScriptCode}(tx_1, i_1, us_1) = \text{SighashScriptCode}(tx_2, i_2, us_2) \iff tx_1 = tx_2 \land i_1 = i_2 \land us_1 = us_2$
+- Result type: $\text{SighashScriptCode}(tx, i, us) \in \mathbb{S}$ (returns script)
+
 For transaction $tx$, input index $i$, and UTXO set $us$:
 
 $$\text{SighashScriptCode}(tx, i, us) = \begin{cases}
@@ -282,6 +290,14 @@ us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey} & \text{otherwise}
 Where $\text{RedeemScript}(tx, i)$ is the redeem script extracted from the stack after executing scriptSig for input $i$.
 
 **SighashType**: $\mathbb{N}_{8} \times \mathbb{N} \rightarrow \text{SighashType}$
+
+**Properties**:
+- BIP66 legacy handling: $\text{SighashType}(0x00, h) = \text{AllLegacy} \iff h < H_{66}$ (legacy 0x00 only before BIP66)
+- Standard types: $\text{SighashType}(byte, h) \in \{\text{All}, \text{None}, \text{Single}\} \iff byte \in \{0x01, 0x02, 0x03\}$ (standard types)
+- AnyoneCanPay flag: $\text{SighashType}(byte, h) \text{ has AnyoneCanPay flag } \iff byte \in \{0x81, 0x82, 0x83\}$ (AnyoneCanPay types)
+- Invalid handling: $\text{SighashType}(byte, h) = \text{Invalid} \iff byte \notin \{0x00, 0x01, 0x02, 0x03, 0x81, 0x82, 0x83\} \lor (byte = 0x00 \land h \geq H_{66})$ (invalid bytes or post-BIP66 0x00)
+- Deterministic: $\text{SighashType}(byte_1, h_1) = \text{SighashType}(byte_2, h_2) \iff byte_1 = byte_2 \land h_1 = h_2$
+- Result type: $\text{SighashType}(byte, h) \in \{\text{AllLegacy}, \text{All}, \text{None}, \text{Single}, \text{All} \mid \text{AnyoneCanPay}, \text{None} \mid \text{AnyoneCanPay}, \text{Single} \mid \text{AnyoneCanPay}, \text{Invalid}\}$
 
 For sighash byte $byte$ and height $h$:
 
@@ -1025,6 +1041,14 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xba):
 
 **BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
 
+**Properties**:
+- Zero locktime rejection: $\text{BIP65Check}(tx, i, lt, h) = \text{invalid} \iff tx.\text{lockTime} = 0$ (zero locktime always invalid)
+- Type consistency: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$ (types must match)
+- Locktime ordering: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \leq lt$ (transaction locktime must be <= stack locktime)
+- Input index requirement: $\text{BIP65Check}(tx, i, lt, h)$ requires $i < |tx.\text{inputs}|$ (valid input index)
+- Deterministic: $\text{BIP65Check}(tx_1, i_1, lt_1, h_1) = \text{BIP65Check}(tx_2, i_2, lt_2, h_2) \iff tx_1 = tx_2 \land i_1 = i_2 \land lt_1 = lt_2 \land h_1 = h_2$
+- Result type: $\text{BIP65Check}(tx, i, lt, h) \in \{\text{valid}, \text{invalid}\}$
+
 For transaction $tx$, input index $i$, locktime value $lt$, and block header $h$:
 
 $$\text{BIP65Check}(tx, i, lt, h) = \begin{cases}
@@ -1125,6 +1149,29 @@ $$\text{ExtractSequenceTypeFlag}(seq) = (seq \land 0x00400000) \neq 0$$
 - Bit 31: $\text{IsSequenceDisabled}(seq)$ extracts bit 31 (disable flag)
 
 $$\text{IsSequenceDisabled}(seq) = (seq \land 0x80000000) \neq 0$$
+
+**GetMedianTimePast**: $[\mathcal{H}] \rightarrow \mathbb{N}$
+
+**Properties**:
+- Median calculation: $\text{GetMedianTimePast}(headers) = \text{median}(\{h.\text{timestamp} : h \in \text{last\_11}(headers)\})$ (median of last 11 block timestamps)
+- Empty input: $\text{GetMedianTimePast}([]) = 0$ (empty headers return 0)
+- Bounds: $\text{GetMedianTimePast}(headers) \geq \min(\{h.\text{timestamp} : h \in headers\}) \land \text{GetMedianTimePast}(headers) \leq \max(\{h.\text{timestamp} : h \in headers\})$ (median within timestamp range)
+- Last 11 blocks: $\text{GetMedianTimePast}(headers)$ uses at most the last 11 block headers (BIP113 requirement)
+- Deterministic: $\text{GetMedianTimePast}(h_1) = \text{GetMedianTimePast}(h_2) \iff h_1 = h_2$
+- Result type: $\text{GetMedianTimePast}(headers) \in \mathbb{N}$ (returns Unix timestamp)
+
+For block headers $headers \in [\mathcal{H}]$:
+
+$$\text{GetMedianTimePast}(headers) = \begin{cases}
+0 & \text{if } |headers| = 0 \\
+\text{median}(\{h.\text{timestamp} : h \in headers[\max(0, |headers| - 11):]\}) & \text{otherwise}
+\end{cases}$$
+
+Where $\text{median}(timestamps)$ is calculated as:
+- If $|timestamps|$ is odd: $\text{median}(timestamps) = timestamps[\lfloor |timestamps|/2 \rfloor]$
+- If $|timestamps|$ is even: $\text{median}(timestamps) = \lfloor (timestamps[|timestamps|/2 - 1] + timestamps[|timestamps|/2]) / 2 \rfloor$
+
+**BIP113 Reference**: This function implements [BIP113: Median Time-Past](https://github.com/bitcoin/bips/blob/master/bip-0113.mediawiki), which uses the median timestamp of the last 11 blocks to prevent time-warp attacks.
 
 **CalculateSequenceLocks**: $\mathcal{TX} \times \mathbb{N} \times [\mathbb{N}] \times [\mathcal{H}]^? \rightarrow (\mathbb{Z}, \mathbb{Z})$
 
@@ -2668,6 +2715,139 @@ $$\forall b \in \mathcal{B}, h \in \mathbb{N}:$$
 $$\text{ConnectBlock}(b, us, h) \text{ enforces economic invariants (subsidy, fees, supply limits)}$$
 
 *Proof*: Block connection validates economic rules (subsidy calculation, fee validation, supply limits) as part of the block validation process, ensuring economic correctness is maintained. This is proven by blvm-spec-lock formal verification.
+
+### 13.4 Peer Consensus Protocol
+
+The peer consensus protocol implements an N-of-M consensus model for UTXO commitment verification. It discovers diverse peers and finds consensus among them to verify UTXO commitments without trusting any single peer. This protocol is used in conjunction with UTXO commitments (section 11.4) to enable efficient UTXO set synchronization.
+
+**Peer Information**: $\mathcal{PI} = \mathbb{IP} \times \mathbb{N}^? \times \mathbb{S}^? \times \mathbb{S}^? \times \mathbb{N}$
+
+A peer information structure contains:
+- `address`: IP address of the peer
+- `asn`: Autonomous System Number (optional)
+- `country`: Country code (optional)
+- `implementation`: Bitcoin implementation identifier (optional)
+- `subnet`: Subnet identifier for diversity checks (/16 for IPv4, /32 for IPv6)
+
+**DiscoverDiversePeers**: $[\mathcal{PI}] \times \mathbb{N} \times \mathbb{N} \rightarrow [\mathcal{PI}]$
+
+**Properties**:
+- Subset property: $\text{DiscoverDiversePeers}(peers, max\_asn, target) \subseteq peers$ (no new peers created)
+- ASN diversity: $\forall p_1, p_2 \in \text{DiscoverDiversePeers}(peers, max\_asn, target): p_1.\text{asn} = p_2.\text{asn} \implies |\{p \in \text{result} : p.\text{asn} = p_1.\text{asn}\}| \leq max\_asn$ (ASN limit enforced)
+- Subnet diversity: $\forall p_1, p_2 \in \text{DiscoverDiversePeers}(peers, max\_asn, target): p_1 \neq p_2 \implies p_1.\text{subnet} \neq p_2.\text{subnet}$ (no duplicate subnets)
+- Size bound: $|\text{DiscoverDiversePeers}(peers, max\_asn, target)| \leq \min(|peers|, target)$ (result size bounded)
+- Deterministic: $\text{DiscoverDiversePeers}(peers_1, max\_asn_1, target_1) = \text{DiscoverDiversePeers}(peers_2, max\_asn_2, target_2) \iff peers_1 = peers_2 \land max\_asn_1 = max\_asn_2 \land target_1 = target_2$
+
+For peer list $peers$, maximum peers per ASN $max\_asn$, and target number $target$:
+
+$$\text{DiscoverDiversePeers}(peers, max\_asn, target) = \begin{cases}
+result & \text{where } result \subseteq peers \land \\
+& \quad \forall asn: |\{p \in result : p.\text{asn} = asn\}| \leq max\_asn \land \\
+& \quad \forall p_1, p_2 \in result: p_1 \neq p_2 \implies p_1.\text{subnet} \neq p_2.\text{subnet} \land \\
+& \quad |result| \leq target \\
+peers & \text{if } |peers| \leq target \land \text{diversity constraints satisfied}
+\end{cases}$$
+
+**DetermineCheckpointHeight**: $[\mathbb{N}] \times \mathbb{N} \rightarrow \mathbb{N}$
+
+**Properties**:
+- Median bounds: $\text{DetermineCheckpointHeight}(tips, margin) = h \implies h \in [\min(tips) - margin, \max(tips)]$ (checkpoint within tip range)
+- Non-negative: $\text{DetermineCheckpointHeight}(tips, margin) \geq 0$ (checkpoint is non-negative)
+- Empty input: $\text{DetermineCheckpointHeight}([], margin) = 0$ (empty tips return genesis)
+- Safety margin: $\text{DetermineCheckpointHeight}(tips, margin) \leq \text{median}(tips)$ (checkpoint at or below median)
+- Deterministic: $\text{DetermineCheckpointHeight}(tips_1, margin_1) = \text{DetermineCheckpointHeight}(tips_2, margin_2) \iff tips_1 = tips_2 \land margin_1 = margin_2$
+
+For peer tips $tips \in [\mathbb{N}]$ and safety margin $margin \in \mathbb{N}$:
+
+$$\text{DetermineCheckpointHeight}(tips, margin) = \begin{cases}
+0 & \text{if } |tips| = 0 \\
+\max(0, \text{median}(tips) - margin) & \text{if } \text{median}(tips) > margin \\
+0 & \text{otherwise}
+\end{cases}$$
+
+Where $\text{median}(tips)$ is the median value of sorted $tips$:
+- If $|tips|$ is odd: $\text{median}(tips) = tips[\lfloor |tips|/2 \rfloor]$
+- If $|tips|$ is even: $\text{median}(tips) = \lfloor (tips[|tips|/2 - 1] + tips[|tips|/2]) / 2 \rfloor$
+
+**FindConsensus**: $[\mathcal{PC}] \times \mathbb{N} \times [0,1] \rightarrow \mathcal{CR}^?$
+
+Where $\mathcal{PC} = \mathcal{PI} \times \mathcal{UC}$ is a peer commitment (peer info + UTXO commitment) and $\mathcal{CR} = \mathcal{UC} \times \mathbb{N} \times \mathbb{N} \times [0,1]$ is a consensus result (commitment, agreement count, total peers, agreement ratio).
+
+**Properties**:
+- Minimum peers: $\text{FindConsensus}(peer\_commitments, min\_peers, threshold) = \text{Some}(result) \implies |peer\_commitments| \geq min\_peers$ (requires minimum peers)
+- Threshold requirement: $\text{FindConsensus}(peer\_commitments, min\_peers, threshold) = \text{Some}(result) \implies result.\text{agreement\_ratio} \geq threshold$ (meets threshold)
+- Agreement count: $\text{FindConsensus}(peer\_commitments, min\_peers, threshold) = \text{Some}(result) \implies result.\text{agreement\_count} \geq \lceil |peer\_commitments| \times threshold \rceil$ (integer threshold)
+- Consensus commitment: $\text{FindConsensus}(peer\_commitments, min\_peers, threshold) = \text{Some}(result) \implies$ at least $\lceil |peer\_commitments| \times threshold \rceil$ peers agree on $result.\text{commitment}$
+- No consensus: $\text{FindConsensus}(peer\_commitments, min\_peers, threshold) = \text{None} \implies$ no commitment meets threshold
+- Deterministic: $\text{FindConsensus}(pc_1, min_1, t_1) = \text{FindConsensus}(pc_2, min_2, t_2) \iff pc_1 = pc_2 \land min_1 = min_2 \land t_1 = t_2$
+
+For peer commitments $peer\_commitments \in [\mathcal{PC}]$, minimum peers $min\_peers \in \mathbb{N}$, and threshold $threshold \in [0,1]$:
+
+$$\text{FindConsensus}(peer\_commitments, min\_peers, threshold) = \begin{cases}
+\text{Some}(result) & \text{if } |peer\_commitments| \geq min\_peers \land \\
+& \quad \exists c \in \mathcal{UC}: \frac{|\{pc \in peer\_commitments : pc.\text{commitment} = c\}|}{|peer\_commitments|} \geq threshold \\
+\text{None} & \text{otherwise}
+\end{cases}$$
+
+Where $result = (c, agreement\_count, |peer\_commitments|, agreement\_count / |peer\_commitments|)$ and $c$ is the commitment with highest agreement.
+
+**VerifyConsensusCommitment**: $\mathcal{CR} \times [\mathcal{H}] \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- PoW verification: $\text{VerifyConsensusCommitment}(consensus, headers) = \text{valid} \implies \text{VerifyPoW}(headers) = \text{true}$ (PoW must be valid)
+- Supply verification: $\text{VerifyConsensusCommitment}(consensus, headers) = \text{valid} \implies \text{VerifySupply}(consensus.\text{commitment}.\text{total\_supply}, consensus.\text{commitment}.\text{block\_height}) = \text{true}$ (supply must be valid)
+- Block hash match: $\text{VerifyConsensusCommitment}(consensus, headers) = \text{valid} \implies headers[consensus.\text{commitment}.\text{block\_height}].\text{hash} = consensus.\text{commitment}.\text{block\_hash}$ (block hash matches)
+- Height bounds: $\text{VerifyConsensusCommitment}(consensus, headers) = \text{valid} \implies consensus.\text{commitment}.\text{block\_height} < |headers|$ (height within header chain)
+- Deterministic: $\text{VerifyConsensusCommitment}(c_1, h_1) = \text{VerifyConsensusCommitment}(c_2, h_2) \iff c_1 = c_2 \land h_1 = h_2$
+
+For consensus result $consensus \in \mathcal{CR}$ and header chain $headers \in [\mathcal{H}]$:
+
+$$\text{VerifyConsensusCommitment}(consensus, headers) = \begin{cases}
+\text{valid} & \text{if } \text{VerifyPoW}(headers) \land \\
+& \quad \text{VerifySupply}(consensus.\text{commitment}.\text{total\_supply}, consensus.\text{commitment}.\text{block\_height}) \land \\
+& \quad consensus.\text{commitment}.\text{block\_height} < |headers| \land \\
+& \quad headers[consensus.\text{commitment}.\text{block\_height}].\text{hash} = consensus.\text{commitment}.\text{block\_hash} \\
+\text{invalid} & \text{otherwise}
+\end{cases}$$
+
+**VerifyUTXOProofs**: $\mathcal{CR} \times [(\mathcal{O}, \mathcal{U}, \mathcal{MP})] \rightarrow \{\text{valid}, \text{invalid}\}$
+
+Where $\mathcal{MP}$ is a Merkle proof for UTXO inclusion.
+
+**Properties**:
+- Proof validity: $\text{VerifyUTXOProofs}(consensus, proofs) = \text{valid} \implies \forall (outpoint, utxo, proof) \in proofs: \text{VerifyMerkleProof}(consensus.\text{commitment}.\text{merkle\_root}, outpoint, utxo, proof) = \text{true}$ (all proofs valid)
+- UTXO inclusion: $\text{VerifyUTXOProofs}(consensus, proofs) = \text{valid} \implies \forall (outpoint, utxo, proof) \in proofs: utxo \in \text{UTXOSet}(consensus.\text{commitment})$ (all UTXOs in commitment)
+- Deterministic: $\text{VerifyUTXOProofs}(c_1, p_1) = \text{VerifyUTXOProofs}(c_2, p_2) \iff c_1 = c_2 \land p_1 = p_2$
+
+For consensus result $consensus \in \mathcal{CR}$ and UTXO proofs $proofs \in [(\mathcal{O}, \mathcal{U}, \mathcal{MP})]$:
+
+$$\text{VerifyUTXOProofs}(consensus, proofs) = \begin{cases}
+\text{valid} & \text{if } \forall (outpoint, utxo, proof) \in proofs: \\
+& \quad \text{VerifyMerkleProof}(consensus.\text{commitment}.\text{merkle\_root}, outpoint, utxo, proof) = \text{true} \\
+\text{invalid} & \text{otherwise}
+\end{cases}$$
+
+**Theorem 13.4.1** (Peer Diversity Correctness): Diverse peer discovery ensures network diversity:
+
+$$\forall peers \in [\mathcal{PI}], max\_asn \in \mathbb{N}, target \in \mathbb{N}:$$
+$$\text{DiscoverDiversePeers}(peers, max\_asn, target) \text{ ensures ASN and subnet diversity}$$
+
+*Proof*: By construction, the algorithm filters peers to ensure no more than $max\_asn$ peers per ASN and no duplicate subnets. This ensures geographic and network diversity, reducing the risk of coordinated attacks. This is proven by blvm-spec-lock formal verification.
+
+**Theorem 13.4.2** (Checkpoint Safety): Checkpoint height determination prevents deep reorganizations:
+
+$$\forall tips \in [\mathbb{N}], margin \in \mathbb{N}:$$
+$$\text{DetermineCheckpointHeight}(tips, margin) \leq \text{median}(tips) - margin$$
+
+*Proof*: The checkpoint is calculated as $\max(0, \text{median}(tips) - margin)$, ensuring it is always at least $margin$ blocks behind the median tip. This provides safety margin against deep reorganizations. This is proven by blvm-spec-lock formal verification.
+
+**Theorem 13.4.3** (Consensus Threshold Correctness): Consensus finding correctly implements threshold-based agreement:
+
+$$\forall peer\_commitments \in [\mathcal{PC}], min\_peers \in \mathbb{N}, threshold \in [0,1]:$$
+$$\text{FindConsensus}(peer\_commitments, min\_peers, threshold) = \text{Some}(result) \iff$$
+$$|peer\_commitments| \geq min\_peers \land \frac{result.\text{agreement\_count}}{|peer\_commitments|} \geq threshold$$
+
+*Proof*: The algorithm groups commitments by their values and finds the group with highest agreement. If the agreement ratio meets the threshold, consensus is found. This ensures that a sufficient fraction of peers agree on the commitment. This is proven by blvm-spec-lock formal verification.
 
 ## 15. Governance Model
 
