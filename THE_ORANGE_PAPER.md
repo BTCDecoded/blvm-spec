@@ -80,11 +80,9 @@ This paper presents a complete mathematical specification of the Bitcoin consens
     - 14.1 [Summary of Contributions](#141-summary-of-contributions)
     - 14.2 [Applications](#142-applications)
 15. [Governance Model](#15-governance-model)
-    - 15.1 [Overview](#151-overview)
-    - 15.2 [Mathematical Foundations](#152-mathematical-foundations)
-    - 15.3 [Vote Aggregation](#153-vote-aggregation)
-    - 15.4 [Security Properties](#154-security-properties)
-    - 15.5 [Implementation Functions](#155-implementation-functions)
+    - 15.1 [Mathematical Foundations](#151-mathematical-foundations)
+    - 15.2 [Vote Aggregation](#152-vote-aggregation)
+    - 15.3 [Security Properties](#153-security-properties)
 
 ## 1. Introduction
 
@@ -1599,7 +1597,7 @@ $$\text{TotalSupply}(h) \leq 21 \times 10^6 \times C$$
 
 **Theorem 8.2** (Supply Convergence): The total supply converges to exactly 21 million BTC.
 
-*Proof*: From [Theorem 6.1](#theorem-61), we have:
+*Proof*: From [Theorem 6.2.3](#theorem-623-supply-convergence), we have:
 $$\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$$
 
 Since the subsidy becomes 0 after 64 halvings (height 13,440,000), the total supply is exactly:
@@ -2849,42 +2847,6 @@ $$|peer\_commitments| \geq min\_peers \land \frac{result.\text{agreement\_count}
 
 *Proof*: The algorithm groups commitments by their values and finds the group with highest agreement. If the agreement ratio meets the threshold, consensus is found. This ensures that a sufficient fraction of peers agree on the commitment. This is proven by blvm-spec-lock formal verification.
 
-## 15. Governance Model
-
-The Bitcoin Commons governance system enables decentralized decision-making through contribution-based voting with quadratic weighting, weight caps, and cooling-off periods. See [GOVERNANCE_SPECIFICATION.md](GOVERNANCE_SPECIFICATION.md) for the complete mathematical specification.
-
-### 15.1 Overview
-
-The governance model uses three types of contributions:
-- **Merge Mining**: 1% of secondary chain rewards (30-day rolling)
-- **Fee Forwarding**: Transaction fees forwarded to Commons address (30-day rolling)
-- **Zap Contributions**: Lightning payments via Nostr (cumulative)
-
-### 15.2 Mathematical Foundations
-
-**Participation Weight**: $W_c(t) = \sqrt{M_c(t) + F_c(t) + Z_c}$
-
-**Weight Cap**: $W_{capped}(c, t) = \min(W_c(t), 0.05 \cdot \sum_{c' \in \mathcal{C}} W_{capped}(c', t))$
-
-**Cooling-Off**: Contributions $\geq 0.1$ BTC require 30 days before counting toward votes.
-
-### 15.3 Vote Aggregation
-
-Votes are aggregated from:
-- **Zap Votes**: Lightning payments to proposals (quadratic weighting)
-- **Participation Votes**: From contributors using their participation weights
-- **Economic Node Veto**: 30% hashpower OR 40% economic activity (Tier 3+)
-
-### 15.4 Security Properties
-
-**Whale Resistance**: No single contributor can exceed 5% of total system weight.
-
-**Quadratic Scaling**: Doubling contribution does not double voting power: $W(2T) = \sqrt{2} \cdot W(T) < 2W(T)$
-
-**Cooling-Off Protection**: Large contributions cannot immediately influence votes.
-
-See [GOVERNANCE_SPECIFICATION.md](GOVERNANCE_SPECIFICATION.md) for complete mathematical specification, proofs, and implementation details.
-
 ## 14. Conclusion
 
 This Orange Paper provides a complete mathematical specification of the Bitcoin consensus protocol. The mathematical formalism makes it suitable for formal verification and provides a solid foundation for understanding Bitcoin's security properties.
@@ -2916,6 +2878,48 @@ This specification can be used for:
 - **Academic Research**: Studying distributed consensus and cryptocurrency systems
 
 The specification covers all aspects of Bitcoin's operation, from basic transaction validation to complex economic rules. It serves as both a reference implementation and a formal specification that can be used for security analysis and protocol development.
+
+## 15. Governance Model
+
+The Bitcoin Commons governance system implements a **5-tier constitutional governance model** with cryptographic enforcement, multisig security, and layer-based repository governance. The system applies the same cryptographic enforcement to governance that Bitcoin applies to consensus.
+
+**Core Innovation**: Make power visible, capture expensive, and exit cheap through cryptographic audit trails and user-protective mechanisms.
+
+### 15.1 Layer + Tier System
+
+The governance system combines two dimensions:
+
+**Layer System** (Repository Architecture):
+- **Layer 1-2** (Constitutional): `blvm-spec`, `blvm-consensus` - 6-of-7 signatures, 180 days (365 for consensus changes)
+- **Layer 3** (Implementation): `blvm-protocol` - 4-of-5 signatures, 90 days
+- **Layer 4** (Application): `blvm-node`, `bllvm` - 3-of-5 signatures, 60 days
+- **Layer 5** (Extension): `blvm-sdk` - 2-of-3 signatures, 14 days
+
+**Tier System** (Action Classification):
+- **Tier 1**: Routine Maintenance - 3-of-5 signatures, 7 days
+- **Tier 2**: Feature Changes - 4-of-5 signatures, 30 days
+- **Tier 3**: Consensus-Adjacent - 5-of-5 signatures, 90 days
+- **Tier 4**: Emergency Actions - 4-of-5 signatures, 0 days
+- **Tier 5**: Governance Changes - 5-of-5 signatures, 180 days
+
+**Combination Rule**: When both Layer and Tier apply, the system uses the **most restrictive** (highest) requirements.
+
+### 15.2 Cryptographic Enforcement
+
+All governance actions require:
+- **Cryptographic Signatures**: secp256k1 signatures (same curve as Bitcoin)
+- **Multisig Thresholds**: Multiple maintainers must sign critical actions
+- **Public Verification**: All signatures and actions are publicly verifiable
+- **Tamper Evidence**: Hash chain and Merkle tree audit trails
+- **Blockchain Anchoring**: OpenTimestamps for immutable proof
+
+**Signature Requirements**:
+- Maintainer keypairs for PR approval, maintainer management, emergency actions
+- BIP39 mnemonic seed phrases (24 words) for key generation
+- BIP32 hierarchical deterministic key derivation
+- Regular key rotation (6 months for maintainers, 3 months for emergency keyholders)
+
+See [governance repository](https://github.com/BTCDecoded/governance) for complete governance specification, implementation details, and current status.
 
 ## References
 
