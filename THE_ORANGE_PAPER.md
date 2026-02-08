@@ -39,6 +39,7 @@ This paper presents a complete mathematical specification of the Bitcoin consens
      - 5.4.5 [BIP147: NULLDUMMY Enforcement](#545-bip147-nulldummy-enforcement)
      - 5.4.6 [BIP119: OP_CHECKTEMPLATEVERIFY (CTV)](#546-bip119-opchecktemplateverify-ctv)
      - 5.4.7 [BIP65: OP_CHECKLOCKTIMEVERIFY (CLTV)](#547-bip65-opchecklocktimeverify-cltv)
+     - 5.4.8 [BIP348: OP_CHECKSIGFROMSTACK (CSFS)](#548-bip348-opchecksigfromstack-csfs)
    - 5.5 [Sequence Locks (BIP68)](#55-sequence-locks-bip68)
 6. [Economic Model](#6-economic-model)
    - 6.1 [Block Subsidy](#61-block-subsidy)
@@ -1008,10 +1009,11 @@ Where $\text{Structure}(tx)$ includes all fields except scriptSig.
 
 **Opcode Behavior**:
 
-OP_CHECKTEMPLATEVERIFY (opcode 0xba):
+OP_CHECKTEMPLATEVERIFY (opcode 0xb3, OP_NOP4):
 - **Stack Input**: $[h]$ where $h \in \mathbb{H}$ is a 32-byte template hash
 - **Stack Output**: Nothing (opcode fails if template doesn't match)
 - **Validation**: $\text{BIP119Check}(tx, i, h) = \text{valid}$
+- **Soft Fork**: Uses OP_NOP4 (0xb3) as upgrade path
 
 **Use Cases**:
 
@@ -1036,6 +1038,187 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xba):
 ---
 
 #### 5.4.7 BIP65: OP_CHECKLOCKTIMEVERIFY (CLTV)
+
+**BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- Zero locktime rejection: $\text{BIP65Check}(tx, i, lt, h) = \text{invalid} \iff tx.\text{lockTime} = 0$ (zero locktime always invalid)
+- Type consistency: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$ (types must match)
+- Locktime ordering: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \leq lt$ (transaction locktime must be <= stack locktime)
+- Input index requirement: $\text{BIP65Check}(tx, i, lt, h)$ requires $i < |tx.\text{inputs}|$ (valid input index)
+- Deterministic: $\text{BIP65Check}(tx_1, i_1, lt_1, h_1) = \text{BIP65Check}(tx_2, i_2, lt_2, h_2) \iff tx_1 = tx_2 \land i_1 = i_2 \land lt_1 = lt_2 \land h_1 = h_2$
+- Result type: $\text{BIP65Check}(tx, i, lt, h) \in \{\text{valid}, \text{invalid}\}$
+
+For transaction $tx$, input index $i$, locktime value $lt$, and block header $h$:
+
+$$\text{BIP65Check}(tx, i, lt, h) = \begin{cases}
+\text{invalid} & \text{if } tx.\text{lockTime} = 0 \\
+\text{invalid} & \text{if } \text{LocktimeType}(tx.\text{lockTime}) \neq \text{LocktimeType}(lt) \\
+\text{invalid} & \text{if } tx.\text{lockTime} > lt \\
+\text{valid} & \text{otherwise}
+\end{cases}$$
+
+Where $\text{LocktimeType}(x)$ returns $\text{BlockHeight}$ if $x < 500000000$, otherwise $\text{Timestamp}$.
+
+**OP_CHECKLOCKTIMEVERIFY (opcode 0xb1)**:
+- **Stack Input**: $[lt]$ where $lt$ is a locktime value (encoded as minimal byte string)
+- **Stack Output**: Nothing (opcode fails if locktime check doesn't pass)
+- **Validation**: $\text{BIP65Check}(tx, i, \text{DecodeLocktime}(lt), h) = \text{valid}$
+
+**Locktime Type Determination**: 
+
+$$\text{LocktimeType}(lt) = \begin{cases}
+\text{BlockHeight} & \text{if } lt < 500000000 \\
+\text{Timestamp} & \text{otherwise}
+\end{cases}$$
+
+**Locktime Encoding/Decoding**: Locktime values are encoded as minimal little-endian byte strings (max 5 bytes) on the script stack.
+
+**Theorem 5.4.7.1** (Locktime Encoding Round-Trip): Locktime encoding and decoding are inverse operations:
+
+$$\forall lt \in \mathbb{N}_{32}: \text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt$$
+
+*Proof*: By construction, the encoding uses minimal little-endian representation and decoding reconstructs the value from the byte string. This is proven by blvm-spec-lock formal verification.
+
+**Theorem 5.4.7.2** (Locktime Type Determination Correctness): Locktime type determination is correct:
+
+$$\forall lt \in \mathbb{N}_{32}: \text{LocktimeType}(lt) = \begin{cases}
+\text{BlockHeight} & \text{if } lt < 500000000 \\
+\text{Timestamp} & \text{otherwise}
+\end{cases}$$
+
+*Proof*: By construction, the threshold $500000000$ correctly separates block heights (which are always $< 500000000$) from Unix timestamps (which are always $\geq 500000000$). This is proven by blvm-spec-lock formal verification.
+
+**Theorem 5.4.7.3** (CLTV Type Matching Requirement): CLTV requires matching locktime types:
+
+$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$$
+
+*Proof*: By construction, if the types don't match, $\text{BIP65Check}$ returns $\text{invalid}$. This ensures that block height locktimes are only compared with block heights, and timestamps are only compared with timestamps. This is proven by blvm-spec-lock formal verification.
+
+**Theorem 5.4.7.4** (CLTV Zero Locktime Rejection): CLTV always fails when transaction locktime is zero:
+
+$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: tx.\text{lockTime} = 0 \implies \text{BIP65Check}(tx, i, lt, h) = \text{invalid}$$
+
+*Proof*: By construction, if $tx.\text{lockTime} = 0$, the check immediately returns $\text{invalid}$ regardless of the stack locktime value. This is proven by blvm-spec-lock formal verification.
+
+**Activation Heights**:
+- Mainnet: Block 388,381
+- Testnet: Block 371,337
+- Regtest: Block 0 (always active)
+
+---
+
+#### 5.4.8 BIP348: OP_CHECKSIGFROMSTACK (CSFS)
+
+**BIP348Check**: $\mathbb{S} \times \mathbb{S} \times \mathbb{S} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+**Properties**:
+- Tapscript-only: $\text{BIP348Check}(msg, pk, sig, h) = \text{valid} \implies \text{SigVersion} = \text{Tapscript}$ (only available in Tapscript)
+- Zero pubkey rejection: $|pk| = 0 \implies \text{BIP348Check}(msg, pk, sig, h) = \text{invalid}$ (zero-length pubkey always fails)
+- Empty signature handling: $|sig| = 0 \implies \text{BIP348Check}(msg, pk, sig, h) = \text{valid} \land \text{StackPush}(\emptyset)$ (empty sig pushes empty vector)
+- Valid signature: $\text{BIP348Check}(msg, pk, sig, h) = \text{valid} \land |sig| > 0 \implies \text{VerifySchnorr}(msg, pk, sig) = \text{true} \land \text{StackPush}([0x01])$
+- Invalid signature: $\text{BIP348Check}(msg, pk, sig, h) = \text{invalid} \land |sig| > 0 \implies \text{VerifySchnorr}(msg, pk, sig) = \text{false}$
+- Unknown pubkey type: $|pk| \neq 32 \land |pk| > 0 \implies \text{BIP348Check}(msg, pk, sig, h) = \text{valid}$ (unknown types succeed)
+- Deterministic: $\text{BIP348Check}(msg_1, pk_1, sig_1, h_1) = \text{BIP348Check}(msg_2, pk_2, sig_2, h_2) \iff msg_1 = msg_2 \land pk_1 = pk_2 \land sig_1 = sig_2 \land h_1 = h_2$
+
+For message $msg \in \mathbb{S}$, public key $pk \in \mathbb{S}$, signature $sig \in \mathbb{S}$, and block height $h$:
+
+$$\text{BIP348Check}(msg, pk, sig, h) = \begin{cases}
+\text{invalid} & \text{if } |pk| = 0 \\
+\text{invalid} & \text{if } \text{SigVersion} \neq \text{Tapscript} \\
+\text{valid} & \text{if } |sig| = 0 \text{ (push empty vector)} \\
+\text{valid} & \text{if } |pk| = 32 \land \text{VerifySchnorr}(msg, pk, sig) = \text{true} \text{ (push [0x01])} \\
+\text{invalid} & \text{if } |pk| = 32 \land \text{VerifySchnorr}(msg, pk, sig) = \text{false} \\
+\text{valid} & \text{if } |pk| \neq 32 \land |pk| > 0 \text{ (unknown type, succeeds)}
+\end{cases}$$
+
+**BIP 340 Schnorr Signature Verification**:
+
+$$\text{VerifySchnorr}(msg, pk, sig) = \begin{cases}
+\text{true} & \text{if } |pk| = 32 \land |sig| = 64 \land \text{SchnorrVerify}(\text{SHA256}(msg), pk, sig) = \text{true} \\
+\text{false} & \text{otherwise}
+\end{cases}$$
+
+Where:
+- $pk$ is a 32-byte x-only public key (BIP 340)
+- $sig$ is a 64-byte Schnorr signature (BIP 340)
+- $msg$ is hashed with SHA256 before verification (BIP 340 accepts any size, but secp256k1 requires 32 bytes)
+
+**Stack Operation**:
+
+OP_CHECKSIGFROMSTACK (opcode 0xcc, replaces OP_SUCCESS204):
+- **Stack Input**: $[pk, msg, sig]$ where:
+  - $pk \in \mathbb{S}$ is the public key (top of stack)
+  - $msg \in \mathbb{S}$ is the message (second from top)
+  - $sig \in \mathbb{S}$ is the signature (third from top)
+- **Stack Output**: 
+  - Empty vector $\emptyset$ if $|sig| = 0$
+  - $[0x01]$ (single byte) if signature is valid
+  - Script fails if signature is invalid
+- **Validation**: $\text{BIP348Check}(msg, pk, sig, h) = \text{valid}$
+- **Context**: Tapscript only (leaf version 0xc0)
+- **Sigops**: Counts against Tapscript sigops budget (BIP 342)
+
+**Mathematical Properties**:
+
+**Theorem 5.4.8.1** (CSFS Tapscript Restriction): CSFS is only available in Tapscript:
+
+$$\forall msg, pk, sig \in \mathbb{S}, h \in \mathbb{N}: \text{BIP348Check}(msg, pk, sig, h) = \text{valid} \implies \text{SigVersion} = \text{Tapscript}$$
+
+*Proof*: By construction, CSFS opcode handler checks that $\text{SigVersion} = \text{Tapscript}$ before processing. This ensures CSFS is only used in the Tapscript execution context, maintaining security boundaries.
+
+**Theorem 5.4.8.2** (CSFS Zero Pubkey Rejection): Zero-length pubkeys always fail:
+
+$$\forall msg, sig \in \mathbb{S}, h \in \mathbb{N}: |pk| = 0 \implies \text{BIP348Check}(msg, pk, sig, h) = \text{invalid}$$
+
+*Proof*: By construction, if $|pk| = 0$, the check immediately returns $\text{invalid}$ regardless of message or signature. This prevents degenerate cases and ensures proper key validation.
+
+**Theorem 5.4.8.3** (CSFS Empty Signature Handling): Empty signatures push empty vector and continue:
+
+$$\forall msg, pk \in \mathbb{S}, h \in \mathbb{N}: |sig| = 0 \implies \text{BIP348Check}(msg, pk, sig, h) = \text{valid} \land \text{StackPush}(\emptyset)$$
+
+*Proof*: By construction, if $|sig| = 0$, the check returns $\text{valid}$ and pushes an empty vector to the stack. This matches OP_CHECKSIG behavior and allows scripts to handle optional signatures.
+
+**Theorem 5.4.8.4** (CSFS BIP 340 Verification): CSFS uses BIP 340 Schnorr signature verification:
+
+$$\forall msg, pk, sig \in \mathbb{S}, h \in \mathbb{N}: \text{BIP348Check}(msg, pk, sig, h) = \text{valid} \land |pk| = 32 \land |sig| = 64 \implies \text{VerifySchnorr}(msg, pk, sig) = \text{true}$$
+
+*Proof*: By construction, CSFS uses BIP 340 Schnorr signature verification for 32-byte pubkeys. The message is hashed with SHA256 before verification (BIP 340 accepts any size, but secp256k1 requires 32 bytes). This matches the reference implementation in Bitcoin Core PR #29270.
+
+**Theorem 5.4.8.5** (CSFS Unknown Pubkey Type): Unknown pubkey types (non-32-byte) succeed:
+
+$$\forall msg, sig \in \mathbb{S}, pk \in \mathbb{S}, h \in \mathbb{N}: |pk| \neq 32 \land |pk| > 0 \implies \text{BIP348Check}(msg, pk, sig, h) = \text{valid}$$
+
+*Proof*: By construction, if $|pk| \neq 32$ and $|pk| > 0$, the check returns $\text{valid}$ without verification. This allows future extensions while maintaining backward compatibility.
+
+**Use Cases**:
+
+1. **UTXO Amount Introspection**: Verify signatures on UTXO amounts to enable CTV with amount verification
+2. **Covenant Proofs**: Verify signatures on transaction data to prove covenant compliance
+3. **Cross-Input Verification**: Verify signatures across different transaction inputs
+4. **Arbitrary Message Signing**: Verify signatures on any data, not just transaction hashes
+
+**Activation Heights**:
+- Mainnet: TBD (BIP9 activation pending)
+- Testnet: TBD
+- Regtest: Block 0 (always active for testing when feature enabled)
+
+**Implementation Notes**:
+
+- CSFS is only available in Tapscript (leaf version 0xc0)
+- Message is hashed with SHA256 before BIP 340 verification (BIP 340 accepts any size, but secp256k1 requires 32 bytes)
+- Only 32-byte pubkeys are verified (BIP 340 x-only pubkeys)
+- Empty signatures push empty vector and continue (matches OP_CHECKSIG behavior)
+- Valid signatures push $[0x01]$ (single byte, not number 1)
+- Invalid signatures cause script to fail
+- Unknown pubkey types (non-32-byte) succeed without verification
+- CSFS operations count against Tapscript sigops budget (BIP 342)
+
+**Relationship to CTV**:
+
+CSFS complements CTV by enabling UTXO amount introspection. CTV commits to transaction structure but cannot verify UTXO amounts. CSFS allows scripts to verify signatures on arbitrary data, including UTXO amounts, enabling complete covenant functionality.
+
+---
 
 **BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
 
