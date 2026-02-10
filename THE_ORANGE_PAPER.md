@@ -288,6 +288,49 @@ us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey} & \text{otherwise}
 
 Where $\text{RedeemScript}(tx, i)$ is the redeem script extracted from the stack after executing scriptSig for input $i$.
 
+**FindAndDelete**: $\mathbb{S} \times \mathbb{S} \rightarrow \mathbb{S}$
+
+**Properties**:
+- Pattern removal: $\text{FindAndDelete}(script, pattern) = script' \implies$ all occurrences of $pattern$ removed from $script$
+- Empty pattern: $|pattern| = 0 \implies \text{FindAndDelete}(script, pattern) = script$ (no-op for empty pattern)
+- Pattern length: $|pattern| > |script| \implies \text{FindAndDelete}(script, pattern) = script$ (pattern too long)
+- Opcode boundary preservation: $\text{FindAndDelete}(script, pattern)$ preserves opcode boundaries (does not split opcodes)
+- Deterministic: $\text{FindAndDelete}(script_1, pattern_1) = \text{FindAndDelete}(script_2, pattern_2) \iff script_1 = script_2 \land pattern_1 = pattern_2$
+
+For script $script \in \mathbb{S}$ and pattern $pattern \in \mathbb{S}$:
+
+$$\text{FindAndDelete}(script, pattern) = \begin{cases}
+script & \text{if } |pattern| = 0 \lor |pattern| > |script| \\
+\text{RemoveAll}(script, pattern) & \text{otherwise}
+\end{cases}$$
+
+Where $\text{RemoveAll}(script, pattern)$ removes all occurrences of $pattern$ from $script$ while preserving opcode boundaries.
+
+**SighashScriptCode** (Updated): $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \text{SigVersion} \times \mathbb{S} \rightarrow \mathbb{S}$
+
+**Properties** (Updated):
+- P2SH handling: $\text{SighashScriptCode}(tx, i, us, sv, sig) = \text{RedeemScript}(tx, i) \iff \text{IsP2SH}(us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey})$ (P2SH uses redeem script)
+- Non-P2SH handling: $\text{SighashScriptCode}(tx, i, us, sv, sig) = us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey} \iff \neg \text{IsP2SH}(us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey})$ (non-P2SH uses scriptPubkey)
+- FindAndDelete application: $\text{SigVersion} = \text{Base} \land \text{IsSignatureOpcode}(opcode) \implies \text{SighashScriptCode}(tx, i, us, sv, sig) = \text{FindAndDelete}(\text{BaseScriptCode}(tx, i, us), \text{SerializePush}(sig))$
+- SegWit exclusion: $\text{SigVersion} = \text{WitnessV0} \lor \text{SigVersion} = \text{Tapscript} \implies \text{FindAndDelete}$ not applied
+- Legacy requirement: FindAndDelete applies only to legacy scripts (SigVersion::Base) for OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CHECKMULTISIG, and OP_CHECKMULTISIGVERIFY
+- Input index requirement: $\text{SighashScriptCode}(tx, i, us, sv, sig)$ requires $i < |tx.\text{inputs}|$ (valid input index)
+- UTXO existence: $\text{SighashScriptCode}(tx, i, us, sv, sig)$ requires $tx.\text{inputs}[i].\text{prevout} \in us$ (UTXO must exist)
+- Deterministic: $\text{SighashScriptCode}(tx_1, i_1, us_1, sv_1, sig_1) = \text{SighashScriptCode}(tx_2, i_2, us_2, sv_2, sig_2) \iff tx_1 = tx_2 \land i_1 = i_2 \land us_1 = us_2 \land sv_1 = sv_2 \land sig_1 = sig_2$
+- Result type: $\text{SighashScriptCode}(tx, i, us, sv, sig) \in \mathbb{S}$ (returns script)
+
+For transaction $tx$, input index $i$, UTXO set $us$, signature version $sv$, and signature $sig$:
+
+$$\text{SighashScriptCode}(tx, i, us, sv, sig) = \begin{cases}
+\text{FindAndDelete}(\text{BaseScriptCode}(tx, i, us), \text{SerializePush}(sig)) & \text{if } sv = \text{Base} \land \text{IsSignatureOpcode}(opcode) \\
+\text{BaseScriptCode}(tx, i, us) & \text{otherwise}
+\end{cases}$$
+
+Where:
+- $\text{BaseScriptCode}(tx, i, us)$ is the base script code (redeem script for P2SH, scriptPubkey otherwise)
+- $\text{SerializePush}(sig)$ is the serialized push operation for signature $sig$
+- $\text{IsSignatureOpcode}(opcode)$ returns true for OP_CHECKSIG (0xac), OP_CHECKSIGVERIFY (0xad), OP_CHECKMULTISIG (0xae), OP_CHECKMULTISIGVERIFY (0xaf)
+
 **SighashType**: $\mathbb{N}_{8} \times \mathbb{N} \rightarrow \text{SighashType}$
 
 **Properties**:
@@ -323,6 +366,12 @@ Where $H_{66}$ is the BIP66 activation height (mainnet: 363,724).
 
 *Proof*: Historical Bitcoin blocks before BIP66 activation (block 363,724) contain transactions with sighash type 0x00. These transactions are valid and must be accepted. The $\text{SighashType}$ function maps $0x00$ to $\text{AllLegacy}$ for heights $< H_{66}$ to preserve compatibility with these historical transactions.
 
+**Theorem 5.1.3** (FindAndDelete Sighash Requirement): For legacy scripts, FindAndDelete must be applied to scriptCode before sighash computation.
+
+$$\forall tx \in \mathcal{TX}, i \in \mathbb{N}, sig \in \mathbb{S}, sv = \text{Base}: \text{IsSignatureOpcode}(opcode) \implies \text{CalculateSighash}(tx, i, us, st, h) \text{ uses } \text{FindAndDelete}(\text{BaseScriptCode}(tx, i, us), \text{SerializePush}(sig))$$
+
+*Proof*: By construction, Bitcoin Core applies FindAndDelete to remove signature patterns from scriptCode before computing sighash for legacy signature opcodes (OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY). This ensures that signatures appearing in the redeem script (e.g., P2SH multisig edge cases where signatures appear as "pubkeys") do not affect the sighash computation. For SegWit (BIP143), FindAndDelete is explicitly omitted, so this only applies to SigVersion::Base. This is proven by the requirement that $\text{SighashScriptCode}$ applies FindAndDelete for legacy scripts when signature opcodes are used.
+
 ### 5.2 Script Execution
 
 Bitcoin uses a stack-based scripting language for transaction validation. Scripts are executed to determine whether a transaction output can be spent.
@@ -341,13 +390,13 @@ Script execution follows a stack-based virtual machine:
 
 **Properties**:
 - Success condition: $\text{EvalScript}(script, stack, flags) = \text{true} \iff |stack| = 1 \land stack[0] \neq 0$
-- Stack bounds: $\text{EvalScript}(script, stack, flags) \implies |stack| \leq L_{\text{stack}}$ (stack never exceeds maximum size)
+- Stack bounds: $\text{EvalScript}(script, stack, flags) \implies |stack| + |altstack| \leq L_{\text{stack}}$ (combined stack and altstack never exceed maximum size)
 - Empty script: $|script| = 0 \implies \text{EvalScript}(script, stack, flags) = \text{false}$ (empty script always fails)
 - Operation limit: $\text{EvalScript}(script, stack, flags)$ fails if operation count exceeds $L_{\text{ops}}$
-- Stack overflow: If $|stack| > L_{\text{stack}}$ during execution, $\text{EvalScript}(script, stack, flags) = \text{false}$
+- Stack overflow: If $|stack| + |altstack| > L_{\text{stack}}$ during execution, $\text{EvalScript}(script, stack, flags) = \text{false}$
 - Boolean result: $\text{EvalScript}(script, stack, flags) \in \{\text{true}, \text{false}\}$
 - Deterministic: $\text{EvalScript}(script_1, stack_1, flags_1) = \text{EvalScript}(script_2, stack_2, flags_2) \iff script_1 = script_2 \land stack_1 = stack_2 \land flags_1 = flags_2$
-- Stack preservation: During execution, stack size is bounded by $L_{\text{stack}}$
+- Stack preservation: During execution, combined stack and altstack size is bounded by $L_{\text{stack}}$
 - Failure modes: $\text{EvalScript}(script, stack, flags) = \text{false}$ if stack overflow, operation limit exceeded, or opcode execution fails
 
 ```mermaid
@@ -367,7 +416,7 @@ sequenceDiagram
         O->>ST: Push/Pop/Modify Stack
         
         alt Stack Overflow
-            ST-->>VM: |S| > 1000
+            ST-->>VM: |S| + |AltStack| > 1000
             VM-->>S: ❌ Return false
         else Operation Limit
             O-->>VM: Count > 201
@@ -525,7 +574,83 @@ Where $S_{max} = 80,000$ (MAX_BLOCK_SIGOPS_COST).
 
 ---
 
-#### 5.2.3 Script Verification Flags
+#### 5.2.3 Stack Operations
+
+**AltStack**: $\mathcal{ST}_{alt} = \mathbb{S}^*$ (alternate stack for temporary storage)
+
+**Combined Stack Size Limit**: $|stack| + |altstack| \leq L_{stack}$ (combined size must not exceed maximum)
+
+**OP_TOALTSTACK** (opcode 0x6b):
+- **Stack Input**: $[item]$ where $item \in \mathbb{S}$
+- **Stack Output**: $\emptyset$ (item moved to altstack)
+- **AltStack Output**: $[item]$ (item added to altstack)
+- **Validation**: $|stack| > 0 \land |stack| + |altstack| < L_{stack} \implies \text{OP_TOALTSTACK}(stack, altstack) = (stack', altstack')$ where $stack' = stack[1..]$ and $altstack' = altstack \cup [stack[0]]$
+- **Error**: $|stack| = 0 \implies \text{OP_TOALTSTACK}(stack, altstack) = \text{error}$ (empty stack)
+
+**OP_FROMALTSTACK** (opcode 0x6c):
+- **Stack Input**: $\emptyset$
+- **Stack Output**: $[item]$ where $item \in \mathbb{S}$ (item moved from altstack)
+- **AltStack Input**: $[item]$ where $item \in \mathbb{S}$
+- **AltStack Output**: $\emptyset$ (item removed from altstack)
+- **Validation**: $|altstack| > 0 \land |stack| + |altstack| \leq L_{stack} \implies \text{OP_FROMALTSTACK}(stack, altstack) = (stack', altstack')$ where $stack' = stack \cup [altstack[0]]$ and $altstack' = altstack[1..]$
+- **Error**: $|altstack| = 0 \implies \text{OP_FROMALTSTACK}(stack, altstack) = \text{error}$ (empty altstack)
+
+**Properties**:
+- Stack preservation: $\text{OP_TOALTSTACK}(stack, altstack) = (stack', altstack') \implies |stack| + |altstack| = |stack'| + |altstack'|$ (total items preserved)
+- Combined size limit: $\text{OP_TOALTSTACK}(stack, altstack) = (stack', altstack') \implies |stack'| + |altstack'| \leq L_{stack}$
+- Round-trip: $\text{OP_FROMALTSTACK}(\text{OP_TOALTSTACK}(stack, altstack)) = (stack, altstack)$ (if no errors)
+
+**OP_DEPTH** (opcode 0x74):
+- **Stack Input**: $\emptyset$
+- **Stack Output**: $[\text{EncodeCScriptNum}(|stack|)]$ where $|stack|$ is the current stack depth
+- **Validation**: $\text{OP_DEPTH}(stack) = stack \cup [\text{EncodeCScriptNum}(|stack|)]$
+- **CScriptNum Encoding**: Depth is encoded as a minimal little-endian byte string (CScriptNum format)
+
+**Properties**:
+- Depth accuracy: $\text{OP_DEPTH}(stack) = stack' \implies \text{DecodeCScriptNum}(stack'[|stack'|-1]) = |stack|$ (pushed value equals stack depth before OP_DEPTH)
+- Stack growth: $\text{OP_DEPTH}(stack) = stack' \implies |stack'| = |stack| + 1$ (adds one element)
+- Deterministic: $\text{OP_DEPTH}(stack_1) = \text{OP_DEPTH}(stack_2) \iff |stack_1| = |stack_2|$
+
+#### 5.2.4 Conditional Opcode Execution
+
+**Execution State**: $fExec \in \{\text{true}, \text{false}\}$ (current execution state)
+
+**OP_VER** (opcode 0x62):
+- **Stack Input**: $\emptyset$
+- **Stack Output**: $\emptyset$ (opcode fails if executing)
+- **Validation**: 
+  - If $fExec = \text{true}$: $\text{OP_VER}(stack, fExec) = \text{error}$ (disabled opcode, fails when executing)
+  - If $fExec = \text{false}$: $\text{OP_VER}(stack, fExec) = \text{skip}$ (skipped in non-executing branch)
+- **Special Behavior**: OP_VER differs from truly disabled opcodes (OP_CAT, OP_MUL, etc.) which always fail
+
+**Properties**:
+- Conditional failure: $\text{OP_VER}(stack, \text{true}) = \text{error}$ (fails when executing)
+- False branch skip: $\text{OP_VER}(stack, \text{false}) = \text{skip}$ (skipped in false branch)
+- Distinction from disabled: Truly disabled opcodes fail regardless of $fExec$, but OP_VER only fails when $fExec = \text{true}$
+
+**Theorem 5.2.3** (OP_VER Conditional Behavior): OP_VER fails only when executing, not in false branches.
+
+$$\forall stack \in \mathcal{ST}: \text{OP_VER}(stack, fExec) = \begin{cases}
+\text{error} & \text{if } fExec = \text{true} \\
+\text{skip} & \text{if } fExec = \text{false}
+\end{cases}$$
+
+*Proof*: By construction, Bitcoin Core places OP_VER inside the `if (fExec || ...)` check, so it only fails when actually executing. In non-executing branches, OP_VER is skipped like any other opcode. This differs from truly disabled opcodes which fail unconditionally.
+
+**Instruction Pointer Advancement**: For conditional opcodes in false branches, the instruction pointer must advance:
+
+$$\forall opcode \in \{\text{OP_IF}, \text{OP_NOTIF}\}, script \in \mathcal{SC}, i \in \mathbb{N}, fExec = \text{false}: \text{ExecuteConditional}(opcode, script, i, fExec) \implies i' = i + 1$$
+
+Where $i'$ is the new instruction pointer position after handling the conditional in a false branch.
+
+**Properties**:
+- False branch advancement: In false branches, instruction pointer must increment before continuing to prevent infinite loops
+- OP_IF and OP_NOTIF: Both opcodes must advance instruction pointer in false branches: $i' = i + 1$
+- Loop prevention: Without instruction pointer advancement, the same opcode would be processed repeatedly, causing infinite loops
+
+**Implementation Note**: This is an implementation detail that ensures correct script execution. The mathematical specification focuses on the observable behavior (script execution succeeds or fails), but implementations must ensure instruction pointer advancement to prevent infinite loops.
+
+#### 5.2.5 Script Verification Flags
 
 **CalculateScriptFlags**: $\mathcal{TX} \times \mathcal{W}^? \times \mathbb{N} \times \text{Network} \rightarrow \mathbb{N}_{32}$
 
@@ -905,12 +1030,33 @@ Where:
 - $\text{ContainsMultisig}(scriptPubkey)$ checks if $scriptPubkey$ contains OP_CHECKMULTISIG (0xae)
 - $\text{IsNullDummy}(scriptSig)$ verifies that the dummy element (extra stack element consumed by OP_CHECKMULTISIG) is empty (OP_0)
 
-**OP_CHECKMULTISIG Stack Consumption**: OP_CHECKMULTISIG consumes $m + n + 2$ stack elements:
+**DecodeCScriptNum**: $\mathbb{S} \rightarrow \mathbb{Z}$
+
+**Properties**:
+- Empty byte array: $|bytes| = 0 \implies \text{DecodeCScriptNum}(bytes) = 0$ (empty array decodes to 0)
+- Minimal encoding: $\text{DecodeCScriptNum}(bytes)$ interprets bytes as minimal little-endian signed integer
+- Range: $\text{DecodeCScriptNum}(bytes) \in \mathbb{Z}$ (can be negative or positive)
+
+For byte string $bytes \in \mathbb{S}$:
+
+$$\text{DecodeCScriptNum}(bytes) = \begin{cases}
+0 & \text{if } |bytes| = 0 \\
+\text{DecodeLittleEndian}(bytes) & \text{otherwise}
+\end{cases}$$
+
+Where $\text{DecodeLittleEndian}(bytes)$ decodes bytes as a minimal little-endian signed integer.
+
+**OP_CHECKMULTISIG Stack Consumption**: OP_CHECKMULTISIG consumes $m + n + 2$ stack elements where:
 1. $m$ signatures
 2. $n$ public keys
-3. $m$ (signature threshold)
-4. $n$ (public key count)
+3. $m = \text{DecodeCScriptNum}(stack[|stack|-2])$ (signature threshold, decoded via CScriptNum)
+4. $n = \text{DecodeCScriptNum}(stack[|stack|-1])$ (public key count, decoded via CScriptNum)
 5. **Dummy element** (must be empty with BIP147)
+
+**Properties**:
+- CScriptNum decoding: $m = \text{DecodeCScriptNum}(m_{bytes})$ and $n = \text{DecodeCScriptNum}(n_{bytes})$ where $m_{bytes}$ and $n_{bytes}$ are the byte strings on the stack
+- Empty array handling: $|m_{bytes}| = 0 \implies m = 0$ (empty array decodes to 0)
+- Minimal encoding: $m_{bytes}$ and $n_{bytes}$ must be minimally encoded (no leading zeros except for sign)
 
 **Mathematical Property**: BIP147 enforces NULLDUMMY for multisig scripts:
 
@@ -919,6 +1065,12 @@ $$\forall scriptSig, scriptPubkey \in \mathbb{S}, h \geq H_{147} : \text{Contain
 **Theorem 5.4.5** (BIP147 NULLDUMMY Enforcement): BIP147 ensures that OP_CHECKMULTISIG dummy elements are empty after activation height.
 
 *Proof*: For any scriptSig $scriptSig$ and scriptPubkey $scriptPubkey$ containing OP_CHECKMULTISIG at height $h \geq H_{147}$, if $\neg \text{IsNullDummy}(scriptSig)$, then $\text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{invalid}$, causing script validation to fail. This ensures that all multisig scripts after activation use empty dummy elements, which is required for SegWit compatibility.
+
+**Theorem 5.4.5.1** (OP_CHECKMULTISIG CScriptNum Requirement): OP_CHECKMULTISIG must use CScriptNum decoding for $m$ and $n$ values.
+
+$$\forall stack \in \mathcal{ST}: \text{OP_CHECKMULTISIG}(stack) \text{ uses } m = \text{DecodeCScriptNum}(stack[|stack|-2]) \land n = \text{DecodeCScriptNum}(stack[|stack|-1])$$
+
+*Proof*: By construction, Bitcoin Core uses CScriptNum decoding for OP_CHECKMULTISIG parameters. This allows empty byte arrays to be interpreted as 0, which is required for certain edge cases (e.g., block 299,917). Raw byte parsing would reject empty arrays, but CScriptNum correctly decodes them to 0.
 
 **Activation Heights**:
 - Mainnet: Block 481,824 (SegWit activation)
@@ -1858,9 +2010,9 @@ $$\text{ScriptSecure}(s, f) = |s| \leq L_{script} \land \text{OpCount}(s) \leq L
 *Proof*: From the script limits:
 - Maximum script size: $L_{script} = 10,000$ bytes
 - Maximum operations: $L_{ops} = 201$
-- Maximum stack size: $L_{stack} = 1,000$
+- Maximum combined stack and altstack size: $L_{stack} = 1,000$ (where $|stack| + |altstack| \leq L_{stack}$)
 
-Since each operation takes constant time and the stack size is bounded, script execution is [$O(L_{ops}) = O(1)$](https://en.wikipedia.org/wiki/Big_O_notation) in the worst case.
+Since each operation takes constant time and the combined stack and altstack size is bounded, script execution is [$O(L_{ops}) = O(1)$](https://en.wikipedia.org/wiki/Big_O_notation) in the worst case.
 
 ### 8.4 Merkle Tree Security
 
