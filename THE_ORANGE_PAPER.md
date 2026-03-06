@@ -2014,6 +2014,10 @@ Round-trip properties ensure that encoding/decoding and serialization/deserializ
 
 $$\forall tx \in \mathcal{TX}: \text{DeserializeTransaction}(\text{SerializeTransaction}(tx)) = tx$$
 
+**Property** (SegWit Transaction Serialization Round-Trip): SegWit transaction serialization and deserialization are inverse operations, where $\mathcal{W}$ denotes witness stack (see Section 11.1):
+
+$$\forall (tx, w) \in \mathcal{TX} \times \mathcal{W}^{*}: |w| = |tx.\text{inputs}| \implies \text{DeserializeTransactionWithWitness}(\text{SerializeTransactionWithWitness}(tx, w)) = (tx, w)$$
+
 **Property** (Block Header Serialization Round-Trip): Block header serialization and deserialization are inverse operations:
 
 $$\forall h \in \mathcal{H}: \text{DeserializeHeader}(\text{SerializeHeader}(h)) = h$$
