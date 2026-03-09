@@ -1,0 +1,12 @@
+# Maps Orange Paper function names (PascalCase) to Rust paths.
+# Used by cargo spec-lock extract-property-tests.
+
+[blvm_consensus.serialization]
+SerializeTransaction = "blvm_consensus::serialization::serialize_transaction"
+DeserializeTransaction = "blvm_consensus::serialization::deserialize_transaction"
+SerializeTransactionWithWitness = "blvm_consensus::serialization::serialize_transaction_with_witness"
+DeserializeTransactionWithWitness = "blvm_consensus::serialization::deserialize_transaction_with_witness"
+SerializeBlockHeader = "blvm_consensus::serialization::serialize_block_header"
+SerializeHeader = "blvm_consensus::serialization::serialize_block_header"
+DeserializeBlockHeader = "blvm_consensus::serialization::deserialize_block_header"
+DeserializeHeader = "blvm_consensus::serialization::deserialize_block_header"

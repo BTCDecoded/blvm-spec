@@ -2055,6 +2055,30 @@ Since each operation takes constant time and the combined stack and altstack siz
 
 ### 8.4 Merkle Tree Security
 
+#### 8.4.1 ComputeMerkleRoot
+
+**ComputeMerkleRoot**: $\mathcal{H}^+ \rightarrow \mathbb{H}$ (non-empty sequence of 32-byte hashes to 32-byte root hash)
+
+**Properties**:
+- Deterministic: $\text{ComputeMerkleRoot}(H) = \text{ComputeMerkleRoot}(H)$ for all $H$
+- Single element: $|H| = 1 \implies \text{ComputeMerkleRoot}(H) = H[0]$
+- Collision resistance: $\text{ComputeMerkleRoot}(H_1) = \text{ComputeMerkleRoot}(H_2) \implies H_1 = H_2$ (assuming SHA-256 collision resistance)
+
+**Definition** (Bitcoin standard, double SHA-256):
+1. Let $L_0 = H$ (leaf level).
+2. While $|L_i| > 1$:
+   - **Odd-duplicate rule**: If $|L_i|$ is odd, append $L_i[|L_i|-1]$ to $L_i$.
+   - **CVE-2012-2459**: If any pair $(L_i[2j], L_i[2j+1])$ has $L_i[2j] = L_i[2j+1]$, the block is invalid (mutation detected).
+   - **Pair-and-hash**: $L_{i+1}[j] = \text{SHA256d}(L_i[2j] \| L_i[2j+1])$ for $j \in [0, |L_i|/2)$.
+   - Set $L_i = L_{i+1}$.
+3. $\text{ComputeMerkleRoot}(H) = L_{\text{final}}[0]$.
+
+Where $\text{SHA256d}(x) = \text{SHA256}(\text{SHA256}(x))$ (Bitcoin's standard hash).
+
+**Theorem 8.4.1** (ComputeMerkleRoot Uniqueness): For fixed input $H$, $\text{ComputeMerkleRoot}(H)$ is uniquely determined.
+
+*Proof*: Each step is deterministic; the algorithm terminates when $|L_i| = 1$.
+
 **Theorem 8.5** (Merkle Tree Integrity): The [merkle root](https://en.wikipedia.org/wiki/Merkle_tree) commits to all transactions in the block.
 
 *Proof*: The merkle root is computed as:
@@ -2552,6 +2576,38 @@ For P2WSH-in-P2SH:
 
 **Activation**: Block 481,824 (mainnet) - Same as SegWit activation
 
+#### 11.1.9 BIP143 Witness Sighash (ComputeWitnessSignatureHash)
+
+**ComputeWitnessSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{S} \times \mathbb{Z} \times \mathbb{N}_{8} \rightarrow \mathbb{H}$
+
+Computes the signature hash for SegWit (P2WPKH, P2WSH) inputs per BIP 143. Replaces legacy sighash with a committed structure that excludes scriptSig and binds the amount.
+
+**Preimage structure** (BIP 143 byte layout):
+$$\text{Preimage} = \text{nVersion}_{32} \| \text{hashPrevouts}_{256} \| \text{hashSequence}_{256} \| \text{outpoint}_{288} \| \text{scriptCode} \| \text{amount}_{64} \| \text{nSequence}_{32} \| \text{hashOutputs}_{256} \| \text{nLockTime}_{32} \| \text{sighashType}_{32}$$
+
+**Precomputed hashes**:
+- $\text{hashPrevouts} = \text{SHA256d}(\text{concat}(\text{prevout}_i : i \in \text{inputs}))$ (or $0^{256}$ if ANYONECANPAY)
+- $\text{hashSequence} = \text{SHA256d}(\text{concat}(\text{sequence}_i : i \in \text{inputs}))$ (or $0^{256}$ if ANYONECANPAY)
+- $\text{hashOutputs} = \text{SHA256d}(\text{concat}(\text{output}_j : j \in \text{included outputs}))$ — depends on sighash type
+
+**Sighash type handling**:
+- SIGHASH_ALL (0x01): all outputs included
+- SIGHASH_NONE (0x02): no outputs; hashOutputs = $0^{256}$
+- SIGHASH_SINGLE (0x03): output at input index only; hashOutputs = SHA256d of that output
+- ANYONECANPAY (0x80): only signing input; hashPrevouts, hashSequence = $0^{256}$
+
+**Definition**:
+$$\text{ComputeWitnessSignatureHash}(tx, i, scriptCode, amount, type) = \text{SHA256d}(\text{Preimage})$$
+
+**Properties**:
+- Hash length: $|\text{ComputeWitnessSignatureHash}(\ldots)| = 32$
+- Deterministic: Same inputs yield same hash
+- Amount binding: Signature commits to UTXO value (replay protection across outputs)
+
+**Theorem 11.1.2** (BIP143 Sighash Determinism): For fixed $(tx, i, scriptCode, amount, type)$, $\text{ComputeWitnessSignatureHash}$ is uniquely determined.
+
+*Proof*: Preimage is deterministic from inputs; SHA256d is deterministic. Thus the hash is unique.
+
 ### 11.2 Taproot
 
 **Taproot Output**: P2TR script `OP_1 <32-byte-hash>`
@@ -2638,16 +2694,51 @@ $$\text{ValidateTaprootKeyAggregation}(pk, out, root) = (out = pk + \text{Comput
 **ValidateTaprootScriptPath**: $\mathbb{S} \times [\mathbb{H}]^* \times [0,1]^{256} \rightarrow \{\text{true}, \text{false}\}$
 
 **Properties**:
-- Merkle proof validation: $\text{ValidateTaprootScriptPath}(s, proof, out) = \text{true} \iff \text{ComputeScriptMerkleRoot}(s, proof) = \text{ExtractMerkleRoot}(out)$
-- Boolean result: $\text{ValidateTaprootScriptPath}(s, proof, out) \in \{\text{true}, \text{false}\}$
-- Script path correctness: $\text{ValidateTaprootScriptPath}(s, proof, out)$ validates script is in Taproot merkle tree
+- Merkle proof validation: $\text{ValidateTaprootScriptPath}(s, proof, root) = \text{true} \iff \text{ComputeScriptMerkleRoot}(s, proof, v) = root$
+- Boolean result: $\text{ValidateTaprootScriptPath}(s, proof, root) \in \{\text{true}, \text{false}\}$
+- Script path correctness: $\text{ValidateTaprootScriptPath}(s, proof, root)$ validates script is in Taproot merkle tree
 
-For script $s$, merkle proof $proof$, and output key $out$:
+For script $s$, merkle proof $proof$, and expected merkle root $root$:
 
-$$\text{ValidateTaprootScriptPath}(s, proof, out) = \begin{cases}
-\text{true} & \text{if } \text{ComputeScriptMerkleRoot}(s, proof) = \text{ExtractMerkleRoot}(out) \\
+$$\text{ValidateTaprootScriptPath}(s, proof, root) = \begin{cases}
+\text{true} & \text{if } \text{ComputeScriptMerkleRoot}(s, proof, v) = root \\
 \text{false} & \text{otherwise}
 \end{cases}$$
+
+where $v$ is the leaf version (default $\texttt{0xc0}$ for tapscript per BIP 341).
+
+**ComputeScriptMerkleRoot**: $\mathbb{S} \times [\mathbb{H}]^* \times \mathbb{N}_{8} \rightarrow \mathbb{H}$
+
+Computes the Taproot script merkle root from a leaf script and merkle proof using BIP 341 TapLeaf and TapBranch tagged hashes.
+
+**TapLeaf Hash** (BIP 341):
+$$\text{TapLeafHash}(v, s) = \text{TaggedHash}(\texttt{"TapLeaf"}, v \| \text{CompactSize}(|s|) \| s)$$
+
+where $v \in \{0,\ldots,255\}$ is the leaf version, $s \in \mathbb{S}$ is the script, and $\text{CompactSize}$ encodes the script length per Bitcoin varint.
+
+**TapBranch Hash** (BIP 341):
+$$\text{TapBranchHash}(h_L, h_R) = \text{TaggedHash}(\texttt{"TapBranch"}, h_L \| h_R)$$
+
+where $h_L, h_R \in \mathbb{H}$ are 32-byte hashes. For sibling ordering: $(h_{\text{left}}, h_{\text{right}}) = (\min(h_{\text{current}}, h_{\text{proof}}), \max(h_{\text{current}}, h_{\text{proof}}))$ (lexicographic order).
+
+**Definition** (iterative, BIP 341):
+
+$$h_0 = \text{TapLeafHash}(v, s)$$
+
+For $j = 0, \ldots, |proof|-1$:
+$$(h_L, h_R) = (\min(h_j, proof[j]), \max(h_j, proof[j])) \quad \text{(lexicographic order)}$$
+$$h_{j+1} = \text{TapBranchHash}(h_L, h_R)$$
+
+$$\text{ComputeScriptMerkleRoot}(s, proof, v) = h_{|proof|}$$
+
+**Properties**:
+- Hash length: $\text{ComputeScriptMerkleRoot}(s, proof, v) = h \implies |h| = 32$
+- Deterministic: Same $(s, proof, v)$ yields same root
+- Merkle consistency: $\text{ValidateTaprootScriptPath}(s, proof, \text{ComputeScriptMerkleRoot}(s, proof, v)) = \text{true}$
+
+**Theorem 11.2.2** (Script Merkle Root Uniqueness): For fixed script $s$, proof $proof$, and leaf version $v$, $\text{ComputeScriptMerkleRoot}(s, proof, v)$ is uniquely determined.
+
+*Proof*: TapLeafHash and TapBranchHash are deterministic cryptographic hash functions. The iterative construction processes each proof element in order; sibling ordering is fixed by lexicographic comparison. Thus the computation is deterministic and produces a unique 32-byte root.
 
 #### 11.2.4 Taproot Witness Structure
 
@@ -2694,9 +2785,65 @@ For transaction $tx$, input index $i$, UTXO set $us$, sighash type $type$, and l
 
 $$\text{ComputeTaprootSignatureHash}(tx, i, us, type, leaf) = \text{TaggedHash}(\text{"TapSighash"}, tx, i, us(i.\text{prevout}), type, leaf)$$
 
+#### 11.2.7 Tapscript Signature Hash (BIP 342)
+
+**ComputeTapscriptSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \mathbb{S} \times \mathbb{N}_{8} \times \mathbb{N}_{32} \times \mathbb{N}_{8} \rightarrow \mathbb{H}$
+
+Computes the signature hash for tapscript (script-path) spending. Same base SigMsg structure as key-path (11.2.6), with an extension field $ext$ that binds the signature to the specific tapscript and OP_CODESEPARATOR position.
+
+**Extension field** (BIP 342):
+$$ext = \text{codesep\_pos}_{32} \| \text{key\_version}_{8} \| \text{tapleaf\_hash}_{256}$$
+
+where:
+- $\text{codesep\_pos}_{32}$: 4-byte little-endian encoding of the last OP_CODESEPARATOR position (0 if none executed)
+- $\text{key\_version}_{8}$: 1 byte, value $0x00$ for current tapscript
+- $\text{tapleaf\_hash}_{256}$: 32-byte $\text{TapLeafHash}(v, s)$ of the executing tapscript
+
+**Definition**:
+$$\text{SigMsgBase}(tx, i, us, type) = \text{version} \| \text{inputs} \| \text{outputs} \| \text{locktime} \| type \| i \| \text{value}_i \| \text{scriptPubKey}_i$$
+
+$$\text{ComputeTapscriptSignatureHash}(tx, i, us, s, v, \text{codesep}, type) = \text{TaggedHash}(\texttt{"TapSighash"}, 0x00 \| \text{SigMsgBase}(tx, i, us, type) \| ext)$$
+
+where $ext = \text{LE}_{32}(\text{codesep}) \| 0x00 \| \text{TapLeafHash}(v, s)$.
+
+**Properties**:
+- Hash length: $\text{ComputeTapscriptSignatureHash}(\ldots) = h \implies |h| = 32$
+- Deterministic: Same inputs yield same hash
+- Script binding: Signature is bound to specific tapscript via tapleaf_hash
+- Codeseparator binding: OP_CODESEPARATOR position affects hash (replay protection across script versions)
+
+**Theorem 11.2.3** (Tapscript Sighash Uniqueness): For fixed transaction $tx$, input index $i$, UTXO data $us$, tapscript $s$, leaf version $v$, codesep position $\text{codesep}$, and sighash type $type$, $\text{ComputeTapscriptSignatureHash}(tx, i, us, s, v, \text{codesep}, type)$ is uniquely determined.
+
+*Proof*: SigMsgBase is deterministic from $(tx, i, us, type)$. TapLeafHash is deterministic. The extension $ext$ is concatenation of fixed-length fields. TaggedHash is a deterministic cryptographic hash. Thus the full computation is deterministic and produces a unique 32-byte hash.
+
 **Theorem 11.2.1** (Taproot Empty ScriptSig): Taproot transactions require empty scriptSig for all inputs spending P2TR outputs.
 
 *Proof*: By construction, Taproot validation happens entirely through witness data (key path or script path). The scriptPubKey `OP_1 <32-byte-hash>` is not executable as a script, so scriptSig must be empty. If scriptSig is non-empty, validation fails before witness processing.
+
+#### 11.2.8 Tapscript Opcodes and SigOp Counting (BIP 342)
+
+**OP_CHECKSIGADD** (opcode 0xba): Tapscript-only opcode for signature aggregation.
+
+**Stack semantics**: Pops $(pk, n, sig)$ where $pk \in \mathbb{B}^{32}$, $n \in \mathbb{N}_{32}$, $sig \in \mathbb{B}^{64}$. Verifies BIP 340 Schnorr signature $(pk, sig)$ against the tapscript sighash. If valid: push $(n+1)$; else: fail.
+
+$$\text{OP\_CHECKSIGADD}(pk, n, sig) = \begin{cases}
+n+1 & \text{if } \text{VerifySchnorr}(pk, sig, \text{ComputeTapscriptSignatureHash}(\ldots)) = \text{true} \\
+\text{fail} & \text{otherwise}
+\end{cases}$$
+
+**SigOp cost**: $\text{SigOpCount}(\texttt{0xba}) = 1$ (same as OP_CHECKSIG, OP_CHECKSIGVERIFY).
+
+**CountTapscriptSigOps**: $\mathbb{S} \rightarrow \mathbb{N}$ — counts sigops in a tapscript for block weight/sigop limits.
+
+Parse $s$ sequentially. For each byte: if it is a push opcode (0x01–0x4b, or 0x4c/0x4d/0x4e with length bytes), skip the payload; otherwise it is an opcode byte. Count opcode bytes in $\{0xac, 0xad, 0xba\}$:
+
+$$\text{CountTapscriptSigOps}(s) = \sum_{\text{opcode positions } i} \mathbf{1}[s[i] \in \{0xac, 0xad, 0xba\}]$$
+
+where $0xac = \text{OP\_CHECKSIG}$, $0xad = \text{OP\_CHECKSIGVERIFY}$, $0xba = \text{OP\_CHECKSIGADD}$. Bytes inside push-data payloads are not counted (they are data, not opcodes).
+
+**Properties**:
+- Bounds: $\text{CountTapscriptSigOps}(s) \leq |s|$ (each opcode byte counts at most once)
+- No CHECKMULTISIG: Tapscript disables OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY; only CHECKSIG-family opcodes count
 
 **Activation**: Block 709,632 (mainnet)
 
