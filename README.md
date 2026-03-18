@@ -7,7 +7,14 @@ A complete mathematical specification of the Bitcoin consensus protocol derived 
 
 ## 📄 The Paper
 
-**[Read THE_ORANGE_PAPER.md](THE_ORANGE_PAPER.md)** - The complete mathematical specification
+The Orange Paper comprises two documents:
+
+- **[PROTOCOL.md](PROTOCOL.md)** — Consensus rules, invariants, predicates (what must hold)
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Implementation algorithms and design choices (how to achieve it)
+
+**[THE_ORANGE_PAPER.md](THE_ORANGE_PAPER.md)** — Umbrella document with structure and links
+
+For spec-lock verification, pass both: `--spec-path blvm-spec/PROTOCOL.md --spec-path blvm-spec/ARCHITECTURE.md`
 
 ## 🎯 What This Is
 
@@ -35,22 +42,7 @@ The specification uses formal mathematical notation:
 
 ## 📖 Document Structure
 
-The Orange Paper is organized into 14 sections covering:
-
-1. **[Introduction](THE_ORANGE_PAPER.md#1-introduction)** - Overview and key contributions
-2. **[System Model](THE_ORANGE_PAPER.md#2-system-model)** - Participants and network assumptions
-3. **[Mathematical Foundations](THE_ORANGE_PAPER.md#3-mathematical-foundations)** - Basic types and data structures
-4. **[Consensus Constants](THE_ORANGE_PAPER.md#4-consensus-constants)** - Monetary, block, and script constants
-5. **[State Transition Functions](THE_ORANGE_PAPER.md#5-state-transition-functions)** - Transaction and block validation
-6. **[Economic Model](THE_ORANGE_PAPER.md#6-economic-model)** - Block subsidy, total supply, and fee market
-7. **[Proof of Work](THE_ORANGE_PAPER.md#7-proof-of-work)** - Difficulty adjustment and block validation
-8. **[Security Properties](THE_ORANGE_PAPER.md#8-security-properties)** - Economic, cryptographic, and merkle tree security
-9. **[Mempool Protocol](THE_ORANGE_PAPER.md#9-mempool-protocol)** - Transaction validation and RBF
-10. **[Network Protocol](THE_ORANGE_PAPER.md#10-network-protocol)** - P2P communication and synchronization
-11. **[Advanced Features](THE_ORANGE_PAPER.md#11-advanced-features)** - SegWit, Taproot, and chain reorganization
-12. **[Mining Protocol](THE_ORANGE_PAPER.md#12-mining-protocol)** - Block template generation and mining process
-13. **[Implementation Considerations](THE_ORANGE_PAPER.md#13-implementation-considerations)** - Performance and security
-14. **[Conclusion](THE_ORANGE_PAPER.md#14-conclusion)** - Summary and applications
+The Orange Paper is split into **PROTOCOL.md** (consensus rules) and **ARCHITECTURE.md** (implementation design). See [THE_ORANGE_PAPER.md](THE_ORANGE_PAPER.md) for the full structure and section mapping.
 
 ## 🚀 Usage
 
