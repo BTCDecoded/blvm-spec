@@ -380,7 +380,7 @@ $$\text{SighashType}(byte, h) = \begin{cases}
 \text{Invalid} & \text{otherwise}
 \end{cases}$$
 
-Where $H_{66}$ is the BIP66 activation height (mainnet: 363,724).
+Where $H_{66}$ is the BIP66 activation height (mainnet: 363,725; Bitcoin Core `BIP66Height`).
 
 **Early Bitcoin Legacy**: In early Bitcoin (pre-BIP66), sighash type $0x00$ was accepted and treated as SIGHASH_ALL. This is represented as $\text{AllLegacy}$ to preserve the correct byte value for sighash computation.
 
@@ -390,7 +390,7 @@ Where $H_{66}$ is the BIP66 activation height (mainnet: 363,724).
 
 **Theorem 5.1.2** (Sighash Type AllLegacy): Early Bitcoin (pre-BIP66) accepted sighash type 0x00 as SIGHASH_ALL.
 
-*Proof*: Historical Bitcoin blocks before BIP66 activation (block 363,724) contain transactions with sighash type 0x00. These transactions are valid and must be accepted. The $\text{SighashType}$ function maps $0x00$ to $\text{AllLegacy}$ for heights $< H_{66}$ to preserve compatibility with these historical transactions.
+*Proof*: Historical Bitcoin blocks at heights $< H_{66}$ (on mainnet, heights up to 363,724) contain transactions with sighash type 0x00. These transactions are valid and must be accepted. The $\text{SighashType}$ function maps $0x00$ to $\text{AllLegacy}$ for heights $< H_{66}$ to preserve compatibility with these historical transactions.
 
 **Theorem 5.1.3** (FindAndDelete Sighash Requirement): For legacy scripts, FindAndDelete must be applied to scriptCode before sighash computation.
 
@@ -698,14 +698,16 @@ Where:
 - $H_f(n)$ is the activation height for flag $f$ on network $n$
 - $\text{FlagCondition}(f, tx, w)$ is the transaction-specific condition for flag $f$
 
+**Consensus vs relay**: Bitcoin Core enables **SCRIPT_VERIFY_STRICTENC** and **SCRIPT_VERIFY_LOW_S** for **mempool / transaction relay (standardness)**. For **block connection** (`GetBlockScriptFlags`), only **SCRIPT_VERIFY_DERSIG** is OR-ed in at BIP66 height—not `STRICTENC` or `LOW_S`. Mainnet may therefore contain **post-BIP66** confirmed transactions whose ECDSA signatures are strictly DER (required by **DERSIG**) but are not low-$S$; consensus still accepts them. This specification matches that **consensus** behavior; **relay** policy remains implementation-defined (see mempool / `AcceptToMemoryPool` in reference implementations).
+
 **Flag Definitions**:
 - **SCRIPT_VERIFY_P2SH** ($f = 0x01$): $H_f(\text{mainnet}) = 173,805$, $\text{FlagCondition} = \text{true}$ (always active after activation)
-- **SCRIPT_VERIFY_STRICTENC** ($f = 0x02$): $H_f(\text{mainnet}) = 363,724$ (BIP66), $\text{FlagCondition} = \text{true}$
-- **SCRIPT_VERIFY_DERSIG** ($f = 0x04$): $H_f(\text{mainnet}) = 363,724$ (BIP66), $\text{FlagCondition} = \text{true}$
-- **SCRIPT_VERIFY_LOW_S** ($f = 0x08$): $H_f(\text{mainnet}) = 363,724$ (BIP66), $\text{FlagCondition} = \text{true}$
+- **SCRIPT_VERIFY_STRICTENC** ($f = 0x02$): **Relay / standardness** (not added by consensus block script-flag height gating at BIP66 on Bitcoin Core). $\text{FlagCondition}$ and activation for blocks: **not applicable** to `ConnectBlock` parity.
+- **SCRIPT_VERIFY_DERSIG** ($f = 0x04$): $H_f(\text{mainnet}) = 363,725$ (BIP66; Bitcoin Core `BIP66Height`), $\text{FlagCondition} = \text{true}$ — **consensus** base flag after activation (strict DER encodings for ECDSA signatures in executed scripts).
+- **SCRIPT_VERIFY_LOW_S** ($f = 0x08$): **Relay / standardness** (not added by consensus block script-flag height gating at BIP66 on Bitcoin Core). $\text{FlagCondition}$ for blocks: **not applicable** to `ConnectBlock` parity.
 - **SCRIPT_VERIFY_NULLDUMMY** ($f = 0x10$): $H_f(\text{mainnet}) = 481,824$ (BIP147), $\text{FlagCondition} = \text{true}$
 - **SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY** ($f = 0x200$): $H_f(\text{mainnet}) = 388,381$ (BIP65), $\text{FlagCondition} = \text{true}$
-- **SCRIPT_VERIFY_CHECKSEQUENCEVERIFY** ($f = 0x400$): $H_f(\text{mainnet}) = 481,824$ (BIP112), $\text{FlagCondition} = \text{true}$
+- **SCRIPT_VERIFY_CHECKSEQUENCEVERIFY** ($f = 0x400$): $H_f(\text{mainnet}) = 419,328$ (BIP112 / BIP9 `csv` deployment on mainnet), $\text{FlagCondition} = \text{true}$
 - **SCRIPT_VERIFY_WITNESS** ($f = 0x800$): $H_f(\text{mainnet}) = 481,824$ (SegWit), $\text{FlagCondition} = (w \neq \emptyset \lor \text{IsSegWitTransaction}(tx))$
 - **SCRIPT_VERIFY_WITNESS_PUBKEYTYPE** ($f = 0x8000$): $H_f(\text{mainnet}) = 709,632$ (Taproot), $\text{FlagCondition} = \exists o \in tx.\text{outputs} : \text{IsP2TR}(o.\text{scriptPubkey})$
 
@@ -723,11 +725,12 @@ $$\forall tx_1, tx_2 \in \mathcal{TX}, tx_1 \neq tx_2 : \text{CalculateScriptFla
 
 *Proof*: From the definition of $\text{CalculateScriptFlags}$, flags depend on both block height (activation) and transaction characteristics (witness presence, output types). Different transactions in the same block may have different flags, so flags must be computed per transaction.
 
-**Activation Heights** (Mainnet):
+**Activation Heights** (Mainnet, consensus **block** flags):
 - P2SH: Block 173,805
-- BIP66 (DER, STRICTENC, LOW_S): Block 363,724
+- BIP66 (consensus **DERSIG**): Block 363,725
 - BIP65 (CLTV): Block 388,381
-- SegWit (WITNESS, NULLDUMMY, CSV): Block 481,824
+- BIP112 (CHECKSEQUENCEVERIFY): Block 419,328
+- SegWit (WITNESS, NULLDUMMY / BIP147): Block 481,824
 - Taproot (WITNESS_PUBKEYTYPE): Block 709,632
 
 #### 5.2.6 Script Flag Exceptions
@@ -938,7 +941,7 @@ $$\text{BIP34Check}(b, h) = \begin{cases}
 \end{cases}$$
 
 Where:
-- $H_{34}$ is the BIP34 activation height (mainnet: 227,836; testnet: 211,111; regtest: 0)
+- $H_{34}$ is the BIP34 activation height (mainnet: 227,931; testnet: 21,111; regtest: 0)
 - $\text{ExtractHeight}(tx)$ extracts the block height from coinbase scriptSig using CScriptNum encoding
 
 **Height Encoding**: The block height is encoded in the coinbase scriptSig as a script number:
@@ -956,8 +959,8 @@ $$\forall b = (h, txs) \in \mathcal{B}, h \geq H_{34} : \text{IsCoinbase}(tx) \i
 *Proof*: For any block $b$ at height $h \geq H_{34}$, if the coinbase transaction $tx$ does not encode height $h$ in its scriptSig, then $\text{BIP34Check}(b, h) = \text{invalid}$, preventing block acceptance. This ensures that all blocks after activation height have consistent height encoding.
 
 **Activation Heights**:
-- Mainnet: Block 227,836
-- Testnet: Block 211,111
+- Mainnet: Block 227,931
+- Testnet: Block 21,111
 - Regtest: Block 0 (always active)
 
 ---
@@ -979,7 +982,7 @@ $$\text{BIP66Check}(sig, h) = \begin{cases}
 \end{cases}$$
 
 Where:
-- $H_{66}$ is the BIP66 activation height (mainnet: 363,724; testnet: 330,776; regtest: 0)
+- $H_{66}$ is the BIP66 activation height (mainnet: 363,725; testnet: 330,776; regtest: 0)
 - $\text{IsStrictDER}(sig)$ verifies that $sig$ is strictly DER-encoded according to [X.690](https://www.itu.int/rec/T-REC-X.690/) ASN.1 encoding rules
 
 **Strict DER Requirements**:
@@ -997,7 +1000,7 @@ $$\forall sig \in \mathbb{S}, h \geq H_{66} : \text{BIP66Check}(sig, h) = \text{
 *Proof*: For any signature $sig$ at height $h \geq H_{66}$, if $\neg \text{IsStrictDER}(sig)$, then $\text{BIP66Check}(sig, h) = \text{invalid}$, causing script validation to fail. This ensures that all signatures after activation conform to strict DER encoding, preventing signature malleability.
 
 **Activation Heights**:
-- Mainnet: Block 363,724
+- Mainnet: Block 363,725
 - Testnet: Block 330,776
 - Regtest: Block 0 (always active)
 
@@ -1022,8 +1025,8 @@ $$\text{BIP90Check}(h, height) = \begin{cases}
 \end{cases}$$
 
 Where:
-- $H_{34}$ is BIP34 activation height (mainnet: 227,836)
-- $H_{66}$ is BIP66 activation height (mainnet: 363,724)
+- $H_{34}$ is BIP34 activation height (mainnet: 227,931)
+- $H_{66}$ is BIP66 activation height (mainnet: 363,725)
 - $H_{65}$ is BIP65 activation height (mainnet: 388,381)
 
 **Mathematical Property**: BIP90 enforces minimum block versions:
@@ -1044,7 +1047,7 @@ $$\text{MinVersion}(height) = \begin{cases}
 *Proof*: For any block header $h$ at height $height$, if $version < \text{MinVersion}(height)$, then $\text{BIP90Check}(h, height) = \text{invalid}$, preventing block acceptance. This ensures that blocks after each BIP activation use the correct minimum version, simplifying activation logic.
 
 **Activation Heights**:
-- Mainnet: Various (BIP34: 227,836; BIP66: 363,724; BIP65: 388,381)
+- Mainnet: Various (BIP34: 227,931; BIP66: 363,725; BIP65: 388,381)
 - Testnet: Various
 - Regtest: Block 0 (always active)
 
@@ -1864,6 +1867,8 @@ Where:
 - $\text{exponent} = (bits \gg 24) \land 0xff$
 - $\text{mantissa} = bits \land 0x00ffffff$
 
+- **Domain (compact exponent):** Let $e = \text{exponent}$ and $m = \text{mantissa}$. $\text{ExpandTarget}(bits)$ is defined only when $e \in \{3,4,\ldots,32\}$; for $e \notin \{3,\ldots,32\}$, the compact encoding is outside the PoW-valid domain (consensus rejects such headers). For $e \in \{3,\ldots,32\}$ and $m = 0$, $\text{ExpandTarget}(bits) = 0 \in \mathbb{U}_{256}$.
+
 *Proof*: This function converts the compact difficulty representation (used in block headers) to a full 256-bit target value. The compact format uses 3 bytes for the exponent and 3 bytes for the mantissa. This is proven by blvm-spec-lock formal verification.
 
 **GetNextWorkRequired**: $\mathcal{H} \times \mathcal{H}^* \times \text{Network} \rightarrow \mathbb{N}$
@@ -1882,10 +1887,17 @@ $$\text{timeSpan} = \text{ClampTime}(prev_{\text{last}}.\text{time} - prev_{\tex
 
 Let $\text{bitsBase}(prev, n) \coloneqq prev_{\text{first}}.\text{bits}$ if $\text{EnforceBIP94}(n)$, else $prev_{\text{last}}.\text{bits}$.
 
+Let $b = \text{bitsBase}(prev, n)$, $T = \text{ExpandTarget}(b)$, and $\tau = \text{timeSpan}$. Let $\pi : \mathbb{U}_{256} \to \mathbb{N}$ embed targets as unsigned integers. Define the **partial** product $T \otimes \tau \in \mathbb{U}_{256}$ to exist iff $\pi(T) \cdot \tau < 2^{256}$, in which case $T \otimes \tau$ is the unique element of $\mathbb{U}_{256}$ with $\pi(T \otimes \tau) = \pi(T) \cdot \tau$; otherwise $T \otimes \tau$ is undefined.
+
+Let $T_{\mathrm{adj}} \coloneqq \left\lfloor \pi(T \otimes \tau) / T_{\text{expected}} \right\rfloor$ when $T \otimes \tau$ is defined. Let $c \coloneqq \text{Compress}(T_{\mathrm{adj}})$ be the compact $n$Bits encoding of $T_{\mathrm{adj}}$, and let $\text{MAX\_TARGET} \in \mathbb{N}$ denote the compact encoding of the network’s maximum target (minimum difficulty ceiling).
+
 $$\text{GetNextWorkRequired}(h, prev, n) = \begin{cases}
 \text{initialDifficulty} & \text{if } |prev| < 2 \\
-\text{ToCompact}\left(\min\left(\text{ExpandTarget}(\text{bitsBase}(prev, n)) \times \frac{\text{timeSpan}}{T_{\text{expected}}}, \text{maxTarget}\right)\right) & \text{otherwise}
+b & \text{if } |prev| \ge 2 \text{ and } T \otimes \tau \text{ is undefined} \\
+\min_{\mathbb{N}}(c,\, \text{MAX\_TARGET}) & \text{if } |prev| \ge 2 \text{ and } T \otimes \tau \text{ is defined}
 \end{cases}$$
+
+where $\min_{\mathbb{N}}$ is the usual total order on $\mathbb{N}$, applied to the two compact encodings as unsigned integers.
 
 **BIP94 Timestamp Rule** (when $\text{EnforceBIP94}(n)$): For the first block of a new difficulty period, $\text{block}.\text{time} \geq \text{prev}.\text{time} - 600$ (MAX_TIMEWARP). Violation yields invalid block.
 
@@ -1925,22 +1937,13 @@ flowchart TD
 
 **Theorem 7.1** (Difficulty Adjustment Bounds): The difficulty adjustment is bounded by a factor of 4 in either direction.
 
-*Proof*: From the implementation, we have:
-$$\frac{timeSpan}{4} \leq actualTimeSpan \leq 4 \times timeSpan$$
-
-Where $timeSpan$ is clamped to $[\frac{expectedTime}{4}, 4 \times expectedTime]$. Therefore:
-$$\frac{1}{4} \leq adjustment \leq 4$$
+*Proof*: Write $\tau_{\mathrm{raw}} = prev_{\text{last}}.\text{time} - prev_{\text{first}}.\text{time}$ and $\tau = \text{ClampTime}(\tau_{\mathrm{raw}})$. By definition of $\text{ClampTime}$, $\tau \in [T_{\text{expected}}/4,\, 4\,T_{\text{expected}}]$. The adjustment ratio $\tau / T_{\text{expected}}$ therefore lies in $[\frac{1}{4},\,4]$, which bounds multiplicative difficulty change across a retarget period.
 
 **Corollary 7.1**: The difficulty can change by at most a factor of 4 between any two difficulty adjustment periods.
 
-**Theorem 7.1.1** (Target Expansion Bounds): For valid difficulty bits, target expansion produces valid targets:
+**Theorem 7.1.1** (Target expansion on valid compact domain): Let $bits \in \mathbb{N}$, $e = (bits \gg 24) \land 0xff$, $m = bits \land 0x00ffffff$. If $3 \le e \le 32$, then $\text{ExpandTarget}(bits)$ is defined and coincides with the mantissa–exponent rule displayed above; in particular, for $e > 3$ and $m > 0$, $\pi(\text{ExpandTarget}(bits)) = m \cdot 2^{8(e-3)}$ as integers, and the left shift introduces no truncation in $\mathbb{U}_{256}$ for $e \le 32$. If $e \notin \{3,\ldots,32\}$, $\text{ExpandTarget}(bits)$ is undefined (invalid compact exponent for PoW).
 
-$$\forall bits \in \mathbb{N}, 0x03000000 \leq bits \leq 0x1d00ffff:$$
-$$\text{ExpandTarget}(bits) \text{ produces valid target } \land \text{ExpandTarget}(bits) \leq 0x00ffffff \times 256^{exponent-3}$$
-
-Where $exponent = (bits \gg 24) \land 0xff$ and $mantissa = bits \land 0x00ffffff$.
-
-*Proof*: By construction, the target expansion formula ensures that valid bits produce valid targets within the specified bounds. Invalid bits may produce errors, which is acceptable. This is proven by blvm-spec-lock formal verification.
+*Proof*: Case-split on $e \le 3$ versus $e > 3$ per the expansion definition; for $e > 3$, $8(e-3) \le 232 < 256$, so the left shift stays inside $\mathbb{U}_{256}$.
 
 **Theorem 7.1.2** (Difficulty Adjustment Bounds Enforcement): Difficulty adjustment respects maximum and minimum bounds:
 
@@ -2336,37 +2339,37 @@ Parses raw bytes into a protocol message. Rejects messages that are too short, t
 **Witness Commitment**: Coinbase transaction includes witness root hash
 $$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{Hash}(tx.witness) : tx \in block.transactions\})$$
 
-**Weight Calculation**: 
-$$\text{Weight}(tx) = 4 \times |\text{Serialize}(tx \setminus witness)| + |\text{Serialize}(tx)|$$
+**Weight Calculation** (BIP141):  
+$$\text{Weight}(tx) = 3 \times |\text{Serialize}(tx \setminus witness)| + |\text{Serialize}(tx)|$$
 
 #### 11.1.1 Weight and Size Calculations
 
 **CalculateTransactionWeight**: $\mathcal{TX} \times \mathcal{W}^? \rightarrow \mathbb{N}$
 
 **Properties**:
-- Weight formula: $\text{CalculateTransactionWeight}(tx, w) = 4 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$
+- Weight formula: $\text{CalculateTransactionWeight}(tx, w) = 3 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$ (BIP141)
 - Non-negativity: $\text{CalculateTransactionWeight}(tx, w) \geq 0$ for all valid transactions
 - Minimum weight: $\text{CalculateTransactionWeight}(tx, w) \geq 4$ (at least 4 bytes base size)
 - Weight bounds: $\text{CalculateTransactionWeight}(tx, w) \leq W_{\text{max\_tx\_weight}}$ for valid transactions
-- Base size component: $\text{CalculateTransactionWeight}(tx, w) \geq 4 \times \text{BaseSize}(tx)$ (base size is always included)
+- Base size component: $\text{CalculateTransactionWeight}(tx, w) \geq 3 \times \text{BaseSize}(tx)$ (base size is always included)
 - Total size component: $\text{CalculateTransactionWeight}(tx, w) \geq \text{TotalSize}(tx, w)$ (total size is always included)
 - Deterministic: $\text{CalculateTransactionWeight}(tx_1, w_1) = \text{CalculateTransactionWeight}(tx_2, w_2) \iff tx_1 = tx_2 \land w_1 = w_2$
 - Witness impact: $\text{CalculateTransactionWeight}(tx, \text{Some}(w)) \geq \text{CalculateTransactionWeight}(tx, \text{None})$ (witness increases weight)
 
 For transaction $tx$ and witness $w$:
 
-$$\text{CalculateTransactionWeight}(tx, w) = 4 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$$
+$$\text{CalculateTransactionWeight}(tx, w) = 3 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$$
 
 Where:
 - $\text{BaseSize}(tx) = |\text{Serialize}(tx \setminus witness)|$ (transaction size without witness data)
 - $\text{TotalSize}(tx, w) = |\text{Serialize}(tx)|$ (transaction size with witness data)
 
 **Properties**:
-- Weight formula: $\text{CalculateTransactionWeight}(tx, w) = 4 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$
+- Weight formula: $\text{CalculateTransactionWeight}(tx, w) = 3 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$ (BIP141)
 - Weight positivity: $\text{CalculateTransactionWeight}(tx, w) > 0$ for all valid transactions
 - Minimum weight: $\text{CalculateTransactionWeight}(tx, w) \geq 4$ (at least 4 bytes base size)
 - Weight bounds: $\text{CalculateTransactionWeight}(tx, w) \leq M_{\text{max\_tx\_weight}}$ for valid transactions
-- Base size component: $\text{CalculateTransactionWeight}(tx, w) \geq 4 \times \text{BaseSize}(tx)$ (base size is always included)
+- Base size component: $\text{CalculateTransactionWeight}(tx, w) \geq 3 \times \text{BaseSize}(tx)$ (base size is always included)
 - Total size component: $\text{CalculateTransactionWeight}(tx, w) \geq \text{TotalSize}(tx, w)$ (total size is always included)
 - Deterministic: $\text{CalculateTransactionWeight}(tx_1, w_1) = \text{CalculateTransactionWeight}(tx_2, w_2) \iff tx_1 = tx_2 \land w_1 = w_2$
 - Witness impact: $\text{CalculateTransactionWeight}(tx, \text{Some}(w)) \geq \text{CalculateTransactionWeight}(tx, \text{None})$ (witness increases weight)
