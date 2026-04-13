@@ -2,13 +2,13 @@
 ## A Complete Mathematical Description of the Bitcoin Consensus System
 
 **Version 1.0**  
-**Based on Bitcoin Core Implementation Analysis**  
+**Consensus specification (implementation-agnostic)**  
 **Authors: BTCDecoded.org, MyBitcoinFuture.com, @secsovereign**
 ---
 
 ## Abstract
 
-This paper presents a complete mathematical specification of the Bitcoin consensus protocol as implemented in Bitcoin Core. Unlike previous descriptions, this specification is derived entirely from the current codebase and represents the protocol as it exists today, not as it was originally conceived. This "Orange Paper" serves as the definitive reference for Bitcoin's consensus rules, state transitions, and economic model.
+This paper presents a mathematical specification of the Bitcoin consensus protocol as observed on the live network and in widely deployed node software. Unlike informal descriptions, this work states rules, invariants, and state transitions in precise notation so independent implementations can be checked for equivalence. This “Orange Paper” is intended as a definitive reference for consensus rules, state transitions, and the imposed economic model.
 
 ## Table of Contents
 
@@ -77,16 +77,7 @@ This paper presents a complete mathematical specification of the Bitcoin consens
     - 12.2 [Coinbase Transaction](#122-coinbase-transaction)
     - 12.3 [Mining Process](#123-mining-process)
     - 12.4 [Block Template Interface](#124-block-template-interface)
-13. [Implementation Considerations](#13-implementation-considerations)
-    - 13.1 [Performance](#131-performance)
-    - 13.2 [Security](#132-security)
-14. [Conclusion](#14-conclusion)
-    - 14.1 [Summary of Contributions](#141-summary-of-contributions)
-    - 14.2 [Applications](#142-applications)
-15. [Governance Model](#15-governance-model)
-    - 15.1 [Mathematical Foundations](#151-mathematical-foundations)
-    - 15.2 [Vote Aggregation](#152-vote-aggregation)
-    - 15.3 [Security Properties](#153-security-properties)
+13. [Engineering-Specific Edge Cases](#13-engineering-specific-edge-cases)
 
 ## 1. Introduction
 
@@ -380,7 +371,7 @@ $$\text{SighashType}(byte, h) = \begin{cases}
 \text{Invalid} & \text{otherwise}
 \end{cases}$$
 
-Where $H_{66}$ is the BIP66 activation height (mainnet: 363,725; Bitcoin Core `BIP66Height`).
+Where $H_{66}$ is the BIP66 activation height (mainnet: 363,725).
 
 **Early Bitcoin Legacy**: In early Bitcoin (pre-BIP66), sighash type $0x00$ was accepted and treated as SIGHASH_ALL. This is represented as $\text{AllLegacy}$ to preserve the correct byte value for sighash computation.
 
@@ -589,7 +580,7 @@ $$\text{GetTransactionSigOpCost}(tx, us, w, f) = \text{GetLegacySigOpCount}(tx) 
 
 Where:
 - $\text{IsP2SHEnabled}(f) = (f \land 0x01) \neq 0$
-- $\text{CountWitnessSigOps}(tx, w, us, f)$ counts sigops in witness scripts for SegWit transactions
+- $\text{CountWitnessSigOps}(tx, w, us, f)$ adds witness sigop cost **only for witness outputs of version 0** (P2WPKH and P2WSH). For each such input, P2WPKH contributes **1**; P2WSH uses $\text{CountSigOpsInScript}$ on the witness stack’s last push (the witness script), with accurate multisig counting. **Witness version 1 (P2TR / Taproot) contributes 0** to this term; taproot signature-related limits are enforced via **BIP 342** tapscript validation weight during script execution, not by adding tapscript sigops into $\text{GetTransactionSigOpCost}$. Implementations must not fold $\text{CountTapscriptSigOps}$ into $\text{CountWitnessSigOps}$ or they will over-count and reject valid mainnet blocks.
 
 **Block SigOps Limit**: For block $b$:
 
@@ -698,13 +689,13 @@ Where:
 - $H_f(n)$ is the activation height for flag $f$ on network $n$
 - $\text{FlagCondition}(f, tx, w)$ is the transaction-specific condition for flag $f$
 
-**Consensus vs relay**: Bitcoin Core enables **SCRIPT_VERIFY_STRICTENC** and **SCRIPT_VERIFY_LOW_S** for **mempool / transaction relay (standardness)**. For **block connection** (`GetBlockScriptFlags`), only **SCRIPT_VERIFY_DERSIG** is OR-ed in at BIP66 height—not `STRICTENC` or `LOW_S`. Mainnet may therefore contain **post-BIP66** confirmed transactions whose ECDSA signatures are strictly DER (required by **DERSIG**) but are not low-$S$; consensus still accepts them. This specification matches that **consensus** behavior; **relay** policy remains implementation-defined (see mempool / `AcceptToMemoryPool` in reference implementations).
+**Consensus vs relay**: Many nodes apply **SCRIPT_VERIFY_STRICTENC** and **SCRIPT_VERIFY_LOW_S** only as **mempool / relay (standardness)** rules. For **block connection**, the consensus script flags OR in **SCRIPT_VERIFY_DERSIG** at BIP66 height, not `STRICTENC` or `LOW_S`. Mainnet may therefore contain **post-BIP66** confirmed transactions whose ECDSA signatures are strictly DER (required by **DERSIG**) but are not low-$S$; consensus still accepts them. This specification states **consensus** behavior; **relay** policy remains implementation-defined (including $\text{AcceptToMemoryPool}$-class admission rules).
 
 **Flag Definitions**:
 - **SCRIPT_VERIFY_P2SH** ($f = 0x01$): $H_f(\text{mainnet}) = 173,805$, $\text{FlagCondition} = \text{true}$ (always active after activation)
-- **SCRIPT_VERIFY_STRICTENC** ($f = 0x02$): **Relay / standardness** (not added by consensus block script-flag height gating at BIP66 on Bitcoin Core). $\text{FlagCondition}$ and activation for blocks: **not applicable** to `ConnectBlock` parity.
-- **SCRIPT_VERIFY_DERSIG** ($f = 0x04$): $H_f(\text{mainnet}) = 363,725$ (BIP66; Bitcoin Core `BIP66Height`), $\text{FlagCondition} = \text{true}$ — **consensus** base flag after activation (strict DER encodings for ECDSA signatures in executed scripts).
-- **SCRIPT_VERIFY_LOW_S** ($f = 0x08$): **Relay / standardness** (not added by consensus block script-flag height gating at BIP66 on Bitcoin Core). $\text{FlagCondition}$ for blocks: **not applicable** to `ConnectBlock` parity.
+- **SCRIPT_VERIFY_STRICTENC** ($f = 0x02$): **Relay / standardness** (not added by consensus block script-flag height gating at BIP66). $\text{FlagCondition}$ and activation for blocks: **not applicable** to $\text{ConnectBlock}$ parity.
+- **SCRIPT_VERIFY_DERSIG** ($f = 0x04$): $H_f(\text{mainnet}) = 363,725$ (BIP66), $\text{FlagCondition} = \text{true}$. **Consensus** base flag after activation (strict DER encodings for ECDSA signatures in executed scripts).
+- **SCRIPT_VERIFY_LOW_S** ($f = 0x08$): **Relay / standardness** (not added by consensus block script-flag height gating at BIP66). $\text{FlagCondition}$ for blocks: **not applicable** to $\text{ConnectBlock}$ parity.
 - **SCRIPT_VERIFY_NULLDUMMY** ($f = 0x10$): $H_f(\text{mainnet}) = 481,824$ (BIP147), $\text{FlagCondition} = \text{true}$
 - **SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY** ($f = 0x200$): $H_f(\text{mainnet}) = 388,381$ (BIP65), $\text{FlagCondition} = \text{true}$
 - **SCRIPT_VERIFY_CHECKSEQUENCEVERIFY** ($f = 0x400$): $H_f(\text{mainnet}) = 419,328$ (BIP112 / BIP9 `csv` deployment on mainnet), $\text{FlagCondition} = \text{true}$
@@ -1218,10 +1209,11 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xb3, OP_NOP4):
 3. **Payment Channels**: State updates with committed transaction structures
 4. **Smart Contracts**: Covenants and state machines with transaction templates
 
-**Activation Heights**:
-- Mainnet: TBD (BIP9 activation pending)
-- Testnet: TBD
-- Regtest: Block 0 (always active for testing)
+**Activation heights (Bitcoin chain consensus)**:
+
+- **Mainnet**: Not consensus-active. BIP119 has **no** deployed soft fork on the canonical Bitcoin mainnet chain (through the documented chain tip); on chain, opcode **0xb3** remains **OP_NOP4** for consensus purposes. This section specifies the rules **if and when** a deployment activates them; BLVM may implement them behind a feature flag for testing.
+- **Public test networks** (default `testnet` / `testnet4` parameters): Same as mainnet under default parameters (no consensus activation unless a future network explicitly deploys BIP119).
+- **Regtest**: Height **0** when the local node enables the proposal for development (implementation-defined feature gate).
 
 **Implementation Notes**:
 
@@ -1394,10 +1386,11 @@ $$\forall msg, sig \in \mathbb{S}, pk \in \mathbb{S}, h \in \mathbb{N}: |pk| \ne
 3. **Cross-Input Verification**: Verify signatures across different transaction inputs
 4. **Arbitrary Message Signing**: Verify signatures on any data, not just transaction hashes
 
-**Activation Heights**:
-- Mainnet: TBD (BIP9 activation pending)
-- Testnet: TBD
-- Regtest: Block 0 (always active for testing when feature enabled)
+**Activation heights (Bitcoin chain consensus)**:
+
+- **Mainnet**: Not consensus-active. BIP348 has **no** deployed soft fork on the canonical Bitcoin mainnet chain (through the documented chain tip); **OP_SUCCESS204** remains unconsumed for standard consensus on chain. This section specifies the rules **if and when** a deployment activates them; BLVM may implement them behind a feature flag for testing.
+- **Public test networks** (default `testnet` / `testnet4` parameters): Same as mainnet under default parameters (no consensus activation unless a future network explicitly deploys BIP348).
+- **Regtest**: Height **0** when the local node enables the proposal for development (implementation-defined feature gate).
 
 **Implementation Notes**:
 
@@ -1865,11 +1858,11 @@ $$\text{ExpandTarget}(bits) = \text{mantissa} \times 2^{8 \times (\text{exponent
 
 Where:
 - $\text{exponent} = (bits \gg 24) \land 0xff$
-- $\text{mantissa} = bits \land 0x00ffffff$
+- $\text{mantissa} = bits \land 0x007fffff$ (23-bit mantissa; bit `0x00800000` of the compact word lies outside this field)
 
 - **Domain (compact exponent):** Let $e = \text{exponent}$ and $m = \text{mantissa}$. $\text{ExpandTarget}(bits)$ is defined only when $e \in \{3,4,\ldots,32\}$; for $e \notin \{3,\ldots,32\}$, the compact encoding is outside the PoW-valid domain (consensus rejects such headers). For $e \in \{3,\ldots,32\}$ and $m = 0$, $\text{ExpandTarget}(bits) = 0 \in \mathbb{U}_{256}$.
 
-*Proof*: This function converts the compact difficulty representation (used in block headers) to a full 256-bit target value. The compact format uses 3 bytes for the exponent and 3 bytes for the mantissa. This is proven by blvm-spec-lock formal verification.
+*Proof*: This function converts the compact difficulty representation (used in block headers) to a full 256-bit target value. The encoding is one exponent byte ($e$) together with a 32-bit compact word whose low 23 bits are $m$; bit `0x00800000` of that word is not part of $m$. This is proven by blvm-spec-lock formal verification.
 
 **GetNextWorkRequired**: $\mathcal{H} \times \mathcal{H}^* \times \text{Network} \rightarrow \mathbb{N}$
 
@@ -1881,7 +1874,7 @@ Where:
 - Time-based adjustment: $\text{GetNextWorkRequired}(h, prev, n)$ adjusts difficulty based on time span between blocks
 - BIP94 base: when $\text{EnforceBIP94}(n)$, bits base from $prev_{\text{first}}$; otherwise from $prev_{\text{last}}$
 
-Let $prev_{\text{last}}$ denote the last block of the difficulty period and $prev_{\text{first}}$ the first. Let $T_{\text{expected}} = 14 \times 24 \times 60 \times 60$ (2 weeks in seconds). The timespan and bits base use only the completed period — the new block $h$ does not affect the result (timewarp safety).
+Let $prev_{\text{last}}$ denote the last block of the difficulty period and $prev_{\text{first}}$ the first. Let $T_{\text{expected}} = 14 \times 24 \times 60 \times 60$ (2 weeks in seconds). The timespan and bits base use only the completed period; the new block $h$ does not affect the result (timewarp safety).
 
 $$\text{timeSpan} = \text{ClampTime}(prev_{\text{last}}.\text{time} - prev_{\text{first}}.\text{time}), \quad \text{ClampTime}(t) \coloneqq \max(T_{\text{expected}}/4, \min(4 T_{\text{expected}}, t))$$
 
@@ -1889,7 +1882,7 @@ Let $\text{bitsBase}(prev, n) \coloneqq prev_{\text{first}}.\text{bits}$ if $\te
 
 Let $b = \text{bitsBase}(prev, n)$, $T = \text{ExpandTarget}(b)$, and $\tau = \text{timeSpan}$. Let $\pi : \mathbb{U}_{256} \to \mathbb{N}$ embed targets as unsigned integers. Define the **partial** product $T \otimes \tau \in \mathbb{U}_{256}$ to exist iff $\pi(T) \cdot \tau < 2^{256}$, in which case $T \otimes \tau$ is the unique element of $\mathbb{U}_{256}$ with $\pi(T \otimes \tau) = \pi(T) \cdot \tau$; otherwise $T \otimes \tau$ is undefined.
 
-Let $T_{\mathrm{adj}} \coloneqq \left\lfloor \pi(T \otimes \tau) / T_{\text{expected}} \right\rfloor$ when $T \otimes \tau$ is defined. Let $c \coloneqq \text{Compress}(T_{\mathrm{adj}})$ be the compact $n$Bits encoding of $T_{\mathrm{adj}}$, and let $\text{MAX\_TARGET} \in \mathbb{N}$ denote the compact encoding of the network’s maximum target (minimum difficulty ceiling).
+Let $T_{\mathrm{adj}} \coloneqq \left\lfloor \pi(T \otimes \tau) / T_{\text{expected}} \right\rfloor$ when $T \otimes \tau$ is defined. Let $c \coloneqq \text{Compress}(T_{\mathrm{adj}})$ be the compact $n$Bits encoding of the full 256-bit target $T_{\mathrm{adj}}$, using the usual compact encoding (including mantissa normalization: while the provisional significand has bit `0x00800000` set, shift it right by one byte and increase the exponent size field accordingly until it fits the 23-bit mantissa). Let $\text{MAX\_TARGET} \in \mathbb{N}$ denote the compact encoding of the network’s maximum target (minimum difficulty ceiling).
 
 $$\text{GetNextWorkRequired}(h, prev, n) = \begin{cases}
 \text{initialDifficulty} & \text{if } |prev| < 2 \\
@@ -1941,7 +1934,7 @@ flowchart TD
 
 **Corollary 7.1**: The difficulty can change by at most a factor of 4 between any two difficulty adjustment periods.
 
-**Theorem 7.1.1** (Target expansion on valid compact domain): Let $bits \in \mathbb{N}$, $e = (bits \gg 24) \land 0xff$, $m = bits \land 0x00ffffff$. If $3 \le e \le 32$, then $\text{ExpandTarget}(bits)$ is defined and coincides with the mantissa–exponent rule displayed above; in particular, for $e > 3$ and $m > 0$, $\pi(\text{ExpandTarget}(bits)) = m \cdot 2^{8(e-3)}$ as integers, and the left shift introduces no truncation in $\mathbb{U}_{256}$ for $e \le 32$. If $e \notin \{3,\ldots,32\}$, $\text{ExpandTarget}(bits)$ is undefined (invalid compact exponent for PoW).
+**Theorem 7.1.1** (Target expansion on valid compact domain): Let $bits \in \mathbb{N}$, $e = (bits \gg 24) \land 0xff$, $m = bits \land 0x007fffff$. If $3 \le e \le 32$, then $\text{ExpandTarget}(bits)$ is defined and coincides with the mantissa–exponent rule displayed above; in particular, for $e > 3$ and $m > 0$, $\pi(\text{ExpandTarget}(bits)) = m \cdot 2^{8(e-3)}$ as integers, and the left shift introduces no truncation in $\mathbb{U}_{256}$ for $e \le 32$. If $e \notin \{3,\ldots,32\}$, $\text{ExpandTarget}(bits)$ is undefined (invalid compact exponent for PoW).
 
 *Proof*: Case-split on $e \le 3$ versus $e > 3$ per the expansion definition; for $e > 3$, $8(e-3) \le 232 < 256$, so the left shift stays inside $\mathbb{U}_{256}$.
 
@@ -2336,8 +2329,11 @@ Parses raw bytes into a protocol message. Rejects messages that are too short, t
 
 **Witness Data**: $\mathcal{W} = \mathbb{S}^*$ (stack of witness elements)
 
-**Witness Commitment**: Coinbase transaction includes witness root hash
-$$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{Hash}(tx.witness) : tx \in block.transactions\})$$
+**Witness Merkle (BIP141)**: The commitment uses the **witness transaction id (wtxid)** merkle tree (not a hash of raw witness stacks). Let $\text{wtxid}(tx)$ be the 32-byte hash defined in [BIP141](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki): coinbase wtxid is fixed to $0^{32}$; for other transactions, if no witness data is present, $\text{wtxid}(tx) = \text{txid}(tx)$ (legacy serialization); if witness data is present, $\text{wtxid}(tx) = \text{SHA256d}(\text{SerializeWithWitness}(tx))$.
+
+$$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{wtxid}(tx_i) : i \in [0, |block.transactions|)\})$$
+
+**Witness commitment output (BIP141)**: The 32-byte value in the coinbase OP_RETURN is $\text{SHA256d}(\text{WitnessRoot} \,\|\, \text{WitnessReservedValue})$, where $\text{WitnessReservedValue}$ is the 32-byte item in the coinbase input’s witness stack (default $0^{32}$ if absent), not the raw $\text{WitnessRoot}$ alone.
 
 **Weight Calculation** (BIP141):  
 $$\text{Weight}(tx) = 3 \times |\text{Serialize}(tx \setminus witness)| + |\text{Serialize}(tx)|$$
@@ -2488,33 +2484,37 @@ $$\text{ValidateWitnessProgramLength}(p, v) = \begin{cases}
 
 **ComputeWitnessMerkleRoot**: $\mathcal{B} \times \mathcal{W}^* \rightarrow \mathbb{H}$
 
+**Definition** (BIP141 wtxid tree): For each transaction index $i$, define the leaf hash $L_i$:
+
+- $L_0 = 0^{32}$ (coinbase wtxid is fixed to zero).
+- For $i > 0$: let $w^{(i)}$ be the witness data for transaction $i$ (per-input stacks). If no witness element is non-empty, $L_i = \text{txid}(b.\text{transactions}[i])$ using **legacy** serialization (no witness). Otherwise $L_i = \text{SHA256d}(\text{SerializeWithWitness}(b.\text{transactions}[i], w^{(i)}))$.
+
+$$\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = \text{ComputeMerkleRoot}(\{L_0, L_1, \ldots, L_{|b.\text{transactions}|-1}\})$$
+
 **Properties**:
-- Root length: $\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = root \implies |root| = 32$ (32-byte hash)
-- Non-zero root: $\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = root \implies root \neq 0^{32}$ (unless all witnesses empty)
-- Block requirement: $\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n)$ requires $|b.transactions| > 0$
-
-For block $b$ and witnesses $w_1, \ldots, w_n$:
-
-$$\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = \text{ComputeMerkleRoot}(\{\text{Hash}(w_i) : i \in [1, |b.\text{transactions}|]\})$$
-
-Where:
-- $\text{Hash}(w_1) = [0]^{32}$ (coinbase witness is empty, hash is zero)
-- $\text{Hash}(w_i) = \text{SHA256}(\text{SHA256}(\text{Serialize}(w_i)))$ for $i > 1$
+- Root length: the result is a 32-byte hash.
+- Block requirement: $|b.transactions| > 0$.
+- **CVE-2012-2459**: $\text{ComputeMerkleRoot}$ must apply the odd-duplicate and duplicate-pair rejection rules in §8.4.1 (ComputeMerkleRoot).
 
 #### 11.1.5 Witness Commitment Validation
 
-**ValidateWitnessCommitment**: $\mathcal{TX} \times \mathbb{H} \rightarrow \{\text{true}, \text{false}\}$
+**ValidateWitnessCommitment**: $\mathcal{TX} \times \mathbb{H} \times \mathcal{W}^* \rightarrow \{\text{true}, \text{false}\}$
+
+**Inputs**: coinbase transaction $tx$, computed witness merkle root $r$, and the coinbase transaction’s witness stacks (to obtain the **witness reserved value**).
+
+Let $n \in \{0,1\}^{256}$ be the 32-byte witness reserved value: the first push of the first witness stack of the coinbase input, or $0^{32}$ if missing or not exactly 32 bytes.
+
+Let $c = \text{SHA256d}(r \,\|\, n)$ (64-byte preimage). A valid witness commitment output stores $c$ (not $r$ alone).
+
+**OP_RETURN format** (BIP141): `OP_RETURN` `0x24` `0xaa21a9ed` $\|\, c$ (total push 36 bytes after opcode: 4-byte magic + 32-byte $c$).
 
 **Properties**:
-- Coinbase requirement: $\text{ValidateWitnessCommitment}(tx, root) = \text{true} \implies \text{IsCoinbase}(tx) = \text{true}$
-- Commitment existence: $\text{ValidateWitnessCommitment}(tx, root) = \text{true} \iff \exists o \in tx.outputs : \text{IsWitnessCommitment}(o.scriptPubkey, root)$
-- Boolean result: $\text{ValidateWitnessCommitment}(tx, root) \in \{\text{true}, \text{false}\}$
+- Coinbase requirement: only defined for $\text{IsCoinbase}(tx)$.
+- If no commitment output exists, validation passes for pre-SegWit-style coinbases; if a commitment output exists, its 32-byte payload must equal $c$.
 
-For coinbase transaction $tx$ and witness root $root$:
+$$\text{ValidateWitnessCommitment}(tx, r, w_{cb}) = \text{true} \iff \neg \exists \text{ commitment output} \lor \exists o \in tx.\text{outputs} : \text{ExtractCommitment}(o.\text{scriptPubkey}) = c$$
 
-$$\text{ValidateWitnessCommitment}(tx, root) = \exists o \in tx.\text{outputs} : \text{IsWitnessCommitment}(o.\text{scriptPubkey}, root)$$
-
-Where $\text{IsWitnessCommitment}(spk, root) = (|spk| = 38) \land (spk[0] = 0x6a) \land (spk[1] = 0x24) \land (spk[2..34] = root) \land (spk[34..38] = [0x00, 0x00, 0x00, 0x00])$
+Where $\text{ExtractCommitment}(spk)$ returns the 32-byte hash after the BIP141 magic prefix when $spk$ matches the standard witness commitment pattern; otherwise undefined.
 
 #### 11.1.6 SegWit Transaction Detection
 
@@ -2533,19 +2533,21 @@ Where $\text{IsSegWitOutput}(spk) = (|spk| \in \{22, 34\}) \land (spk[0] = 0x00)
 
 #### 11.1.7 Block Validation
 
-**ValidateSegWitBlock**: $\mathcal{B} \times \mathcal{W}^* \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
+**ValidateSegWitBlock**: $\mathcal{B} \times \mathcal{W}^* \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
+
+(Parameters: block $b$, per-transaction witness data $w_1,\ldots,w_n$, maximum block weight $W_{\text{max}}$.)
 
 **Properties**:
-- Validation correctness: $\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, root) = \text{valid} \iff \text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = root \land \text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{\text{max}}$
-- Boolean result: $\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, root) \in \{\text{valid}, \text{invalid}\}$
-- Weight limit: $\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, root) = \text{valid} \implies \text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{\text{max}}$
+- Let $r = \text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n)$ as in §11.1.4.
+- Witness commitment (when present) must satisfy §11.1.5 for the coinbase $b.\text{transactions}[0]$, root $r$, and coinbase witness stacks $w_1$.
+- Block weight: $\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{\text{max}}$.
 
-For block $b$, witnesses $w_1, \ldots, w_n$, and witness root $root$:
-
-$$\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, root) = \begin{cases}
-\text{valid} & \text{if } \text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = root \land \text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{max} \\
+$$\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, W_{\text{max}}) = \begin{cases}
+\text{valid} & \text{if } \text{CalculateBlockWeight}(\ldots) \leq W_{\text{max}} \land \text{ValidateWitnessCommitment}(b.\text{transactions}[0], r, w_1) \\
 \text{invalid} & \text{otherwise}
 \end{cases}$$
+
+(If no witness commitment output exists in the coinbase, §11.1.5 treats validation as satisfied for pre-SegWit coinbase layouts; implementations gate full SegWit rules on deployment context.)
 
 #### 11.1.8 Nested SegWit (P2WSH-in-P2SH, P2WPKH-in-P2SH)
 
@@ -2591,7 +2593,7 @@ $$\text{Preimage} = \text{nVersion}_{32} \| \text{hashPrevouts}_{256} \| \text{h
 **Precomputed hashes**:
 - $\text{hashPrevouts} = \text{SHA256d}(\text{concat}(\text{prevout}_i : i \in \text{inputs}))$ (or $0^{256}$ if ANYONECANPAY)
 - $\text{hashSequence} = \text{SHA256d}(\text{concat}(\text{sequence}_i : i \in \text{inputs}))$ (or $0^{256}$ if ANYONECANPAY)
-- $\text{hashOutputs} = \text{SHA256d}(\text{concat}(\text{output}_j : j \in \text{included outputs}))$ — depends on sighash type
+- $\text{hashOutputs} = \text{SHA256d}(\text{concat}(\text{output}_j : j \in \text{included outputs}))$ (depends on sighash type)
 
 **Sighash type handling**:
 - SIGHASH_ALL (0x01): all outputs included
@@ -2836,7 +2838,7 @@ n+1 & \text{if } \text{VerifySchnorr}(pk, sig, \text{ComputeTapscriptSignatureHa
 
 **SigOp cost**: $\text{SigOpCount}(\texttt{0xba}) = 1$ (same as OP_CHECKSIG, OP_CHECKSIGVERIFY).
 
-**CountTapscriptSigOps**: $\mathbb{S} \rightarrow \mathbb{N}$ — counts sigops in a tapscript for block weight/sigop limits.
+**CountTapscriptSigOps**: $\mathbb{S} \rightarrow \mathbb{N}$; counts CHECKSIG-family opcodes in a tapscript per **BIP 342** (used for the **per-tapscript sigops budget** during Tapscript execution / validation weight). This count is **not** added to the **legacy block** $\text{GetTransactionSigOpCost}$ witness term ($\text{CountWitnessSigOps}$ is witness-v0-only for that cost; see §5.2.2).
 
 Parse $s$ sequentially. For each byte: if it is a push opcode (0x01–0x4b, or 0x4c/0x4d/0x4e with length bytes), skip the payload; otherwise it is an opcode byte. Count opcode bytes in $\{0xac, 0xad, 0xba\}$:
 
@@ -3027,10 +3029,9 @@ Constructs a valid coinbase transaction for block at height $h$ with total fees 
 3. **Weight Limits**: Must not exceed $W_{max} = 4 \times 10^6$ weight units
 4. **Transaction Selection**: Must respect mempool fee policies
 
+## 13. Engineering-Specific Edge Cases
 
-### 13.3 Engineering-Specific Edge Cases
-
-While the Orange Paper focuses on mathematical consensus rules (~95% coverage), there are engineering-specific edge cases that are consensus-critical but not purely mathematical. These must be handled identically to Bitcoin Core to prevent network divergence.
+**PROTOCOL.md** states consensus rules mainly as mathematical predicates, types, and state transitions (Sections 2–12 and cross-referenced clauses). This section adds consensus-critical material not covered by those predicates alone: **engineering invariants** in §13.3.1–§13.3.4 (checked arithmetic on amounts and fees, canonical serialization and decoding, exact resource-limit boundaries, and deterministic rejection of malformed data), each of which must align with observable mainnet behavior; and **cross-module integration properties** in §13.3.5. Implementations must satisfy this section as strictly as the rest of the specification so nodes do not diverge.
 
 #### 13.3.1 Integer Arithmetic Overflow/Underflow
 
@@ -3042,19 +3043,19 @@ While the Orange Paper focuses on mathematical consensus rules (~95% coverage), 
 3. **Coinbase Value**: `subsidy + fees` can exceed `MAX_MONEY` if not checked
 4. **Fee Accumulation**: Summing fees across block transactions can overflow
 
-**Implementation**: Use `checked_add()` and `checked_sub()` for all value arithmetic. Match Bitcoin Core's `CAmount` behavior exactly.
+**Implementation**: Use `checked_add()` and `checked_sub()` for all value arithmetic. Satoshi-denominated amounts must follow the same overflow and range rules as the live network (typically a signed 64-bit money type with `MAX_MONEY` bounds).
 
 #### 13.3.2 Serialization/Deserialization Correctness
 
-**Critical Requirement**: Wire format must match Bitcoin Core byte-for-byte.
+**Critical Requirement**: Wire format must match the canonical P2P serialization observed on the network byte-for-byte.
 
 **Edge Cases**:
 1. **VarInt Encoding**: Boundary values (`0xfc`, `0xfd`, `0xfe`, `0xff`) must use correct encoding format
 2. **Little-Endian**: All integers must be serialized as little-endian
 3. **Block Header**: Must be exactly 80 bytes
-4. **Transaction Format**: Must match Bitcoin Core's exact byte layout
+4. **Transaction Format**: Must match the canonical transaction byte layout
 
-**Implementation**: Consolidated serialization module with round-trip correctness guarantees. See `docs/ENGINEERING_EDGE_CASES.md` for details.
+**Implementation**: Consolidated serialization module with round-trip correctness guarantees, exercised by tests in the consensus implementation.
 
 **Theorem 13.3.2.1** (Serialization Round-Trip Correctness): Serialization and deserialization are inverse operations:
 
@@ -3080,7 +3081,7 @@ $$\forall x \in \mathcal{D}: \text{serialize}(x) \text{ is deterministic (same i
 3. **Transaction Size**: Exactly 1,000,000 bytes must pass, 1,000,001 must fail
 4. **Coinbase ScriptSig**: Must be exactly 2-100 bytes (boundary validation)
 
-**Implementation**: All limits checked before resource exhaustion. Boundary behavior matches Bitcoin Core exactly.
+**Implementation**: All limits checked before resource exhaustion. Boundary behavior must match consensus on the live network exactly.
 
 #### 13.3.4 Parser Determinism
 
@@ -3091,9 +3092,7 @@ $$\forall x \in \mathcal{D}: \text{serialize}(x) \text{ is deterministic (same i
 2. **Invalid Length Fields**: Length > remaining bytes, invalid VarInt encodings
 3. **Malformed Structures**: Negative counts, maximum value abuse
 
-**Implementation**: Wire-format parser with comprehensive error handling. All rejection scenarios tested. See `tests/engineering/parser_edge_cases.rs`.
-
-**Reference**: See `docs/ENGINEERING_EDGE_CASES.md` for complete documentation of all engineering-specific edge cases, test coverage, and Bitcoin Core alignment.
+**Implementation**: Wire-format parser with comprehensive error handling. Parser rejection behavior is covered by integration tests, for example [parser edge-case tests](https://github.com/BTCDecoded/blvm-consensus/blob/main/tests/engineering/parser_edge_cases.rs) in the `blvm-consensus` repository.
 
 #### 13.3.5 Integration Proofs
 

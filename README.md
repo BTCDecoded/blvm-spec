@@ -1,24 +1,24 @@
 # The Orange Paper: Bitcoin Protocol Specification
 
-[![CI](https://github.com/BTCDecoded/blvm-spec/workflows/CI/badge.svg)](https://github.com/BTCDecoded/blvm-spec/actions)
+[![Trigger Build Chain](https://github.com/BTCDecoded/blvm-spec/actions/workflows/trigger-chain.yml/badge.svg)](https://github.com/BTCDecoded/blvm-spec/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A complete mathematical specification of the Bitcoin consensus protocol derived from Bitcoin Core implementation.
+A complete mathematical specification of the Bitcoin consensus protocol, aligned with observable mainnet behavior.
 
 ## 📄 The Paper
 
 The Orange Paper comprises two documents:
 
-- **[PROTOCOL.md](PROTOCOL.md)** — Consensus rules, invariants, predicates (what must hold)
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Implementation algorithms and design choices (how to achieve it)
+- **[PROTOCOL.md](PROTOCOL.md)**: Consensus rules, invariants, predicates (what must hold)
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Implementation algorithms and design choices (how to achieve it)
 
-**[THE_ORANGE_PAPER.md](THE_ORANGE_PAPER.md)** — Umbrella document with structure and links
+**[THE_ORANGE_PAPER.md](THE_ORANGE_PAPER.md)**: Umbrella document with structure and links
 
-For spec-lock verification, pass both: `--spec-path blvm-spec/PROTOCOL.md --spec-path blvm-spec/ARCHITECTURE.md`
+For spec-lock verification, pass **absolute paths** (or your own `$BLVM_SPEC_ROOT/...`) to `PROTOCOL.md` and `ARCHITECTURE.md` from **your clone** of this repository; see [THE_ORANGE_PAPER.md](THE_ORANGE_PAPER.md) for full commands.
 
 ## 🎯 What This Is
 
-Unlike previous descriptions, this specification is derived entirely from the current Bitcoin Core codebase and represents the protocol as it exists today. It provides:
+Unlike informal summaries, this specification is derived from protocol rules as they operate on the live network today. It provides:
 
 - **Complete State Machine**: Formal specification of Bitcoin's state transitions
 - **Economic Model**: Mathematical description of the monetary system  
@@ -71,7 +71,7 @@ We welcome contributions to improve the mathematical precision and completeness 
 ### Contribution Guidelines
 - **Mathematical Accuracy**: All formulas must be mathematically correct
 - **Proof Completeness**: Provide complete proofs for new theorems
-- **Implementation Validation**: Verify against Bitcoin Core when possible
+- **Implementation Validation**: Verify against a reference node implementation when possible
 - **Clear Notation**: Use consistent mathematical notation throughout
 - **Cross-References**: Update related sections when making changes
 
@@ -82,7 +82,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📚 References
 
 ### Bitcoin Protocol
-- [Bitcoin Core Implementation](https://github.com/bitcoin/bitcoin)
+- [Reference implementation (bitcoin/bitcoin)](https://github.com/bitcoin/bitcoin)
 - [Bitcoin Improvement Proposals (BIPs)](https://github.com/bitcoin/bips)
 - Satoshi Nakamoto, ["Bitcoin: A Peer-to-Peer Electronic Cash System"](https://bitcoin.org/bitcoin.pdf) (2008)
 

@@ -21,7 +21,7 @@ See [PROTOCOL.md](PROTOCOL.md) for consensus rules and predicates.
 
 ### 10.6 Dandelion++ k-Anonymity
 
-*Full specification: [blvm-node/docs/DANDELION_SPEC.md](../blvm-node/docs/DANDELION_SPEC.md). This section retains the k-anonymity definition, stem phase algorithm, and Implementation Invariants for spec-lock verification.*
+*Full specification: [DANDELION_SPEC.md in blvm-node](https://github.com/BTCDecoded/blvm-node/blob/main/docs/DANDELION_SPEC.md). This section retains the k-anonymity definition, stem phase algorithm, and Implementation Invariants for spec-lock verification.*
 
 **Adversary Model**: Passive observer capable of monitoring network traffic, operating nodes, and performing graph analysis.
 
@@ -378,19 +378,17 @@ $$|peer\_commitments| \geq min\_peers \land \frac{result.\text{agreement\_count}
 
 ## 14. Conclusion
 
-This Orange Paper provides a complete mathematical specification of the Bitcoin consensus protocol. The mathematical formalism makes it suitable for formal verification and provides a solid foundation for understanding Bitcoin's security properties.
+This Orange Paper is a **complete, definitive** mathematical specification of Bitcoin consensus within the scope of PROTOCOL.md and this document (see each table of contents). BLVM validates it through **extensive differential testing against Bitcoin Core**, integration tests on consensus crates, and **mainnet-observable behavior**; when a discrepancy appears, implementation and this specification are reconciled so the rules here remain the single authoritative statement for what “consensus correct” means in scope.
 
 ### 14.1 Summary of Contributions
 
-**Complete Protocol Specification**: We have mathematically formalized all consensus-critical aspects of Bitcoin, including:
+**Complete protocol specification (in scope)**: The formalized topics include, among others:
 - Transaction and block validation rules
 - Script execution semantics  
 - Economic model with formal proofs
 - Proof-of-work and difficulty adjustment
 - Network protocol and mempool management
 - Mining process and block template generation
-
-**Validation Against Implementation**: All specifications have been validated against the actual Bitcoin Core implementation, ensuring accuracy and completeness.
 
 **Mathematical Rigor**: The specification uses formal mathematical notation throughout, making it suitable for:
 - Formal verification tools
@@ -406,56 +404,12 @@ This specification can be used for:
 - **Implementation Reference**: Building new Bitcoin-compatible software
 - **Academic Research**: Studying distributed consensus and cryptocurrency systems
 
-The specification covers all aspects of Bitcoin's operation, from basic transaction validation to complex economic rules. It serves as both a reference implementation and a formal specification that can be used for security analysis and protocol development.
-
-## 15. Governance Model
-
-*Not Bitcoin consensus. Full spec: [GOVERNANCE_SPECIFICATION.md](GOVERNANCE_SPECIFICATION.md).*
-
-The Bitcoin Commons governance system implements a **5-tier constitutional governance model** with cryptographic enforcement, multisig security, and layer-based repository governance. The system applies the same cryptographic enforcement to governance that Bitcoin applies to consensus.
-
-**Core Innovation**: Make power visible, capture expensive, and exit cheap through cryptographic audit trails and user-protective mechanisms.
-
-### 15.1 Layer + Tier System
-
-The governance system combines two dimensions:
-
-**Layer System** (Repository Architecture):
-- **Layer 1-2** (Constitutional): `blvm-spec`, `blvm-consensus` - 6-of-7 signatures, 180 days (365 for consensus changes)
-- **Layer 3** (Implementation): `blvm-protocol` - 4-of-5 signatures, 90 days
-- **Layer 4** (Application): `blvm-node`, `blvm` - 3-of-5 signatures, 60 days
-- **Layer 5** (Extension): `blvm-sdk` - 2-of-3 signatures, 14 days
-
-**Tier System** (Action Classification):
-- **Tier 1**: Routine Maintenance - 3-of-5 signatures, 7 days
-- **Tier 2**: Feature Changes - 4-of-5 signatures, 30 days
-- **Tier 3**: Consensus-Adjacent - 5-of-5 signatures, 90 days
-- **Tier 4**: Emergency Actions - 4-of-5 signatures, 0 days
-- **Tier 5**: Governance Changes - 5-of-5 signatures, 180 days
-
-**Combination Rule**: When both Layer and Tier apply, the system uses the **most restrictive** (highest) requirements.
-
-### 15.2 Cryptographic Enforcement
-
-All governance actions require:
-- **Cryptographic Signatures**: secp256k1 signatures (same curve as Bitcoin)
-- **Multisig Thresholds**: Multiple maintainers must sign critical actions
-- **Public Verification**: All signatures and actions are publicly verifiable
-- **Tamper Evidence**: Hash chain and Merkle tree audit trails
-- **Blockchain Anchoring**: OpenTimestamps for immutable proof
-
-**Signature Requirements**:
-- Maintainer keypairs for PR approval, maintainer management, emergency actions
-- BIP39 mnemonic seed phrases (24 words) for key generation
-- BIP32 hierarchical deterministic key derivation
-- Regular key rotation (6 months for maintainers, 3 months for emergency keyholders)
-
-See [governance repository](https://github.com/BTCDecoded/governance) for complete governance specification, implementation details, and current status.
+The specification covers the topics it defines, from basic transaction validation through economic rules and the network or mining material in its tables of contents. It is a formal specification for analysis and implementation, not an executable node implementation.
 
 ## References
 
 ### Bitcoin Protocol
-1. [Bitcoin Core Implementation](https://github.com/bitcoin/bitcoin)
+1. [Reference implementation (bitcoin/bitcoin)](https://github.com/bitcoin/bitcoin)
 2. [Bitcoin Improvement Proposals (BIPs)](https://github.com/bitcoin/bips)
 3. Satoshi Nakamoto, ["Bitcoin: A Peer-to-Peer Electronic Cash System"](https://bitcoin.org/bitcoin.pdf) (2008)
 
