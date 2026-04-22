@@ -26,14 +26,14 @@ The Orange Paper is split into two documents for clarity:
 Sections 1–9 (foundations, core, mempool), plus protocol portions of 10–13:
 
 - **1–9**: Introduction, System Model, Mathematical Foundations, Constants, State Transitions, Economic Model, Proof of Work, Security Properties, Mempool Protocol
-- **10**: Message Types (10.1), Block Sync (10.4), Transaction Relay (10.5)
+- **10**: Message Types (10.1), Connection Management (10.2), Handshake invariants (10.2.1), Block Sync (10.4), Transaction Relay (10.5)
 - **11**: SegWit (11.1), Taproot (11.2), UTXO Commitments (11.4), Signet (11.5)
 - **12**: Coinbase Transaction (12.2), Block Template Requirements (12.4)
-- **13**: Integration Proofs (13.3)
+- **13**: Engineering invariants (**13.3.1**–**13.3.4**) and integration proofs (**13.3.5**) in PROTOCOL; **13.1**, **13.2**, **13.4** in ARCHITECTURE
 
 ### ARCHITECTURE.md: Implementation Design
 
-- **10**: Connection Management (10.2), Peer Discovery (10.3), Dandelion++ (10.6)
+- **10**: Peer Discovery (10.3), Dandelion++ (10.6)
 - **11**: Chain Reorganization (11.3, 11.3.1)
 - **12**: Block Template Generation (12.1), Mining Process (12.3)
 - **13**: Performance (13.1), Security (13.2), Peer Consensus Protocol (13.4)
@@ -67,7 +67,7 @@ cd "$BLVM_CONSENSUS_ROOT"
   --crate-path .
 ```
 
-`--strict` fails on any partial (requires full Z3 verification). Z3 is the default feature; use `--no-default-features` only if you cannot build with libclang.
+`--strict` requests full verification when supported by the installed `cargo-spec-lock` build. For development without the default verification backend, use `--no-default-features` as documented in `blvm-spec-lock`.
 
 ### 5.4 BIP Validation Rules
 

@@ -16,6 +16,10 @@ The Orange Paper comprises two documents:
 
 For spec-lock verification, pass **absolute paths** (or your own `$BLVM_SPEC_ROOT/...`) to `PROTOCOL.md` and `ARCHITECTURE.md` from **your clone** of this repository; see [THE_ORANGE_PAPER.md](THE_ORANGE_PAPER.md) for full commands.
 
+To verify the **Table of Contents** links against real headings (in this directory): `node scripts/check-toc.mjs`
+
+In the **btc-commons** monorepo, from the workspace root, `node blvm-spec/scripts/check-spec-lock-ids.mjs` checks that every `#[spec_locked("…")]` in `blvm-consensus`, `blvm-protocol`, and `blvm-node` matches a numbered heading in `PROTOCOL.md` or `ARCHITECTURE.md`.
+
 ## 🎯 What This Is
 
 Unlike informal summaries, this specification is derived from protocol rules as they operate on the live network today. It provides:
@@ -74,6 +78,7 @@ We welcome contributions to improve the mathematical precision and completeness 
 - **Implementation Validation**: Verify against a reference node implementation when possible
 - **Clear Notation**: Use consistent mathematical notation throughout
 - **Cross-References**: Update related sections when making changes
+- **GFM / LaTeX**: Prefer `\parallel` for byte concatenation in math; in long `$$…$$` blocks use `\_{n}` for subscripts when underscores would pair incorrectly in GitHub-flavored Markdown
 
 ## 📄 License
 

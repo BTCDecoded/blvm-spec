@@ -1,0 +1,30 @@
+# For repositories where this folder is the repo root (standalone blvm-spec).
+name: Check PROTOCOL TOC links
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'PROTOCOL.md'
+      - 'ARCHITECTURE.md'
+      - 'scripts/check-toc.mjs'
+      - '.github/workflows/check-toc.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'PROTOCOL.md'
+      - 'ARCHITECTURE.md'
+      - 'scripts/check-toc.mjs'
+      - '.github/workflows/check-toc.yml'
+  workflow_dispatch:
+
+jobs:
+  toc:
+    name: TOC vs headings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node scripts/check-toc.mjs

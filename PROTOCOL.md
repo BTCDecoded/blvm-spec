@@ -27,6 +27,7 @@ This paper presents a mathematical specification of the Bitcoin consensus protoc
    - 4.1 [Monetary Constants](#41-monetary-constants)
    - 4.2 [Block Constants](#42-block-constants)
    - 4.3 [Script Constants](#43-script-constants)
+   - 4.4 [Difficulty Constants](#44-difficulty-constants)
 5. [State Transition Functions](#5-state-transition-functions)
    - 5.1 [Transaction Validation](#51-transaction-validation)
    - 5.2 [Script Execution](#52-script-execution)
@@ -35,49 +36,66 @@ This paper presents a mathematical specification of the Bitcoin consensus protoc
    - 5.4 [BIP Validation Rules](#54-bip-validation-rules)
      - 5.4.1 [BIP30: Duplicate Coinbase Prevention](#541-bip30-duplicate-coinbase-prevention)
      - 5.4.2 [BIP34: Block Height in Coinbase](#542-bip34-block-height-in-coinbase)
-     - 5.4.3 [BIP66: Strict DER Signatures](#543-bip66-strict-der-signatures)
+     - 5.4.3 [BIP66: Strict DER Signatures](#543-bip66-strict-der-signature-validation)
      - 5.4.4 [BIP90: Block Version Enforcement](#544-bip90-block-version-enforcement)
      - 5.4.5 [BIP147: NULLDUMMY Enforcement](#545-bip147-nulldummy-enforcement)
-     - 5.4.6 [BIP119: OP_CHECKTEMPLATEVERIFY (CTV)](#546-bip119-opchecktemplateverify-ctv)
-     - 5.4.7 [BIP65: OP_CHECKLOCKTIMEVERIFY (CLTV)](#547-bip65-opchecklocktimeverify-cltv)
-     - 5.4.8 [BIP348: OP_CHECKSIGFROMSTACK (CSFS)](#548-bip348-opchecksigfromstack-csfs)
+     - 5.4.6 [BIP119: OP_CHECKTEMPLATEVERIFY (CTV)](#546-bip119-op_checktemplateverify-ctv)
+     - 5.4.7 [BIP65: OP_CHECKLOCKTIMEVERIFY (CLTV)](#547-bip65-op_checklocktimeverify-cltv)
+     - 5.4.8 [BIP348: OP_CHECKSIGFROMSTACK (CSFS)](#548-bip348-op_checksigfromstack-csfs)
      - 5.4.9 [BIP54: Consensus Cleanup](#549-bip54-consensus-cleanup)
    - 5.5 [Sequence Locks (BIP68)](#55-sequence-locks-bip68)
 6. [Economic Model](#6-economic-model)
    - 6.1 [Block Subsidy](#61-block-subsidy)
    - 6.2 [Total Supply](#62-total-supply)
-   - 6.3 [Fee Market](#63-fee-market)
+   - 6.3 [Supply Limit Validation](#63-supply-limit-validation)
+   - 6.4 [Coinbase Detection](#64-coinbase-detection)
+   - 6.5 [Fee Market](#65-fee-market)
 7. [Proof of Work](#7-proof-of-work)
    - 7.1 [Difficulty Adjustment](#71-difficulty-adjustment)
    - 7.2 [Block Validation](#72-block-validation)
 8. [Security Properties](#8-security-properties)
    - 8.1 [Economic Security](#81-economic-security)
-   - 8.2 [Cryptographic Security](#82-cryptographic-security)
-   - 8.3 [Merkle Tree Security](#83-merkle-tree-security)
-   - 8.4 [Deterministic Properties](#84-deterministic-properties)
+   - 8.2 [Integration and Round-Trip Properties](#82-integration-and-round-trip-properties)
+     - 8.2.1 [Integration Properties](#821-integration-properties)
+     - 8.2.2 [Round-Trip Properties](#822-round-trip-properties)
+   - 8.3 [Cryptographic Security](#83-cryptographic-security)
+   - 8.4 [Merkle Tree Security](#84-merkle-tree-security)
+     - 8.4.1 [ComputeMerkleRoot](#841-computemerkleroot)
+   - 8.5 [Deterministic Properties](#85-deterministic-properties)
 9. [Mempool Protocol](#9-mempool-protocol)
    - 9.1 [Mempool Validation](#91-mempool-validation)
+     - 9.1.1 [Transaction Finality](#911-transaction-finality)
    - 9.2 [Standard Transaction Rules](#92-standard-transaction-rules)
    - 9.3 [Replace-By-Fee (RBF)](#93-replace-by-fee-rbf)
 10. [Network Protocol](#10-network-protocol)
     - 10.1 [Message Types](#101-message-types)
     - 10.2 [Connection Management](#102-connection-management)
-    - 10.3 [Peer Discovery](#103-peer-discovery)
+    - 10.3 [Peer Discovery](./ARCHITECTURE.md#103-peer-discovery)
     - 10.4 [Block Synchronization](#104-block-synchronization)
     - 10.5 [Transaction Relay](#105-transaction-relay)
+    - 10.6 [Dandelion++ k-Anonymity](./ARCHITECTURE.md#106-dandelion-k-anonymity)
 11. [Advanced Features](#11-advanced-features)
     - 11.1 [Segregated Witness (SegWit)](#111-segregated-witness-segwit)
     - 11.2 [Taproot](#112-taproot)
-    - 11.3 [Chain Reorganization](#113-chain-reorganization)
-      - 11.3.1 [Undo Log Pattern](#1131-undo-log-pattern)
+    - 11.3 [Chain Reorganization](./ARCHITECTURE.md#113-chain-reorganization)
+      - 11.3.1 [Undo Log Pattern](./ARCHITECTURE.md#1131-undo-log-pattern)
     - 11.4 [UTXO Commitments](#114-utxo-commitments)
     - 11.5 [Signet (BIP325)](#115-signet-bip325)
 12. [Mining Protocol](#12-mining-protocol)
-    - 12.1 [Block Template Generation](#121-block-template-generation)
+    - 12.1 [Block Template Generation](./ARCHITECTURE.md#121-block-template-generation)
     - 12.2 [Coinbase Transaction](#122-coinbase-transaction)
-    - 12.3 [Mining Process](#123-mining-process)
+    - 12.3 [Mining Process](./ARCHITECTURE.md#123-mining-process)
     - 12.4 [Block Template Interface](#124-block-template-interface)
 13. [Engineering-Specific Edge Cases](#13-engineering-specific-edge-cases)
+    - 13.1 [Performance](./ARCHITECTURE.md#131-performance)
+    - 13.2 [Security](./ARCHITECTURE.md#132-security)
+    - 13.3 [Engineering Invariants](#133-engineering-invariants)
+      - 13.3.1 [Integer Arithmetic Overflow/Underflow](#1331-integer-arithmetic-overflowunderflow)
+      - 13.3.2 [Serialization/Deserialization Correctness](#1332-serializationdeserialization-correctness)
+      - 13.3.3 [Resource Limit Enforcement](#1333-resource-limit-enforcement)
+      - 13.3.4 [Parser Determinism](#1334-parser-determinism)
+      - 13.3.5 [Integration Proofs](#1335-integration-proofs)
+    - 13.4 [Peer Consensus Protocol](./ARCHITECTURE.md#134-peer-consensus-protocol)
 
 ## 1. Introduction
 
@@ -94,12 +112,14 @@ Bitcoin is a distributed consensus system that maintains a shared ledger of tran
 
 This specification is organized into four main parts:
 
-1. **Foundations** (Sections 2-4): Mathematical foundations, data structures, and constants
-2. **Core Protocol** (Sections 5-8): State transitions, economic model, proof-of-work, and security
-3. **Network Layer** (Sections 9-11): Mempool, P2P protocol, and advanced features
-4. **Mining Protocol** (Section 12): Block creation and mining process
+1. **Foundations** ([§2](#2-system-model)–[§4](#4-consensus-constants)): Mathematical foundations, data structures, and constants
+2. **Core Protocol** ([§5](#5-state-transition-functions)–[§8](#8-security-properties)): State transitions, economic model, proof-of-work, and security
+3. **Network Layer** ([§9](#9-mempool-protocol)–[§11](#11-advanced-features)): Mempool, P2P protocol, and advanced features
+4. **Mining Protocol** ([§12](#12-mining-protocol)): Block creation and mining process ([§12.1](./ARCHITECTURE.md#121-block-template-generation) and [§12.3](./ARCHITECTURE.md#123-mining-process) are in `ARCHITECTURE.md`; [§12.2](#122-coinbase-transaction) and [§12.4](#124-block-template-interface) are in this file)
 
 Each section builds upon previous sections, with cross-references to maintain consistency.
+
+**Companion file:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) shares the same section numbering for implementation-oriented material. `cargo-spec-lock verify` merges both files. [§10.2](#102-connection-management) (connection types) and [§10.2.1](#1021-handshake-invariants) are in this file; headings that exist only in the companion file include, for example: [§10.3](./ARCHITECTURE.md#103-peer-discovery), [§10.6](./ARCHITECTURE.md#106-dandelion-k-anonymity), [§11.3](./ARCHITECTURE.md#113-chain-reorganization), [§12.1](./ARCHITECTURE.md#121-block-template-generation), [§12.3](./ARCHITECTURE.md#123-mining-process), [§13.1](./ARCHITECTURE.md#131-performance), [§13.2](./ARCHITECTURE.md#132-security), [§13.4](./ARCHITECTURE.md#134-peer-consensus-protocol). In this file only (among §13): [§13.3](#133-engineering-invariants) and [§13.3.1](#1331-integer-arithmetic-overflowunderflow)–[§13.3.5](#1335-integration-proofs).
 
 ## 2. System Model
 
@@ -130,7 +150,7 @@ For each $n \in \text{Network}$, the following parameters may differ:
 | $\text{ScriptFlagExceptions}(n)$ | 2 blocks | 1 block | 0 | 0 | 0 |
 | Genesis, difficulty, retarget | distinct per $n$ | distinct | distinct | distinct | minimal |
 
-**References:** BIP94 (timewarp mitigation), BIP325 (signet), §5.2.5 (script flags), §7.1 (difficulty).
+**References:** BIP94 (timewarp mitigation), BIP325 (signet), [§5.2.5](#525-script-verification-flags) (script flags), [§7.1](#71-difficulty-adjustment) (difficulty).
 
 ## 3. Mathematical Foundations
 
@@ -147,16 +167,17 @@ For each $n \in \text{Network}$, the following parameters may differ:
 - $tx \in \mathcal{TX}$ for transactions  
 - $us \in \mathcal{US}$ for UTXO sets
 - $b \in \mathcal{B}$ for blocks
+- $x \parallel y$ for **byte-string concatenation** (when written in formulas; see also Taproot tagged-hash definitions in [§11.2](#112-taproot))
 
 ### 3.2 Core Data Structures
 
-**OutPoint**: $\mathcal{O} = \mathbb{H} \times \mathbb{N}$ (see [Transaction Input](#transaction-input), [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product))  
-**Transaction Input**: $\mathcal{I} = \mathcal{O} \times \mathbb{S} \times \mathbb{N}$ (see [Script System](#script-system))  
-**Transaction Output**: $\mathcal{T} = \mathbb{Z} \times \mathbb{S}$ (see [Monetary Values](#monetary-constants))  
+**OutPoint**: $\mathcal{O} = \mathbb{H} \times \mathbb{N}$ (see [§3.2](#32-core-data-structures), [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product))  
+**Transaction Input**: $\mathcal{I} = \mathcal{O} \times \mathbb{S} \times \mathbb{N}$ (see [§3.3](#33-script-system))  
+**Transaction Output**: $\mathcal{T} = \mathbb{Z} \times \mathbb{S}$ (see [§4.1](#41-monetary-constants))  
 **Transaction**: $\mathcal{TX} = \mathbb{N} \times \mathcal{I}^* \times \mathcal{T}^* \times \mathbb{N}$ (see [Transaction Validation](#51-transaction-validation), [Kleene star](https://en.wikipedia.org/wiki/Kleene_star))  
 **Block Header**: $\mathcal{H} = \mathbb{Z} \times \mathbb{H} \times \mathbb{H} \times \mathbb{N} \times \mathbb{N} \times \mathbb{N}$ (see [Block Validation](#53-block-validation))  
 **Block**: $\mathcal{B} = \mathcal{H} \times \mathcal{TX}^*$ (see [Block Validation](#53-block-validation))  
-**UTXO**: $\mathcal{U} = \mathbb{Z} \times \mathbb{S} \times \mathbb{N}$ (see [UTXO Set Invariant](#theorem-81))  
+**UTXO**: $\mathcal{U} = \mathbb{Z} \times \mathbb{S} \times \mathbb{N}$ (see [Theorem 8.1](#81-economic-security))  
 **UTXO Set**: $\mathcal{US} = \mathcal{O} \rightarrow \mathcal{U}$ (see [State Transition Functions](#5-state-transition-functions), [function type](https://en.wikipedia.org/wiki/Function_type))
 
 ### 3.3 Script System
@@ -170,7 +191,7 @@ For each $n \in \text{Network}$, the following parameters may differ:
 ### 4.1 Monetary Constants
 
 $C = 10^8$ (satoshis per BTC, see [Economic Model](#6-economic-model))  
-$M_{max} = 21 \times 10^6 \times C$ (maximum money supply, see [Supply Limit](#supply-limit))  
+$M_{max} = 21 \times 10^6 \times C$ (maximum money supply, see [§6.2](#62-total-supply))  
 $H = 210,000$ (halving interval, see [Block Subsidy](#61-block-subsidy))
 
 ### 4.2 Block Constants
@@ -181,9 +202,9 @@ $R = 100$ (coinbase maturity requirement, see [Transaction Validation](#51-trans
 
 ### 4.3 Script Constants
 
-$L_{script} = 10,000$ (maximum script length, see [Script Security](#script-security))  
-$L_{stack} = 1,000$ (maximum stack size, see [Script Execution Bounds](#theorem-84))  
-$L_{ops} = 201$ (maximum operations per script, see [Script Execution Bounds](#theorem-84))  
+$L_{script} = 10,000$ (maximum script length, see [§8.3](#83-cryptographic-security))  
+$L_{stack} = 1,000$ (maximum stack size, see [Theorem 8.4](#83-cryptographic-security))  
+$L_{ops} = 201$ (maximum operations per script, see [Theorem 8.4](#83-cryptographic-security))  
 $L_{element} = 520$ (maximum element size, see [Script Execution](#52-script-execution))
 
 ### 4.4 Difficulty Constants
@@ -739,7 +760,7 @@ $$\text{GetBlockScriptFlags}(h_b, tx, w, h, n) = \begin{cases}
 \text{CalculateScriptFlags}(tx, w, h, n) & \text{otherwise}
 \end{cases}$$
 
-Where $h_b = \text{hash}(b)$ is the block hash. Mainnet has 2 exceptions (BIP16, Taproot); testnet has 1 (BIP16). See §2.2.1.
+Where $h_b = \text{hash}(b)$ is the block hash. Mainnet has 2 exceptions (BIP16, Taproot); testnet has 1 (BIP16). See [§2.2.1](#221-networks-and-parameters).
 
 ### 5.3 Block Validation
 
@@ -1998,7 +2019,7 @@ $$\text{TotalSupply}(h) \leq 21 \times 10^6 \times C$$
 
 **Theorem 8.2** (Supply Convergence): The total supply converges to exactly 21 million BTC.
 
-*Proof*: From [Theorem 6.2.3](#theorem-623-supply-convergence), we have:
+*Proof*: From [Theorem 6.2.3](#62-total-supply), we have:
 $$\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$$
 
 Since the subsidy becomes 0 after 64 halvings (height 13,440,000), the total supply is exactly:
@@ -2045,7 +2066,7 @@ Round-trip properties ensure that encoding/decoding and serialization/deserializ
 
 $$\forall tx \in \mathcal{TX}: \text{DeserializeTransaction}(\text{SerializeTransaction}(tx)) = tx$$
 
-**Property** (SegWit Transaction Serialization Round-Trip): SegWit transaction serialization and deserialization are inverse operations, where $\mathcal{W}$ denotes witness stack (see Section 11.1):
+**Property** (SegWit Transaction Serialization Round-Trip): SegWit transaction serialization and deserialization are inverse operations, where $\mathcal{W}$ denotes witness stack (see [§11.1 Segregated Witness (SegWit)](#111-segregated-witness-segwit)):
 
 $$\forall (tx, w) \in \mathcal{TX} \times \mathcal{W}^{*}: |w| = |tx.\text{inputs}| \implies \text{DeserializeTransactionWithWitness}(\text{SerializeTransactionWithWitness}(tx, w)) = (tx, w)$$
 
@@ -2100,7 +2121,7 @@ Since each operation takes constant time and the combined stack and altstack siz
 2. While $|L_i| > 1$:
    - **Odd-duplicate rule**: If $|L_i|$ is odd, append $L_i[|L_i|-1]$ to $L_i$.
    - **CVE-2012-2459**: If any pair $(L_i[2j], L_i[2j+1])$ has $L_i[2j] = L_i[2j+1]$, the block is invalid (mutation detected).
-   - **Pair-and-hash**: $L_{i+1}[j] = \text{SHA256d}(L_i[2j] \| L_i[2j+1])$ for $j \in [0, |L_i|/2)$.
+   - **Pair-and-hash**: $L_{i+1}[j] = \text{SHA256d}(L_i[2j] \parallel L_i[2j+1])$ for $j \in [0, |L_i|/2)$.
    - Set $L_i = L_{i+1}$.
 3. $\text{ComputeMerkleRoot}(H) = L_{\text{final}}[0]$.
 
@@ -2158,13 +2179,17 @@ $$\text{ConnectBlock}(b, us, h) \text{ is deterministic}$$
 - Coinbase rejection: $\text{IsCoinbase}(tx) = \text{true} \implies \text{AcceptToMemoryPool}(tx, us) = \text{rejected}$
 - Result type: $\text{AcceptToMemoryPool}(tx, us) \in \{\text{accepted}, \text{rejected}\}$
 
+#### 9.1.1 Transaction Finality
+
+$\text{CheckFinalTxAtTip}(tx)$ requires that absolute lock time ($nLockTime$) and input sequence locks (BIP68/BIP112) are satisfied at the current chain tip so the transaction is not treated as non-final for relay.
+
 A transaction $tx$ is accepted to the mempool if and only if:
 
 1. **Basic Validation**: $tx$ passes [CheckTransaction](#51-transaction-validation)
 2. **Non-Coinbase**: $\neg \text{IsCoinBase}(tx)$
-3. **Standard Transaction**: $\text{IsStandardTx}(tx)$ (see [Standard Transaction Rules](#standard-transaction-rules))
+3. **Standard Transaction**: $\text{IsStandardTx}(tx)$ (see [§9.2](#92-standard-transaction-rules))
 4. **Size Limits**: $|\text{Serialize}(tx)| \geq 65$ bytes (minimum non-witness size)
-5. **Finality**: $\text{CheckFinalTxAtTip}(tx)$ (see [Transaction Finality](#transaction-finality))
+5. **Finality**: $\text{CheckFinalTxAtTip}(tx)$ (see [§9.1.1](#911-transaction-finality))
 6. **Fee Requirements**: $\text{FeeRate}(tx) \geq \text{minRelayFeeRate}$
 7. **SigOps Limit**: $\text{SigOpsCount}(tx) \leq \text{MAX\_STANDARD\_TX\_SIGOPS\_COST}$
 
@@ -2295,6 +2320,16 @@ Parses raw bytes into a protocol message. Rejects messages that are too short, t
 1. **Checksum length**: $|\text{CalculateChecksum}(payload)| = 4$
 2. **Payload bounds**: $\text{payload\_length} \leq L_{\max} - 24$
 
+### 10.2 Connection Management
+
+**Connection Types**:
+- **Outbound**: Active connections to other nodes
+- **Inbound**: Passive connections from other nodes
+- **Feeler**: Short-lived connections for peer discovery
+- **Block-Relay**: Connections that only relay blocks
+
+Further P2P lifecycle and dispatch details appear with [§10.3](./ARCHITECTURE.md#103-peer-discovery) and [§10.6](./ARCHITECTURE.md#106-dandelion-k-anonymity) in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+
 ### 10.2.1 Handshake Invariants
 
 **HandleVersionReceived**: On receipt of `version` message, node must send `verack` only after processing. VerAck is never sent before Version.
@@ -2333,7 +2368,7 @@ Parses raw bytes into a protocol message. Rejects messages that are too short, t
 
 $$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{wtxid}(tx_i) : i \in [0, |block.transactions|)\})$$
 
-**Witness commitment output (BIP141)**: The 32-byte value in the coinbase OP_RETURN is $\text{SHA256d}(\text{WitnessRoot} \,\|\, \text{WitnessReservedValue})$, where $\text{WitnessReservedValue}$ is the 32-byte item in the coinbase input’s witness stack (default $0^{32}$ if absent), not the raw $\text{WitnessRoot}$ alone.
+**Witness commitment output (BIP141)**: The 32-byte value in the coinbase OP_RETURN is $\text{SHA256d}(\text{WitnessRoot} \,\parallel\, \text{WitnessReservedValue})$, where $\text{WitnessReservedValue}$ is the 32-byte item in the coinbase input’s witness stack (default $0^{32}$ if absent), not the raw $\text{WitnessRoot}$ alone.
 
 **Weight Calculation** (BIP141):  
 $$\text{Weight}(tx) = 3 \times |\text{Serialize}(tx \setminus witness)| + |\text{Serialize}(tx)|$$
@@ -2494,7 +2529,7 @@ $$\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = \text{ComputeMerkleRoot
 **Properties**:
 - Root length: the result is a 32-byte hash.
 - Block requirement: $|b.transactions| > 0$.
-- **CVE-2012-2459**: $\text{ComputeMerkleRoot}$ must apply the odd-duplicate and duplicate-pair rejection rules in §8.4.1 (ComputeMerkleRoot).
+- **CVE-2012-2459**: $\text{ComputeMerkleRoot}$ must apply the odd-duplicate and duplicate-pair rejection rules in [§8.4.1](#841-computemerkleroot) (ComputeMerkleRoot).
 
 #### 11.1.5 Witness Commitment Validation
 
@@ -2504,9 +2539,9 @@ $$\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = \text{ComputeMerkleRoot
 
 Let $n \in \{0,1\}^{256}$ be the 32-byte witness reserved value: the first push of the first witness stack of the coinbase input, or $0^{32}$ if missing or not exactly 32 bytes.
 
-Let $c = \text{SHA256d}(r \,\|\, n)$ (64-byte preimage). A valid witness commitment output stores $c$ (not $r$ alone).
+Let $c = \text{SHA256d}(r \,\parallel\, n)$ (64-byte preimage). A valid witness commitment output stores $c$ (not $r$ alone).
 
-**OP_RETURN format** (BIP141): `OP_RETURN` `0x24` `0xaa21a9ed` $\|\, c$ (total push 36 bytes after opcode: 4-byte magic + 32-byte $c$).
+**OP_RETURN format** (BIP141): `OP_RETURN` `0x24` `0xaa21a9ed` $\parallel\, c$ (total push 36 bytes after opcode: 4-byte magic + 32-byte $c$).
 
 **Properties**:
 - Coinbase requirement: only defined for $\text{IsCoinbase}(tx)$.
@@ -2538,8 +2573,8 @@ Where $\text{IsSegWitOutput}(spk) = (|spk| \in \{22, 34\}) \land (spk[0] = 0x00)
 (Parameters: block $b$, per-transaction witness data $w_1,\ldots,w_n$, maximum block weight $W_{\text{max}}$.)
 
 **Properties**:
-- Let $r = \text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n)$ as in §11.1.4.
-- Witness commitment (when present) must satisfy §11.1.5 for the coinbase $b.\text{transactions}[0]$, root $r$, and coinbase witness stacks $w_1$.
+- Let $r = \text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n)$ as in [§11.1.4](#1114-witness-merkle-root).
+- Witness commitment (when present) must satisfy [§11.1.5](#1115-witness-commitment-validation) for the coinbase $b.\text{transactions}[0]$, root $r$, and coinbase witness stacks $w_1$.
 - Block weight: $\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) \leq W_{\text{max}}$.
 
 $$\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, W_{\text{max}}) = \begin{cases}
@@ -2547,7 +2582,7 @@ $$\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, W_{\text{max}}) = \begin{cases
 \text{invalid} & \text{otherwise}
 \end{cases}$$
 
-(If no witness commitment output exists in the coinbase, §11.1.5 treats validation as satisfied for pre-SegWit coinbase layouts; implementations gate full SegWit rules on deployment context.)
+(If no witness commitment output exists in the coinbase, [§11.1.5](#1115-witness-commitment-validation) treats validation as satisfied for pre-SegWit coinbase layouts; implementations gate full SegWit rules on deployment context.)
 
 #### 11.1.8 Nested SegWit (P2WSH-in-P2SH, P2WPKH-in-P2SH)
 
@@ -2588,7 +2623,7 @@ For P2WSH-in-P2SH:
 Computes the signature hash for SegWit (P2WPKH, P2WSH) inputs per BIP 143. Replaces legacy sighash with a committed structure that excludes scriptSig and binds the amount.
 
 **Preimage structure** (BIP 143 byte layout):
-$$\text{Preimage} = \text{nVersion}_{32} \| \text{hashPrevouts}_{256} \| \text{hashSequence}_{256} \| \text{outpoint}_{288} \| \text{scriptCode} \| \text{amount}_{64} \| \text{nSequence}_{32} \| \text{hashOutputs}_{256} \| \text{nLockTime}_{32} \| \text{sighashType}_{32}$$
+$$\text{Preimage} = \text{nVersion}\_{32} \parallel \text{hashPrevouts}\_{256} \parallel \text{hashSequence}\_{256} \parallel \text{outpoint}\_{288} \parallel \text{scriptCode} \parallel \text{amount}\_{64} \parallel \text{nSequence}\_{32} \parallel \text{hashOutputs}\_{256} \parallel \text{nLockTime}\_{32} \parallel \text{sighashType}\_{32}$$
 
 **Precomputed hashes**:
 - $\text{hashPrevouts} = \text{SHA256d}(\text{concat}(\text{prevout}_i : i \in \text{inputs}))$ (or $0^{256}$ if ANYONECANPAY)
@@ -2717,12 +2752,12 @@ where $v$ is the leaf version (default $\texttt{0xc0}$ for tapscript per BIP 341
 Computes the Taproot script merkle root from a leaf script and merkle proof using BIP 341 TapLeaf and TapBranch tagged hashes.
 
 **TapLeaf Hash** (BIP 341):
-$$\text{TapLeafHash}(v, s) = \text{TaggedHash}(\texttt{"TapLeaf"}, v \| \text{CompactSize}(|s|) \| s)$$
+$$\text{TapLeafHash}(v, s) = \text{TaggedHash}(\texttt{"TapLeaf"}, v \parallel \text{CompactSize}(\lvert s \rvert) \parallel s)$$
 
 where $v \in \{0,\ldots,255\}$ is the leaf version, $s \in \mathbb{S}$ is the script, and $\text{CompactSize}$ encodes the script length per Bitcoin varint.
 
 **TapBranch Hash** (BIP 341):
-$$\text{TapBranchHash}(h_L, h_R) = \text{TaggedHash}(\texttt{"TapBranch"}, h_L \| h_R)$$
+$$\text{TapBranchHash}(h_L, h_R) = \text{TaggedHash}(\texttt{"TapBranch"}, h_L \parallel h_R)$$
 
 where $h_L, h_R \in \mathbb{H}$ are 32-byte hashes. For sibling ordering: $(h_{\text{left}}, h_{\text{right}}) = (\min(h_{\text{current}}, h_{\text{proof}}), \max(h_{\text{current}}, h_{\text{proof}}))$ (lexicographic order).
 
@@ -2797,7 +2832,7 @@ $$\text{ComputeTaprootSignatureHash}(tx, i, us, type, leaf) = \text{TaggedHash}(
 Computes the signature hash for tapscript (script-path) spending. Same base SigMsg structure as key-path (11.2.6), with an extension field $ext$ that binds the signature to the specific tapscript and OP_CODESEPARATOR position.
 
 **Extension field** (BIP 342):
-$$ext = \text{codesep\_pos}_{32} \| \text{key\_version}_{8} \| \text{tapleaf\_hash}_{256}$$
+$$ext = \operatorname{codesep\_pos}_{32} \parallel \operatorname{key\_version}_{8} \parallel \operatorname{tapleaf\_hash}_{256}$$
 
 where:
 - $\text{codesep\_pos}_{32}$: 4-byte little-endian encoding of the last OP_CODESEPARATOR position (0 if none executed)
@@ -2805,11 +2840,11 @@ where:
 - $\text{tapleaf\_hash}_{256}$: 32-byte $\text{TapLeafHash}(v, s)$ of the executing tapscript
 
 **Definition**:
-$$\text{SigMsgBase}(tx, i, us, type) = \text{version} \| \text{inputs} \| \text{outputs} \| \text{locktime} \| type \| i \| \text{value}_i \| \text{scriptPubKey}_i$$
+$$\text{SigMsgBase}(tx, i, us, type) = \text{version} \parallel \text{inputs} \parallel \text{outputs} \parallel \text{locktime} \parallel type \parallel i \parallel \text{value}_i \parallel \text{scriptPubKey}_i$$
 
-$$\text{ComputeTapscriptSignatureHash}(tx, i, us, s, v, \text{codesep}, type) = \text{TaggedHash}(\texttt{"TapSighash"}, 0x00 \| \text{SigMsgBase}(tx, i, us, type) \| ext)$$
+$$\text{ComputeTapscriptSignatureHash}(tx, i, us, s, v, \text{codesep}, type) = \text{TaggedHash}(\texttt{"TapSighash"}, 0x00 \parallel \text{SigMsgBase}(tx, i, us, type) \parallel ext)$$
 
-where $ext = \text{LE}_{32}(\text{codesep}) \| 0x00 \| \text{TapLeafHash}(v, s)$.
+where $ext = \text{LE}_{32}(\text{codesep}) \parallel 0x00 \parallel \text{TapLeafHash}(v, s)$.
 
 **Properties**:
 - Hash length: $\text{ComputeTapscriptSignatureHash}(\ldots) = h \implies |h| = 32$
@@ -2838,7 +2873,7 @@ n+1 & \text{if } \text{VerifySchnorr}(pk, sig, \text{ComputeTapscriptSignatureHa
 
 **SigOp cost**: $\text{SigOpCount}(\texttt{0xba}) = 1$ (same as OP_CHECKSIG, OP_CHECKSIGVERIFY).
 
-**CountTapscriptSigOps**: $\mathbb{S} \rightarrow \mathbb{N}$; counts CHECKSIG-family opcodes in a tapscript per **BIP 342** (used for the **per-tapscript sigops budget** during Tapscript execution / validation weight). This count is **not** added to the **legacy block** $\text{GetTransactionSigOpCost}$ witness term ($\text{CountWitnessSigOps}$ is witness-v0-only for that cost; see §5.2.2).
+**CountTapscriptSigOps**: $\mathbb{S} \rightarrow \mathbb{N}$; counts CHECKSIG-family opcodes in a tapscript per **BIP 342** (used for the **per-tapscript sigops budget** during Tapscript execution / validation weight). This count is **not** added to the **legacy block** $\text{GetTransactionSigOpCost}$ witness term ($\text{CountWitnessSigOps}$ is witness-v0-only for that cost; see [§5.2.2](#522-signature-operation-counting)).
 
 Parse $s$ sequentially. For each byte: if it is a push opcode (0x01–0x4b, or 0x4c/0x4d/0x4e with length bytes), skip the payload; otherwise it is an opcode byte. Count opcode bytes in $\{0xac, 0xad, 0xba\}$:
 
@@ -2854,6 +2889,8 @@ where $0xac = \text{OP\_CHECKSIG}$, $0xad = \text{OP\_CHECKSIGVERIFY}$, $0xba = 
 
 
 ### 11.4 UTXO Commitments
+
+**Scope:** UTXO commitments are **not consensus-active on Bitcoin mainnet** at the chain tip described in this document. They are specified for optional deployments, research implementations, and networks that choose to enable them (for example behind feature flags). Treat material in this section as **non–mainnet-mandatory** unless your deployment explicitly activates UTXO commitments.
 
 UTXO commitments provide cryptographic commitments to the UTXO set using Merkle trees, enabling efficient UTXO set synchronization and verification without requiring full blockchain download.
 
@@ -3031,7 +3068,11 @@ Constructs a valid coinbase transaction for block at height $h$ with total fees 
 
 ## 13. Engineering-Specific Edge Cases
 
-**PROTOCOL.md** states consensus rules mainly as mathematical predicates, types, and state transitions (Sections 2–12 and cross-referenced clauses). This section adds consensus-critical material not covered by those predicates alone: **engineering invariants** in §13.3.1–§13.3.4 (checked arithmetic on amounts and fees, canonical serialization and decoding, exact resource-limit boundaries, and deterministic rejection of malformed data), each of which must align with observable mainnet behavior; and **cross-module integration properties** in §13.3.5. Implementations must satisfy this section as strictly as the rest of the specification so nodes do not diverge.
+**PROTOCOL.md** states consensus rules mainly as mathematical predicates, types, and state transitions ([§2](#2-system-model)–[§12](#12-mining-protocol) and cross-referenced clauses). This section adds consensus-critical material not covered by those predicates alone: **engineering invariants** in [§13.3.1](#1331-integer-arithmetic-overflowunderflow)–[§13.3.4](#1334-parser-determinism) (checked arithmetic on amounts and fees, canonical serialization and decoding, exact resource-limit boundaries, and deterministic rejection of malformed data), each of which must align with observable mainnet behavior; and **cross-module integration properties** in [§13.3.5](#1335-integration-proofs). Implementations must satisfy this section as strictly as the rest of the specification so nodes do not diverge.
+
+### 13.3 Engineering Invariants
+
+Subsections **[13.3.1](#1331-integer-arithmetic-overflowunderflow)**–**[13.3.5](#1335-integration-proofs)** state engineering invariants and cross-module integration properties that implementations must satisfy together with the core protocol.
 
 #### 13.3.1 Integer Arithmetic Overflow/Underflow
 

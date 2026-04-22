@@ -3,14 +3,7 @@
 This document contains the implementation-oriented sections of the Orange Paper.
 See [PROTOCOL.md](PROTOCOL.md) for consensus rules and predicates.
 
-
-### 10.2 Connection Management
-
-**Connection Types**:
-- **Outbound**: Active connections to other nodes
-- **Inbound**: Passive connections from other nodes  
-- **Feeler**: Short-lived connections for peer discovery
-- **Block-Relay**: Connections that only relay blocks
+Normative **§10.2 Connection Management** (connection-type taxonomy) and **§10.2.1** handshake invariants are in [PROTOCOL.md](PROTOCOL.md) ([§10.2](PROTOCOL.md#102-connection-management), [§10.2.1](PROTOCOL.md#1021-handshake-invariants)).
 
 ### 10.3 Peer Discovery
 
