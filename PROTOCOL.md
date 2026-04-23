@@ -30,7 +30,14 @@ This paper presents a mathematical specification of the Bitcoin consensus protoc
    - 4.4 [Difficulty Constants](#44-difficulty-constants)
 5. [State Transition Functions](#5-state-transition-functions)
    - 5.1 [Transaction Validation](#51-transaction-validation)
+     - 5.1.1 [Transaction Sighash Calculation](#511-transaction-sighash-calculation)
    - 5.2 [Script Execution](#52-script-execution)
+     - 5.2.1 [P2SH Push-Only Validation](#521-p2sh-push-only-validation)
+     - 5.2.2 [Signature Operation Counting](#522-signature-operation-counting)
+     - 5.2.3 [Stack Operations](#523-stack-operations)
+     - 5.2.4 [Conditional Opcode Execution](#524-conditional-opcode-execution)
+     - 5.2.5 [Script Verification Flags](#525-script-verification-flags)
+     - 5.2.6 [Script Flag Exceptions](#526-script-flag-exceptions)
    - 5.3 [Block Validation](#53-block-validation)
      - 5.3.1 [Transaction Application Equivalence](#531-transaction-application-equivalence)
    - 5.4 [BIP Validation Rules](#54-bip-validation-rules)
@@ -69,14 +76,33 @@ This paper presents a mathematical specification of the Bitcoin consensus protoc
    - 9.3 [Replace-By-Fee (RBF)](#93-replace-by-fee-rbf)
 10. [Network Protocol](#10-network-protocol)
     - 10.1 [Message Types](#101-message-types)
+      - 10.1.1 [Message Header Parsing](#1011-message-header-parsing)
     - 10.2 [Connection Management](#102-connection-management)
+      - 10.2.1 [Handshake Invariants](#1021-handshake-invariants)
     - 10.3 [Peer Discovery](./ARCHITECTURE.md#103-peer-discovery)
     - 10.4 [Block Synchronization](#104-block-synchronization)
     - 10.5 [Transaction Relay](#105-transaction-relay)
     - 10.6 [Dandelion++ k-Anonymity](./ARCHITECTURE.md#106-dandelion-k-anonymity)
 11. [Advanced Features](#11-advanced-features)
     - 11.1 [Segregated Witness (SegWit)](#111-segregated-witness-segwit)
+      - 11.1.1 [Weight and Size Calculations](#1111-weight-and-size-calculations)
+      - 11.1.2 [Witness Structure Validation](#1112-witness-structure-validation)
+      - 11.1.3 [Witness Program Extraction](#1113-witness-program-extraction)
+      - 11.1.4 [Witness Merkle Root](#1114-witness-merkle-root)
+      - 11.1.5 [Witness Commitment Validation](#1115-witness-commitment-validation)
+      - 11.1.6 [SegWit Transaction Detection](#1116-segwit-transaction-detection)
+      - 11.1.7 [Block Validation](#1117-block-validation)
+      - 11.1.8 [Nested SegWit (P2WSH-in-P2SH, P2WPKH-in-P2SH)](#1118-nested-segwit-p2wsh-in-p2sh-p2wpkh-in-p2sh)
+      - 11.1.9 [BIP143 Witness Sighash (ComputeWitnessSignatureHash)](#1119-bip143-witness-sighash-computewitnesssignaturehash)
     - 11.2 [Taproot](#112-taproot)
+      - 11.2.1 [Taproot Script Validation](#1121-taproot-script-validation)
+      - 11.2.2 [Taproot Key Operations](#1122-taproot-key-operations)
+      - 11.2.3 [Taproot Script Path](#1123-taproot-script-path)
+      - 11.2.4 [Taproot Witness Structure](#1124-taproot-witness-structure)
+      - 11.2.5 [Taproot Transaction Validation](#1125-taproot-transaction-validation)
+      - 11.2.6 [Taproot Signature Hash](#1126-taproot-signature-hash)
+      - 11.2.7 [Tapscript Signature Hash (BIP 342)](#1127-tapscript-signature-hash-bip-342)
+      - 11.2.8 [Tapscript Opcodes and SigOp Counting (BIP 342)](#1128-tapscript-opcodes-and-sigop-counting-bip-342)
     - 11.3 [Chain Reorganization](./ARCHITECTURE.md#113-chain-reorganization)
       - 11.3.1 [Undo Log Pattern](./ARCHITECTURE.md#1131-undo-log-pattern)
     - 11.4 [UTXO Commitments](#114-utxo-commitments)
@@ -292,7 +318,7 @@ $$\text{CheckTxInputs}(tx, us, h) = \begin{cases}
 (\text{valid}, \text{fee}) & \text{otherwise}
 \end{cases}$$
 
-Where $\text{fee} \coloneqq \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} - \sum_{o \in tx.\text{outputs}} o.\text{value}$.
+$$\text{where} \quad \text{fee} := \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} - \sum_{o \in tx.\text{outputs}} o.\text{value}$$
 
 #### 5.1.1 Transaction Sighash Calculation
 
@@ -1897,13 +1923,13 @@ Where:
 
 Let $prev_{\text{last}}$ denote the last block of the difficulty period and $prev_{\text{first}}$ the first. Let $T_{\text{expected}} = 14 \times 24 \times 60 \times 60$ (2 weeks in seconds). The timespan and bits base use only the completed period; the new block $h$ does not affect the result (timewarp safety).
 
-$$\text{timeSpan} = \text{ClampTime}(prev_{\text{last}}.\text{time} - prev_{\text{first}}.\text{time}), \quad \text{ClampTime}(t) \coloneqq \max(T_{\text{expected}}/4, \min(4 T_{\text{expected}}, t))$$
+$$\text{timeSpan} = \text{ClampTime}(prev_{\text{last}}.\text{time} - prev_{\text{first}}.\text{time}), \quad \text{ClampTime}(t) := \max(T_{\text{expected}}/4, \min(4 T_{\text{expected}}, t))$$
 
-Let $\text{bitsBase}(prev, n) \coloneqq prev_{\text{first}}.\text{bits}$ if $\text{EnforceBIP94}(n)$, else $prev_{\text{last}}.\text{bits}$.
+Let $\text{bitsBase}(prev, n) := prev_{\text{first}}.\text{bits}$ if $\text{EnforceBIP94}(n)$, else $prev_{\text{last}}.\text{bits}$.
 
 Let $b = \text{bitsBase}(prev, n)$, $T = \text{ExpandTarget}(b)$, and $\tau = \text{timeSpan}$. Let $\pi : \mathbb{U}_{256} \to \mathbb{N}$ embed targets as unsigned integers. Define the **partial** product $T \otimes \tau \in \mathbb{U}_{256}$ to exist iff $\pi(T) \cdot \tau < 2^{256}$, in which case $T \otimes \tau$ is the unique element of $\mathbb{U}_{256}$ with $\pi(T \otimes \tau) = \pi(T) \cdot \tau$; otherwise $T \otimes \tau$ is undefined.
 
-Let $T_{\mathrm{adj}} \coloneqq \left\lfloor \pi(T \otimes \tau) / T_{\text{expected}} \right\rfloor$ when $T \otimes \tau$ is defined. Let $c \coloneqq \text{Compress}(T_{\mathrm{adj}})$ be the compact $n$Bits encoding of the full 256-bit target $T_{\mathrm{adj}}$, using the usual compact encoding (including mantissa normalization: while the provisional significand has bit `0x00800000` set, shift it right by one byte and increase the exponent size field accordingly until it fits the 23-bit mantissa). Let $\text{MAX\_TARGET} \in \mathbb{N}$ denote the compact encoding of the network’s maximum target (minimum difficulty ceiling).
+Let $T_{\mathrm{adj}} := \left\lfloor \pi(T \otimes \tau) / T_{\text{expected}} \right\rfloor$ when $T \otimes \tau$ is defined. Let $c := \text{Compress}(T_{\mathrm{adj}})$ be the compact $n$Bits encoding of the full 256-bit target $T_{\mathrm{adj}}$, using the usual compact encoding (including mantissa normalization: while the provisional significand has bit `0x00800000` set, shift it right by one byte and increase the exponent size field accordingly until it fits the 23-bit mantissa). Let $\text{MAX\_TARGET} \in \mathbb{N}$ denote the compact encoding of the network’s maximum target (minimum difficulty ceiling).
 
 $$\text{GetNextWorkRequired}(h, prev, n) = \begin{cases}
 \text{initialDifficulty} & \text{if } |prev| < 2 \\
