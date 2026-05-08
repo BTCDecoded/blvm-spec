@@ -826,6 +826,14 @@ For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
 
 $$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } height \\ 3 & \text{if BIP66 active at } height \\ 2 & \text{if BIP34 active at } height \\ 1 & \text{otherwise} \end{cases}$$
 
+**Properties**:
+- Boolean result: $\text{ValidBlockHeader}(h, height, ctx) \in \{\text{true}, \text{false}\}$
+- Deterministic: $\forall h, height, ctx: \text{ValidBlockHeader}(h, height, ctx)$ is deterministic
+- Version floor: $\text{ValidBlockHeader}(h, height, ctx) = \text{true} \implies h.\text{version} \geq 1$
+- Non-zero timestamp: $\text{ValidBlockHeader}(h, height, ctx) = \text{true} \implies h.\text{timestamp} \neq 0$
+- Non-zero bits: $\text{ValidBlockHeader}(h, height, ctx) = \text{true} \implies h.\text{bits} \neq 0$
+- PoW necessary: $\text{ValidBlockHeader}(h, height, ctx) = \text{true} \implies \text{CheckProofOfWork}(h) = \text{true}$
+
 **Notes:**
 
 - H01 and H02 compose: H01 is the unconditional floor (version 0 is always rejected); H02 enforces tighter minimums after BIP activation heights. Version 1 is valid before BIP34, invalid after.
