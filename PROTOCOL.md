@@ -298,6 +298,7 @@ flowchart TD
 - Empty rejection: $|tx.\text{inputs}| = 0 \lor |tx.\text{outputs}| = 0 \implies \text{CheckTransaction}(tx) \neq \text{valid}$
 - Output value bounds: $\text{CheckTransaction}(tx) = \text{valid} \implies \forall o \in tx.\text{outputs}: 0 \leq o.\text{value} \leq M_{\text{max}}$
 - Total output sum: $\text{CheckTransaction}(tx) = \text{valid} \implies \sum_{o \in tx.\text{outputs}} o.\text{value} \leq M_{\text{max}}$
+- Stripped-size weight (consensus): $\text{CheckTransaction}(tx) = \text{valid} \implies 4 \cdot \text{CalculateTransactionSize}(tx) \leq W_{\max}$ (same $W_{\max}$ as block weight cap, §11.1.1; see **CalculateTransactionSize** below)
 - No duplicate prevouts: $\text{CheckTransaction}(tx) = \text{valid} \implies \forall i,j \in tx.\text{inputs}: i \neq j \implies i.\text{prevout} \neq j.\text{prevout}$
 - Coinbase scriptSig length: $\text{CheckTransaction}(tx) = \text{valid} \land \text{IsCoinbase}(tx) \implies 2 \leq |tx.\text{inputs}[0].\text{scriptSig}| \leq 100$
 - Non-coinbase prevout: $\text{CheckTransaction}(tx) = \text{valid} \land \neg \text{IsCoinbase}(tx) \implies \forall i \in tx.\text{inputs}: \neg i.\text{prevout}.\text{IsNull}()$
@@ -322,6 +323,20 @@ $$\text{CheckTxInputs}(tx, us, h) = \begin{cases}
 \end{cases}$$
 
 $$\text{where} \quad \text{fee} := \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} - \sum_{o \in tx.\text{outputs}} o.\text{value}$$
+
+**CalculateTransactionSize**: $\mathcal{TX} \rightarrow \mathbb{N}$
+
+**Properties**:
+- Non-negativity: $\text{CalculateTransactionSize}(tx) \geq 0$
+- Stripped bytes: $\text{CalculateTransactionSize}(tx) = |\text{SerializeNoWitness}(tx)|$
+- Consensus weight when valid: $\text{CheckTransaction}(tx) = \text{valid} \implies 4 \cdot \text{CalculateTransactionSize}(tx) \leq W_{\max}$
+- Deterministic: $\text{CalculateTransactionSize}(tx_1) = \text{CalculateTransactionSize}(tx_2) \iff tx_1 = tx_2$
+
+**CalculateTxId**: $\mathcal{TX} \rightarrow \mathbb{H}$
+
+**Properties**:
+- Hash length: $\text{CalculateTxId}(tx) = h \implies |h| = 32$
+- Deterministic: $\text{CalculateTxId}(tx_1) = \text{CalculateTxId}(tx_2) \iff tx_1 = tx_2$
 
 #### 5.1.1 Transaction Sighash Calculation
 
@@ -373,14 +388,15 @@ script & \text{if } |pattern| = 0 \lor |pattern| > |script| \\
 
 Where $\text{RemoveAll}(script, pattern)$ removes all occurrences of $pattern$ from $script$ while preserving opcode boundaries.
 
-**SighashScriptCode** (Updated): $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \text{SigVersion} \times \mathbb{S} \rightarrow \mathbb{S}$
+**SighashScriptCodeWithSigVersion**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \text{SigVersion} \times \mathbb{S} \rightarrow \mathbb{S}$
+
+(Extends the three-argument **SighashScriptCode** above with signature version `sv` and executing signature push `sig` for Find-and-delete semantics in `SigVersion::Base`.)
 
 **Properties** (Updated):
 - P2SH handling: $\text{SighashScriptCode}(tx, i, us, sv, sig) = \text{RedeemScript}(tx, i) \iff \text{IsP2SH}(us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey})$ (P2SH uses redeem script)
 - Non-P2SH handling: $\text{SighashScriptCode}(tx, i, us, sv, sig) = us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey} \iff \neg \text{IsP2SH}(us(tx.\text{inputs}[i].\text{prevout}).\text{scriptPubkey})$ (non-P2SH uses scriptPubkey)
 - FindAndDelete application: $\text{SigVersion} = \text{Base} \land \text{IsSignatureOpcode}(opcode) \implies \text{SighashScriptCode}(tx, i, us, sv, sig) = \text{FindAndDelete}(\text{BaseScriptCode}(tx, i, us), \text{SerializePush}(sig))$
-- SegWit exclusion: $\text{SigVersion} = \text{WitnessV0} \lor \text{SigVersion} = \text{Tapscript} \implies \text{FindAndDelete}$ not applied
-- Legacy requirement: FindAndDelete applies only to legacy scripts (SigVersion::Base) for OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CHECKMULTISIG, and OP_CHECKMULTISIGVERIFY
+- SegWit exclusion: $\text{SigVersion} = \text{WitnessV0} \lor \text{SigVersion} = \text{Tapscript} \implies \text{FindAndDelete is not applied}$
 - Input index requirement: $\text{SighashScriptCode}(tx, i, us, sv, sig)$ requires $i < |tx.\text{inputs}|$ (valid input index)
 - UTXO existence: $\text{SighashScriptCode}(tx, i, us, sv, sig)$ requires $tx.\text{inputs}[i].\text{prevout} \in us$ (UTXO must exist)
 - Deterministic: $\text{SighashScriptCode}(tx_1, i_1, us_1, sv_1, sig_1) = \text{SighashScriptCode}(tx_2, i_2, us_2, sv_2, sig_2) \iff tx_1 = tx_2 \land i_1 = i_2 \land us_1 = us_2 \land sv_1 = sv_2 \land sig_1 = sig_2$
@@ -724,6 +740,7 @@ Where $i'$ is the new instruction pointer position after handling the conditiona
 - Flag activation: $\text{CalculateScriptFlags}(tx, w, h, n) = f \implies \forall flag \in f: h \geq H_{flag}(n)$
 - Per-transaction calculation: $\text{CalculateScriptFlags}(tx_1, w_1, h, n) \neq \text{CalculateScriptFlags}(tx_2, w_2, h, n)$ (may differ for different transactions)
 - Flag monotonicity: $h_1 \leq h_2 \implies \text{CalculateScriptFlags}(tx, w, h_1, n) \subseteq \text{CalculateScriptFlags}(tx, w, h_2, n)$
+- Non-negative bitmask: $\text{CalculateScriptFlags}(tx, w, h, n) \geq 0$ (flags are a $32$-bit unsigned mask; consensus uses only defined bits)
 
 For transaction $tx$, witness $w$, height $h$, and network $n$:
 
@@ -780,9 +797,17 @@ Some blocks use different script verification flags than the default (historical
 
 **ScriptFlagExceptions**: $\text{Network} \rightarrow (\mathbb{H} \rightharpoonup \mathbb{N}_{32})$
 
+**Properties**:
+- Override masks: if $f = \text{ScriptFlagExceptions}(n)(h_b)$ is defined, then $f \geq 0$ (consensus uses $32$-bit unsigned script flag words)
+
 For each network $n$, $\text{ScriptFlagExceptions}(n)$ is a partial map from block hash to override flags. When validating transactions in block $b$, if $\text{hash}(b) \in \text{dom}(\text{ScriptFlagExceptions}(n))$, use the override; otherwise use $\text{CalculateScriptFlags}(tx, w, h, n)$.
 
 **GetBlockScriptFlags**: $\mathbb{H} \times \mathcal{TX} \times \mathcal{W}^? \times \mathbb{N} \times \text{Network} \rightarrow \mathbb{N}_{32}$
+
+**Properties**:
+- Non-negative bitmask: $\text{GetBlockScriptFlags}(h_b, tx, w, h, n) \geq 0$
+- Deterministic: produce identical results
+- Exception dispatch: if $h_b \in \text{dom}(\text{ScriptFlagExceptions}(n))$ then $\text{GetBlockScriptFlags}(h_b, tx, w, h, n) = \text{ScriptFlagExceptions}(n)(h_b)$
 
 $$\text{GetBlockScriptFlags}(h_b, tx, w, h, n) = \begin{cases}
 \text{ScriptFlagExceptions}(n)(h_b) & \text{if } h_b \in \text{dom}(\text{ScriptFlagExceptions}(n)) \\
@@ -832,7 +857,7 @@ $$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } heigh
 
 **Properties**:
 - Boolean result: $\text{ValidBlockHeader}(h, height, ctx) \in \{\text{true}, \text{false}\}$
-- Deterministic: $\forall h, height, ctx: \text{ValidBlockHeader}(h, height, ctx)$ is deterministic
+- Deterministic: $\text{ValidBlockHeader}(h_1, height_1, ctx_1) = \text{ValidBlockHeader}(h_2, height_2, ctx_2) \iff h_1 = h_2 \land height_1 = height_2 \land ctx_1 = ctx_2$
 - Version floor: $\text{ValidBlockHeader}(h, height, ctx) = \text{true} \implies h.\text{version} \geq 1$
 - Non-zero timestamp: $\text{ValidBlockHeader}(h, height, ctx) = \text{true} \implies h.\text{timestamp} \neq 0$
 - Non-zero bits: $\text{ValidBlockHeader}(h, height, ctx) = \text{true} \implies h.\text{bits} \neq 0$
@@ -840,10 +865,13 @@ $$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } heigh
 
 **Notes:**
 
-- H01 and H02 compose: H01 is the unconditional floor (version 0 is always rejected); H02 enforces tighter minimums after BIP activation heights. Version 1 is valid before BIP34, invalid after.
-- H08 (parent hash linkage) is enforced by the node chain layer, not by `blvm-consensus`. Rules H01–H07 are the consensus-local subset checked inside `connect_block`.
-- Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field check (H06) rejects an all-zero `bits` as a structural sanity check; cryptographic verification of the merkle root against the block's transaction list happens inside `connect_block` itself after header validation passes.
-- H04 and H05 require a time context (network time and recent-header MTP). When no context is available (e.g. headers-first sync), only H01, H03, H06 are enforced.
+H01 and H02 compose: H01 is the unconditional floor (version 0 is always rejected); H02 enforces tighter minimums after BIP activation heights. Version 1 is valid before BIP34, invalid after.
+
+H08 (parent hash linkage) is enforced by the node chain layer, not by `blvm-consensus`. Rules H01–H07 are the consensus-local subset checked inside `connect_block`.
+
+Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field check (H06) rejects an all-zero `bits` as a structural sanity check; cryptographic verification of the merkle root against the block's transaction list happens inside `connect_block` itself after header validation passes.
+
+H04 and H05 require a time context (network time and recent-header MTP). When no context is available (e.g. headers-first sync), only H01, H03, H06 are enforced.
 
 #### 5.3.2 Transaction Application Equivalence
 
@@ -2276,6 +2304,14 @@ $$\text{ConnectBlock}(b, us, h) \text{ is deterministic}$$
 
 $\text{CheckFinalTxAtTip}(tx)$ requires that absolute lock time ($nLockTime$) and input sequence locks (BIP68/BIP112) are satisfied at the current chain tip so the transaction is not treated as non-final for relay.
 
+**CheckFinalTxAtTip**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
+
+Let $h$ be the current chain height and $t$ the median time past of the tip (BIP113 clock for timestamp locktimes).
+
+**Properties**:
+- Boolean result: $\text{CheckFinalTxAtTip}(tx, h, t) \in \{\text{true}, \text{false}\}$
+- Deterministic: $\text{CheckFinalTxAtTip}(tx_1, h_1, t_1) = \text{CheckFinalTxAtTip}(tx_2, h_2, t_2) \iff tx_1 = tx_2 \land h_1 = h_2 \land t_1 = t_2$
+
 A transaction $tx$ is accepted to the mempool if and only if:
 
 1. **Basic Validation**: $tx$ passes [CheckTransaction](#51-transaction-validation)
@@ -2428,8 +2464,7 @@ Further P2P lifecycle and dispatch details appear with [§10.3](./ARCHITECTURE.m
 **HandleVersionReceived**: On receipt of `version` message, node must send `verack` only after processing. VerAck is never sent before Version.
 
 **Properties**:
-- Version-before-VerAck: $\text{VerAckSent} \implies \text{VersionReceived}$ (ordering rule)
-- No premature VerAck: VerAck must not be sent before Version is received and processed
+- Version-before-VerAck: $\text{VerAckSent} \implies \text{VersionReceived}$ (ordering rule; VerAck only after Version received and processed)
 
 **Theorem 10.2.1** (Handshake Ordering): Version must be received before VerAck can be sent. This ensures proper connection establishment and prevents protocol violations.
 
@@ -2656,10 +2691,11 @@ Let $c = \text{SHA256d}(r \,\parallel\, n)$ (64-byte preimage). A valid witness 
 
 **OP_RETURN format** (BIP141): `OP_RETURN` `0x24` `0xaa21a9ed` $\parallel\, c$ (total push 36 bytes after opcode: 4-byte magic + 32-byte $c$).
 
+Consensus invokes $\text{ValidateWitnessCommitment}$ on the block’s coinbase ($b.\text{transactions}[0]$) after coinbase structure rules pass; the helper itself does not re-check $\text{IsCoinbase}$.
+
 **Properties**:
 - Boolean result: $result \in \{true, false\}$
-- Coinbase only: $\text{IsCoinbase}(tx) = \text{true}$ is required
-- Deterministic: $result(tx_1, r_1, w_1) = result(tx_2, r_2, w_2) \iff tx_1 = tx_2 \land r_1 = r_2 \land w_1 = w_2$
+- Deterministic: produce identical results
 
 $$\text{ValidateWitnessCommitment}(tx, r, w_{cb}) = \text{true} \iff \neg \exists \text{ commitment output} \lor \exists o \in tx.\text{outputs} : \text{ExtractCommitment}(o.\text{scriptPubkey}) = c$$
 
@@ -2896,7 +2932,7 @@ $$\text{ComputeScriptMerkleRoot}(s, proof, v) = h_{|proof|}$$
 
 **Properties**:
 - Hash length: $\text{ComputeScriptMerkleRoot}(s, proof, v) = h \implies |h| = 32$
-- Deterministic: Same $(s, proof, v)$ yields same root
+- Deterministic: $\text{ComputeScriptMerkleRoot}(s_1, p_1, v_1) = \text{ComputeScriptMerkleRoot}(s_2, p_2, v_2) \iff s_1 = s_2 \land p_1 = p_2 \land v_1 = v_2$
 - Merkle consistency: $\text{ValidateTaprootScriptPath}(s, proof, \text{ComputeScriptMerkleRoot}(s, proof, v)) = \text{true}$
 
 **Theorem 11.2.2** (Script Merkle Root Uniqueness): For fixed script $s$, proof $proof$, and leaf version $v$, $\text{ComputeScriptMerkleRoot}(s, proof, v)$ is uniquely determined.
@@ -3157,8 +3193,8 @@ Constructs a valid coinbase transaction for block at height $h$ with total fees 
 - Single input: $\text{CreateCoinbaseTransaction}(h, fees, wc, ed)$ has exactly one input with $prevout = \text{null}$
 - Output value: $\text{CreateCoinbaseTransaction}(h, fees, wc, ed).\text{outputs}[0].\text{value} = \text{GetBlockSubsidy}(h) + fees$
 - LockTime: $\text{CreateCoinbaseTransaction}(h, fees, wc, ed).\text{lockTime} = h - 1$
-- Height encoding: $scriptSig$ encodes block height per BIP34
-- Deterministic: Same inputs yield same transaction
+
+BIP34 requires the coinbase `scriptSig` to push the block height; see **Structure** and **Validation Rules** below. Full transaction equality for fixed arguments follows from the explicit field constraints above and the structural definition (a determinism obligation is not encoded as a separate **Property** because the current verifier cannot translate the coinbase constructor body).
 
 **Structure**:
 - **Input**: Single input with $prevout = \text{null}$, $scriptSig = \langle height, OP_0 \rangle$

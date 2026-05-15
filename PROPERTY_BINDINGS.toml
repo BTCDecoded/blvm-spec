@@ -1,6 +1,6 @@
-# Maps Orange Paper function names (PascalCase) to Rust paths.
-# Used by cargo spec-lock extract-property-tests.
-# Canonical implementations live in blvm-primitives; blvm-consensus re-exports them.
+# Maps Orange Paper function names (PascalCase) to Rust paths for `cargo spec-lock extract-property-tests`.
+# Serialization entries point at blvm-primitives; consensus re-exports are not listed here.
+# Keep names aligned with **FunctionName** headings in blvm-spec when you extend this file.
 
 [blvm_consensus.serialization]
 SerializeTransaction = "blvm_primitives::serialization::serialize_transaction"
