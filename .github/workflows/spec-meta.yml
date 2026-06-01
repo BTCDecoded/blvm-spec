@@ -18,9 +18,10 @@ permissions:
 jobs:
   update-spec-meta:
     name: Update SPEC_META.json
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, builds]
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Fetch all tags so git describe resolves correctly
           fetch-depth: 0
@@ -60,11 +61,12 @@ jobs:
 
   verify-spec-meta:
     name: Verify SPEC_META.json (PRs)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, builds]
+
     # On PRs only — verify the file is not stale without auto-committing
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

@@ -1,0 +1,24 @@
+name: Review intelligence gate
+
+# Enforces PR/issue text against BTCDecoded/governance guides/REVIEW_INTELLIGENCE.md
+# (machine rules in governance/config/review-intelligence-gate.yml).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: ri-gate-${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    uses: BTCDecoded/governance/.github/workflows/review-intelligence-gate-reusable.yml@main
+    secrets: inherit
