@@ -1,8 +1,8 @@
 {
-  "version": "0.0.0-dev+0fd1330",
-  "git_describe": "0fd1330-dirty",
-  "sha": "0fd1330e9de5ae258717dff0e6bad6d77e1f69bf",
-  "ref": "HEAD",
+  "version": "0.0.0-dev+5e458d2",
+  "git_describe": "5e458d2",
+  "sha": "5e458d2f2dbc685d90e5d9175d34e9df1143d51f",
+  "ref": "main",
   "content_sha256": "fdd909c78b276b614ea50ef256ff86d060c1a1246080e9f832ea98b9e674a087",
-  "generated_at": "2026-06-01T03:06:38.517Z"
+  "generated_at": "2026-06-01T03:06:54.553Z"
 }
