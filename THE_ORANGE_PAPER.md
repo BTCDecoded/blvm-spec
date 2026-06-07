@@ -71,7 +71,7 @@ cd "$BLVM_CONSENSUS_ROOT"
 
 ### 5.4 BIP Validation Rules
 
-Stub anchor for tooling that resolves `#[spec_locked("5.4")]` when this file is the only spec on the path. The full BIP rule set (including BIP54 and subsections such as 5.4.9) lives in [PROTOCOL.md](PROTOCOL.md).
+Section anchor for `#[spec_locked("5.4")]` resolution when this file is the only spec on the verify path. The full BIP rule set (including BIP54 and subsections such as 5.4.9) lives in [PROTOCOL.md](PROTOCOL.md).
 
 ## References
 

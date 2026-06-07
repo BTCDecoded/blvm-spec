@@ -144,4 +144,4 @@ When adding a new intentional deviation:
 1. Add a new `D-NN` entry to this file.
 2. If it can be formally captured, add an `#[ensures]` or `#[axiom]` annotation.
 3. Reference this file's ID in the code comment near the deviation.
-4. Update `END_TO_END_PROOF_PLAN.md` if the deviation affects coverage metrics.
+4. If it affects formal verification, update the **Status** column and any related `#[ensures]` / `#[axiom]` annotations in code.

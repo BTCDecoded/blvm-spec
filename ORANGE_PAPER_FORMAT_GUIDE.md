@@ -36,7 +36,7 @@ Properties can be listed as:
 - **Invariant**: $\forall h: \text{condition}(h)$
 ```
 
-## Named formula blocks (`F_*`) — Phase 5 / spec-lock registry
+## Named formula blocks (`F_*`) — spec-lock registry
 
 Stable **formula** ids bind to **`#[spec_locked("§", "F_Id")]`** (or combined **`"§::F_Id"`**) in Rust. The **blvm-spec-lock** parser ingests **`**Formula**` headings into **`SpecParser::formulas()`**; duplicate ids across merged files are errors.
 
@@ -60,15 +60,15 @@ Optional prose after the **`$$`** block (not part of **`latex_body`**).
 - Body is **only** the first **`$$ … $$`** (display math) after the **`Formula`** line.
 - The § id is the Markdown heading (**`### A.B`** → section key **`A.B`**).
 
-**Reference:** **`PROTOCOL.md`** §**13.3.6** (**`F_SpecLockWitness`**) documents a canonical trivial witness aligned with tooling verification.
+**Reference:** **`PROTOCOL.md`** §**13.3.6** (**`F_SpecLockWitness`**) documents a canonical trivial formula for named-formula verification.
 
-## Current Status
+## Authoring checklist
 
-The Orange Paper already follows most of these conventions. Minor adjustments may be needed for:
-- Consistent function name formatting
-- Theorem naming conventions
-- Property extraction from prose
-- Named **`F_*`** **Formula** blocks where stable ids are meant for **`#[spec_locked]`** (**v1 grammar** above)
+When adding or revising spec text, confirm:
+- Function names use the **`**Name**:`** heading pattern consistently.
+- Theorems use stable **`Theorem X.Y.Z`** numbering and parseable math.
+- Properties use formal notation where **blvm-spec-lock** must extract contracts.
+- Named **`F_*`** **Formula** blocks follow the grammar above when bound via **`#[spec_locked]`**.
 
 
 

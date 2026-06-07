@@ -3544,7 +3544,7 @@ $$\text{ConnectBlock}(b, us, h) \text{ enforces economic invariants (subsidy, fe
 
 #### 13.3.6 Spec-lock Formula Anchor Witness
 
-Named **`Formula`** block used as a **blvm-spec-lock** Phase **5** end-to-end witness: consensus code attaches **`#[spec_locked("13.3", "F_SpecLockWitness")]`**, and **`cargo spec-lock verify`** (with **`--spec-path`** to this document) derives the obligation from the formula body below. The predicate is deliberately trivial (**Boolean truth**) so toolchain coverage stays independent of substantive consensus lemmas in §§13.3.1–13.3.5.
+Canonical **`Formula`** block for **named-formula** binding in **blvm-spec-lock**: downstream code may attach **`#[spec_locked("13.3", "F_SpecLockWitness")]`**, and **`cargo spec-lock verify`** (with **`--spec-path`** to this document) derives the obligation from the formula body below. The predicate is deliberately trivial (**Boolean truth**) so verification of the **`F_*`** anchor mechanism does not depend on the substantive consensus lemmas in §§13.3.1–13.3.5.
 
 **Formula** (**F_SpecLockWitness**):
 
