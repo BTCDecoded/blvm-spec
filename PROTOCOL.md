@@ -95,6 +95,7 @@ This paper presents a mathematical specification of the Bitcoin consensus protoc
       - 11.1.7 [Block Validation](#1117-block-validation)
       - 11.1.8 [Nested SegWit (P2WSH-in-P2SH, P2WPKH-in-P2SH)](#1118-nested-segwit-p2wsh-in-p2sh-p2wpkh-in-p2sh)
       - 11.1.9 [BIP143 Witness Sighash (ComputeWitnessSignatureHash)](#1119-bip143-witness-sighash-computewitnesssignaturehash)
+      - 11.1.9.1 [DeriveWitnessScriptCode (BIP143 scriptCode)](#11191-derivewitnessscriptcode-bip143-scriptcode)
     - 11.2 [Taproot](#112-taproot)
       - 11.2.1 [Taproot Script Validation](#1121-taproot-script-validation)
       - 11.2.2 [Taproot Key Operations](#1122-taproot-key-operations)
@@ -394,6 +395,16 @@ script & \text{if } |pattern| = 0 \lor |pattern| > |script| \\
 
 Where $\text{RemoveAll}(script, pattern)$ removes all occurrences of $pattern$ from $script$ while preserving opcode boundaries.
 
+**SerializeScriptCode**: $\mathbb{S} \rightarrow \mathbb{S}$
+
+**Properties**:
+- Defined: $\text{true}$
+- Length bound: $|result| \leq |script|$
+
+$$\text{SerializeScriptCode}(script) = \text{RemoveOpcode}(script, 0xab)$$
+
+Where $\text{RemoveOpcode}$ deletes bytes at OP_CODESEPARATOR **opcode positions only** (bytes inside push-data payloads are preserved). Legacy sighash preimages use $\text{varint}(|\text{SerializeScriptCode}(code)|) \parallel \text{SerializeScriptCode}(code)$.
+
 **SighashScriptCodeWithSigVersion**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \text{SigVersion} \times \mathbb{S} \rightarrow \mathbb{S}$
 
 (Extends the three-argument **SighashScriptCode** above with signature version `sv` and executing signature push `sig` for Find-and-delete semantics in `SigVersion::Base`.)
@@ -457,11 +468,34 @@ $$\forall tx \in \mathcal{TX}, i \in \mathbb{N}, sig \in \mathbb{S}, sv = \text{
 
 *Proof*: From the definition of $\text{SighashScriptCode}$, FindAndDelete is applied to remove signature patterns from scriptCode before computing sighash for legacy signature opcodes (OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY). This ensures that signatures appearing in the redeem script (e.g., P2SH multisig edge cases where signatures appear as "pubkeys") do not affect the sighash computation. For SegWit (BIP143), FindAndDelete is explicitly omitted, so this only applies to SigVersion::Base. The piecewise definition above requires FindAndDelete for legacy scripts when signature opcodes are used.
 
+**SigVersion**: $\text{SigVersion} \in \{\text{Base}, \text{WitnessV0}, \text{Tapscript}\}$
+
+Signature verification and sighash dispatch depend on the active signature version:
+- **Base**: legacy $\text{CalculateSighash}$ with $\text{SerializeScriptCode}$ and FindAndDelete as above.
+- **WitnessV0**: BIP143 $\text{ComputeWitnessSignatureHash}$ (§11.1.9); FindAndDelete is not applied.
+- **Tapscript**: BIP341/BIP342 tapscript sighash (§11.2.7); distinct from legacy and BIP143.
+
+**BaseScriptCode**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \rightarrow \mathbb{S}$
+
+For legacy sighash, the script code is the subscript of the currently executing script from the last **executed** OP_CODESEPARATOR (0xab) to the end. Unexecuted conditional branches do not contribute. Legacy sighash uses $\text{SerializeScriptCode}$ (§5.1.1).
+
+**Theorem 5.1.4** (CHECKMULTISIG Sighash Dispatch): OP_CHECKMULTISIG sighash depends on SigVersion.
+
+$$\forall sv = \text{WitnessV0}: \text{CHECKMULTISIG sighash} = \text{ComputeWitnessSignatureHash}(tx, i, witnessScript, amount, type)$$
+
+$$\forall sv = \text{Base}: \text{CHECKMULTISIG removes all signature pushes from BaseScriptCode before any sighash computation, then applies SerializeScriptCode and CalculateSighash}$$
+
+*Proof*: BIP143 defines witness sighash over the full witness script without FindAndDelete. Legacy CHECKMULTISIG removes each signature push from scriptCode before computing any input's sighash. WitnessV0 CHECKMULTISIG uses BIP143 with the witness script as scriptCode (§11.1.9.1).
+
 ### 5.2 Script Execution
 
 Bitcoin uses a stack-based scripting language for transaction validation. Scripts are executed to determine whether a transaction output can be spent.
 
 **EvalScript**: $\mathcal{SC} \times \mathcal{ST} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
+
+**Properties**:
+- Defined: $\text{true}$
+- Boolean result: $result \in \{\text{true}, \text{false}\}$
 
 $\text{EvalScript}(script, S_0, f) = \text{true}$ iff execution terminates without failure and the final stack $S_f$ satisfies $|S_f| = 1 \land S_f[0] \neq 0$.
 
@@ -470,10 +504,11 @@ Execution fails (yielding $\text{false}$) iff at any step:
 - $result$: operation count $c > L_{ops}$, or
 - $result$: execution of $op$ on stack $S$ fails.
 
-Formally: $\text{EvalScript}(script, S_0, f) = \text{false} \iff \text{Execute}(script, S_0, f) \downarrow \land (\text{Overflow} \lor \text{OverOps} \lor \text{OpFail})$, where $\downarrow$ indicates termination and the disjunction holds at some step.
+Formally: $\text{EvalScript}(script, S_0, f, sv) = \text{false} \iff \text{Execute}(script, S_0, f, sv) \downarrow \land (\text{Overflow} \lor \text{OverOps} \lor \text{OpFail})$, where $\downarrow$ indicates termination and the disjunction holds at some step.
 
-**Properties**:
-- Bool: $result = \text{true} \lor result = \text{false}$
+**Resource limits by SigVersion**:
+- **Base** and **WitnessV0**: $|script| \leq L_{script} = 10{,}000$; non-push opcode count $c \leq L_{ops} = 201$.
+- **Tapscript**: neither the 10k script-size nor 201-op limits apply; BIP342 enforces tapscript validation weight and sigops budget separately (§11.2.8).
 
 ```mermaid
 sequenceDiagram
@@ -782,7 +817,9 @@ Where:
 - **SCRIPT_VERIFY_NULLDUMMY** ($f = 0x10$): $H_f(\text{mainnet}) = 481,824$ (BIP147), $\text{FlagCondition} = \text{true}$
 - **SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY** ($f = 0x200$): $H_f(\text{mainnet}) = 388,381$ (BIP65), $\text{FlagCondition} = \text{true}$
 - **SCRIPT_VERIFY_CHECKSEQUENCEVERIFY** ($f = 0x400$): $H_f(\text{mainnet}) = 419,328$ (BIP112 / BIP9 `csv` deployment on mainnet), $\text{FlagCondition} = \text{true}$
-- **SCRIPT_VERIFY_WITNESS** ($f = 0x800$): $H_f(\text{mainnet}) = 481,824$ (SegWit), $\text{FlagCondition} = (w \neq \emptyset \lor \text{IsSegWitTransaction}(tx))$
+- **SCRIPT_VERIFY_WITNESS** ($f = 0x800$): $H_f(\text{mainnet}) = 481,824$ (SegWit), $\text{FlagCondition} = (\text{HasNonEmptyInputWitness}(w) \lor \text{IsSegWitTransaction}(tx))$
+
+Where $\text{HasNonEmptyInputWitness}(w)$ is true iff witness data $w$ contains at least one input stack $w_i$ with $\neg\text{IsWitnessEmpty}(w_i)$. Witness-extended block serialization may attach empty stacks to legacy inputs; those empty stacks alone must not satisfy the witness flag condition.
 - **SCRIPT_VERIFY_WITNESS_PUBKEYTYPE** ($f = 0x8000$): $H_f(\text{mainnet}) = 709,632$ (Taproot), $\text{FlagCondition} = \exists o \in tx.\text{outputs} : \text{IsP2TR}(o.\text{scriptPubkey})$
 
 **P2TR Detection**: $\text{IsP2TR}(spk) = (|spk| = 34) \land (spk[0] = 0x51) \land (spk[1] = 0x20)$
@@ -1363,16 +1400,18 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xb3, OP_NOP4):
 **BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
 
 **Properties**:
-- Zero locktime rejection: $\text{BIP65Check}(tx, i, lt, h) = \text{invalid} \iff tx.\text{lockTime} = 0$ (zero locktime always invalid)
+- Defined: $\text{true}$
+- Boolean result: $result \in \{\text{true}, \text{false}\}$
 - Type consistency: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$ (types must match)
-- Locktime ordering: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \leq lt$ (transaction locktime must be <= stack locktime)
+- Locktime ordering (BIP65): $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$ (transaction locktime must be **≥** stack locktime; stack value greater than `tx.lockTime` fails)
+- Zero locktime: $(tx.\text{lockTime}, lt) = (0, 0)$ with matching types **may** be valid (mainnet block 659901); BIP65 does **not** unconditionally reject `tx.lockTime = 0`
+- Two-argument form: $\text{LocktimeType}(a) = \text{LocktimeType}(b) \land a \geq b \implies \text{valid}$
 
 For transaction $tx$, input index $i$, locktime value $lt$, and block header $h$:
 
 $$\text{BIP65Check}(tx, i, lt, h) = \begin{cases}
-\text{invalid} & \text{if } tx.\text{lockTime} = 0 \\
 \text{invalid} & \text{if } \text{LocktimeType}(tx.\text{lockTime}) \neq \text{LocktimeType}(lt) \\
-\text{invalid} & \text{if } tx.\text{lockTime} > lt \\
+\text{invalid} & \text{if } tx.\text{lockTime} < lt \\
 \text{valid} & \text{otherwise}
 \end{cases}$$
 
@@ -1413,16 +1452,16 @@ $$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, 
 
 *Proof*: By construction, if the types don't match, $\text{BIP65Check}$ returns $\text{invalid}$. This ensures that block height locktimes are only compared with block heights, and timestamps are only compared with timestamps. This is proven by blvm-spec-lock formal verification.
 
-**Theorem 5.4.7.4** (CLTV Zero Locktime Rejection): CLTV always fails when transaction locktime is zero:
+**Theorem 5.4.7.4** (CLTV locktime ordering): Valid CLTV requires transaction locktime at least the stack value.
 
-$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: tx.\text{lockTime} = 0 \implies \text{BIP65Check}(tx, i, lt, h) = \text{invalid}$$
+$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$$
 
-*Proof*: By construction, if $tx.\text{lockTime} = 0$, the check immediately returns $\text{invalid}$ regardless of the stack locktime value. This is proven by blvm-spec-lock formal verification.
+*Proof*: Matches BIP65: the script fails when the stack locktime exceeds `tx.lockTime`.
 
 **Formula** (**F_BIP65Passes**):
 $$result == true$$
 
-When all CLTV conditions hold simultaneously — transaction locktime is positive ($tx\_locktime > 0$), both locktimes are block-heights ($tx\_locktime < 500{,}000{,}000$ and $stack\_locktime < 500{,}000{,}000$), and transaction locktime meets the script minimum ($tx\_locktime \geq stack\_locktime$) — CLTV validation passes.
+When locktime types match and transaction locktime meets the script minimum ($tx\_locktime \geq stack\_locktime$), CLTV validation passes. $(tx\_locktime, stack\_locktime) = (0, 0)$ with matching types is valid on mainnet (block 659901).
 
 **Formula** (**F_BIP65PassesTimestamp**):
 $$result == true$$
@@ -1583,16 +1622,17 @@ CSFS complements CTV by enabling UTXO amount introspection. CTV commits to trans
 **BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
 
 **Properties**:
-- Zero locktime rejection: $\text{BIP65Check}(tx, i, lt, h) = \text{invalid} \iff tx.\text{lockTime} = 0$ (zero locktime always invalid)
+- Defined: $\text{true}$
+- Boolean result: $result \in \{\text{true}, \text{false}\}$
 - Type consistency: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$ (types must match)
-- Locktime ordering: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \leq lt$ (transaction locktime must be <= stack locktime)
+- Locktime ordering (BIP65): $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$ (transaction locktime must be **≥** stack locktime; stack value greater than `tx.lockTime` fails)
+- Zero locktime: $(tx.\text{lockTime}, lt) = (0, 0)$ with matching types **may** be valid (mainnet block 659901); BIP65 does **not** unconditionally reject `tx.lockTime = 0`
 
 For transaction $tx$, input index $i$, locktime value $lt$, and block header $h$:
 
 $$\text{BIP65Check}(tx, i, lt, h) = \begin{cases}
-\text{invalid} & \text{if } tx.\text{lockTime} = 0 \\
 \text{invalid} & \text{if } \text{LocktimeType}(tx.\text{lockTime}) \neq \text{LocktimeType}(lt) \\
-\text{invalid} & \text{if } tx.\text{lockTime} > lt \\
+\text{invalid} & \text{if } tx.\text{lockTime} < lt \\
 \text{valid} & \text{otherwise}
 \end{cases}$$
 
@@ -1633,11 +1673,11 @@ $$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, 
 
 *Proof*: By construction, if the types don't match, $\text{BIP65Check}$ returns $\text{invalid}$. This ensures that block height locktimes are only compared with block heights, and timestamps are only compared with timestamps. This is proven by blvm-spec-lock formal verification.
 
-**Theorem 5.4.7.4** (CLTV Zero Locktime Rejection): CLTV always fails when transaction locktime is zero:
+**Theorem 5.4.7.4** (CLTV locktime ordering): Valid CLTV requires transaction locktime at least the stack value.
 
-$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: tx.\text{lockTime} = 0 \implies \text{BIP65Check}(tx, i, lt, h) = \text{invalid}$$
+$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$$
 
-*Proof*: By construction, if $tx.\text{lockTime} = 0$, the check immediately returns $\text{invalid}$ regardless of the stack locktime value. This is proven by blvm-spec-lock formal verification.
+*Proof*: Matches BIP65: the script fails when the stack locktime exceeds `tx.lockTime`.
 
 ---
 
@@ -2924,9 +2964,9 @@ For P2WSH-in-P2SH:
 
 **Nested SegWit Detection**: $\text{IsNestedSegWit}(redeem) = (redeem[0] = 0x00) \land ((redeem[1] = 0x14) \lor (redeem[1] = 0x20))$
 
-**Theorem 11.1.1** (Nested SegWit Validation): Nested SegWit transactions validate the witness program hash in the P2SH redeem script, then execute witness validation.
+**Theorem 11.1.2** (Nested SegWit SigVersion): P2WSH-in-P2SH and P2WPKH-in-P2SH witness validation uses $\text{SigVersion} = \text{WitnessV0}$ and BIP143 sighash. $\text{SCRIPT\_VERIFY\_WITNESS\_PUBKEYTYPE}$ ($0x8000$) is a Schnorr pubkey-type strictness flag when Taproot outputs exist in the transaction; it does **not** select Tapscript semantics for nested SegWit v0 spends.
 
-*Proof*: By construction, nested SegWit transactions first validate that the redeem script hash matches the P2SH scriptPubKey. Then, the witness program (20 or 32 bytes) is extracted from the redeem script, and witness validation proceeds as for direct SegWit transactions. For P2WSH-in-P2SH, the witness script is the last witness element and must hash to the 32-byte program.
+*Proof*: Witness program validation dispatches v0 programs to WitnessV0 regardless of WITNESS_PUBKEYTYPE; Tapscript applies only to v1 P2TR witness programs (BIP341).
 
 **Activation**: Block 481,824 (mainnet) - Same as SegWit activation
 
@@ -2961,6 +3001,35 @@ $$\text{ComputeWitnessSignatureHash}(tx, i, scriptCode, amount, type) = \text{SH
 **Theorem 11.1.2** (BIP143 Sighash Determinism): For fixed $(tx, i, scriptCode, amount, type)$, $\text{ComputeWitnessSignatureHash}$ is uniquely determined.
 
 *Proof*: Preimage is deterministic from inputs; SHA256d is deterministic. Thus the hash is unique.
+
+#### 11.1.9.1 DeriveWitnessScriptCode (BIP143 scriptCode)
+
+**DeriveWitnessScriptCode**: $\mathbb{S} \times \mathbb{S}^? \rightarrow \mathbb{S}$
+
+**Properties**:
+- Defined: $\text{true}$
+- P2WPKH length: $|result| = 25$ when $|program| = 22$
+
+Derives the BIP143 `scriptCode` parameter for SegWit v0 inputs. This is **not** the witness program bytes on the output chain; it is the script whose hash is committed in the BIP143 preimage (BIP143 §4.3).
+
+**P2WPKH** (native or nested in P2SH): witness program is `OP_0 PUSH_20 <20-byte-pubkey-hash>` (22 bytes). The scriptCode is the P2PKH expansion:
+
+$$\text{DeriveWitnessScriptCode}(program, \_) = \texttt{OP\_DUP OP\_HASH160} \parallel h_{20} \parallel \texttt{OP\_EQUALVERIFY OP\_CHECKSIG}$$
+
+(25 bytes total; $h_{20}$ is the 20-byte pubkey hash from the program.)
+
+**P2WSH** (native or nested in P2SH): witness program is `OP_0 PUSH_32 <32-byte-hash>` (34 bytes). The scriptCode is the **witness script** (last element of the input witness stack):
+
+$$\text{DeriveWitnessScriptCode}(program, witnessScript) = witnessScript$$
+
+**Properties**:
+- P2WPKH length: $|result| = 25$ when $|program| = 22$ and $program[0] = 0x00$, $program[1] = 0x14$
+- P2WSH: $result = witnessScript$ when $|program| = 34$ and $program[0] = 0x00$, $program[1] = 0x20$
+- Distinct from program: for P2WPKH, $|result| \neq |program|$ ($25 \neq 22$)
+
+**Theorem 11.1.3** (P2WPKH scriptCode): Using the raw 22-byte witness program as BIP143 scriptCode for P2WPKH is incorrect; implementations must expand to the P2PKH script above.
+
+*Proof*: BIP143 §4.3 requires the P2PKH expansion for P2WPKH inputs. Signatures are validated against $\text{ComputeWitnessSignatureHash}$ with this scriptCode.
 
 ### 11.2 Taproot
 
@@ -3132,12 +3201,27 @@ $$\text{ComputeScriptMerkleRoot}(s, proof, v) = h_{|proof|}$$
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: Key path structure: $result = \text{true} \iff |w| = 1 \land |w[0]| = 64$. Script path structure: $result = \text{true} \iff |w| \geq 2 \land (|w[|w|-1]| - 33) \bmod 32 = 0$.
+**StripTaprootAnnex**: $\mathcal{W} \rightarrow \mathcal{W} \times \mathbb{H}^?$
 
-For witness $w$ and script path flag $is\_script$:
+**Properties**:
+- Defined: $\text{true}$
+- Boolean tuple: $result = (w', h) \implies |w'| \leq |w|$
+
+Optional BIP341 annex: when $|w| \geq 2$ and the last witness element begins with byte $0x50$, remove it before key/script-path dispatch and compute the annex sighash component $\text{SHA256}(\text{varint}(|annex|) \parallel annex)$.
+
+$$\text{StripTaprootAnnex}(w) = \begin{cases}
+(w[0..|w|-1], h) & \text{if annex present} \\
+(w, \bot) & \text{otherwise}
+\end{cases}$$
+
+**ValidateTaprootWitnessStructure**: $\mathcal{W} \times \{\text{true}, \text{false}\} \rightarrow \{\text{true}, \text{false}\}$
+
+**Note**: Key path: $|w| = 1$ after annex strip; $|w[0]| \in \{64, 65\}$ (BIP340 Schnorr). If $|w[0]| = 65$, byte 64 must not be explicit `SIGHASH_DEFAULT` ($0x00$). Script path structure: $|w| \geq 2$ after annex strip; control block at $w[|w|-1]$ with $(|control| - 33) \bmod 32 = 0$.
+
+For witness $w$ and script path flag $is\_script$ (evaluated on annex-stripped stack):
 
 $$\text{ValidateTaprootWitnessStructure}(w, is\_script) = \begin{cases}
-|w| = 1 \land |w[0]| = 64 & \text{if } \neg is\_script \text{ (key path)} \\
+|w| = 1 \land |w[0]| \in \{64, 65\} \land \neg(|w[0]| = 65 \land w[0][64] = 0) & \text{if } \neg is\_script \text{ (key path)} \\
 |w| \geq 2 \land |w[|w|-1]| \geq 33 \land (|w[|w|-1]| - 33) \bmod 32 = 0 & \text{if } is\_script \text{ (script path)}
 \end{cases}$$
 
@@ -3159,22 +3243,32 @@ $$\text{ValidateTaprootTransaction}(tx, w) = \begin{cases}
 
 #### 11.2.6 Taproot Signature Hash
 
+**TryParseTaprootSchnorrWitnessSig**: $\mathbb{S} \rightarrow [0,1]^{512} \times \mathbb{N}_8^?$
+
+**Properties**:
+- Defined: $\text{true}$
+- Length: $|sig| \in \{64, 65\} \implies result \neq \bot$
+
+Parses a Taproot witness Schnorr signature element: 64 bytes → implicit `SIGHASH_DEFAULT` ($0x00$); 65 bytes → last byte is explicit sighash type (explicit $0x00$ suffix is invalid).
+
 **ComputeTaprootSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \mathbb{N}_{32} \times \mathbb{H}^? \rightarrow \mathbb{H}$
 
 **Properties**:
 - Hash length: $result = h \implies |h| = 32$ (32-byte hash)
 - Tagged hash: $result$ uses BIP340 tagged hash for domain separation
+- Annex: optional annex hash $h_a$ from $\text{StripTaprootAnnex}$; $\text{spend\_type} = (\text{ext\_flag} \ll 1) \lor \text{annex\_present}$ (key path: $0x00$ or $0x01$); append $h_a$ to SigMsg when present
 
-For transaction $tx$, input index $i$, UTXO set $us$, sighash type $type$, and leaf hash $leaf$:
+For transaction $tx$, input index $i$, UTXO set $us$, sighash type $type$, and optional annex hash $h_a$:
 
-$$\text{ComputeTaprootSignatureHash}(tx, i, us, type, leaf) = \text{TaggedHash}(\text{"TapSighash"}, tx, i, us(i.\text{prevout}), type, leaf)$$
+$$\text{ComputeTaprootSignatureHash}(tx, i, us, type, h_a) = \text{TaggedHash}(\text{"TapSighash"}, \text{SigMsg}(tx, i, us, type, h_a))$$
 
 #### 11.2.7 Tapscript Signature Hash (BIP 342)
 
-**ComputeTapscriptSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \mathbb{S} \times \mathbb{N}_{8} \times \mathbb{N}_{32} \times \mathbb{N}_{8} \rightarrow \mathbb{H}$
+**ComputeTapscriptSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \mathbb{S} \times \mathbb{N}_{8} \times \mathbb{N}_{32} \times \mathbb{N}_{8} \times \mathbb{H}^? \rightarrow \mathbb{H}$
 
 **Properties**:
 - Defined: $\text{true}$
+- Annex: same $\text{spend\_type}$ annex bit as key-path; script path uses $\text{spend\_type} = 0x02$ or $0x03$ when annex present; append annex hash before tapleaf extension fields
 
 Computes the signature hash for tapscript (script-path) spending. Same base SigMsg structure as key-path (11.2.6), with an extension field $ext$ that binds the signature to the specific tapscript and OP_CODESEPARATOR position.
 
