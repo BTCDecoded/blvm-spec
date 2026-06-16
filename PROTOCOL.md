@@ -399,7 +399,8 @@ Where $\text{RemoveAll}(script, pattern)$ removes all occurrences of $pattern$ f
 
 **Properties**:
 - Defined: $\text{true}$
-- Length bound: $|result| \leq |script|$
+
+**Note**: The result removes OP_CODESEPARATOR (0xab) at opcode positions only; $|result| \leq |script|$. Bytes inside push-data payloads are preserved.
 
 $$\text{SerializeScriptCode}(script) = \text{RemoveOpcode}(script, 0xab)$$
 
