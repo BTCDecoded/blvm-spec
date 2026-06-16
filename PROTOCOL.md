@@ -344,17 +344,11 @@ $$\text{where} \quad \text{fee} := \sum_{i \in tx.\text{inputs}} us(i.\text{prev
 
 **CalculateTxId**: $\mathcal{TX} \rightarrow \mathbb{H}$
 
-**Properties**:
-- Defined: $\text{true}$
-
 **Note**: Hash length invariant: $|result| = 32$ (32-byte SHA256d hash).
 
 #### 5.1.1 Transaction Sighash Calculation
 
 **CalculateSighash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \text{SighashType} \times \mathbb{N} \rightarrow \mathbb{H}$
-
-**Properties**:
-- Defined: $\text{true}$
 
 **Note**: Hash length: the result is always a 32-byte double-SHA256 hash.
 
@@ -381,9 +375,6 @@ Where $\text{RedeemScript}(tx, i)$ is the redeem script extracted from the stack
 
 **FindAndDelete**: $\mathbb{S} \times \mathbb{S} \rightarrow \mathbb{S}$
 
-**Properties**:
-- Defined: $\text{true}$
-
 **Note**: The result is the input script with all occurrences of $pattern$ removed; $|result| \leq |script|$. Empty pattern: $|pattern| = 0 \implies result = script$ (no-op). Pattern longer than script: $|pattern| > |script| \implies result = script$. Opcode boundaries are preserved.
 
 For script $script \in \mathbb{S}$ and pattern $pattern \in \mathbb{S}$:
@@ -396,9 +387,6 @@ script & \text{if } |pattern| = 0 \lor |pattern| > |script| \\
 Where $\text{RemoveAll}(script, pattern)$ removes all occurrences of $pattern$ from $script$ while preserving opcode boundaries.
 
 **SerializeScriptCode**: $\mathbb{S} \rightarrow \mathbb{S}$
-
-**Properties**:
-- Defined: $\text{true}$
 
 **Note**: The result removes OP_CODESEPARATOR (0xab) at opcode positions only; $|result| \leq |script|$. Bytes inside push-data payloads are preserved.
 
@@ -495,7 +483,6 @@ Bitcoin uses a stack-based scripting language for transaction validation. Script
 **EvalScript**: $\mathcal{SC} \times \mathcal{ST} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
 
 **Properties**:
-- Defined: $\text{true}$
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
 $\text{EvalScript}(script, S_0, f) = \text{true}$ iff execution terminates without failure and the final stack $S_f$ satisfies $|S_f| = 1 \land S_f[0] \neq 0$.
@@ -988,9 +975,6 @@ flowchart TD
 
 **ApplyTransaction**: $\mathcal{TX} \times \mathcal{US} \rightarrow \mathcal{US}$
 
-**Properties**:
-- Defined: $\text{true}$
-
 **Note**: Undo entries match inputs: $result = (us', ul) \implies |ul| = |tx.inputs|$. Coinbase has no undo entries: $\text{IsCoinbase}(tx) \implies ul = \emptyset$.
 - UTXO consistency: $result = (us', ul) \implies$ UTXO set $us'$ reflects transaction $tx$ applied to $us$
 - Spent inputs removed: $result = (us', ul) \land \neg \text{IsCoinbase}(tx) \implies \forall i \in tx.inputs : i.prevout \notin us'$ (spent inputs removed)
@@ -1401,7 +1385,6 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xb3, OP_NOP4):
 **BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
 
 **Properties**:
-- Defined: $\text{true}$
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 - Type consistency: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$ (types must match)
 - Locktime ordering (BIP65): $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$ (transaction locktime must be **≥** stack locktime; stack value greater than `tx.lockTime` fails)
@@ -1623,7 +1606,6 @@ CSFS complements CTV by enabling UTXO amount introspection. CTV commits to trans
 **BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
 
 **Properties**:
-- Defined: $\text{true}$
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 - Type consistency: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$ (types must match)
 - Locktime ordering (BIP65): $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$ (transaction locktime must be **≥** stack locktime; stack value greater than `tx.lockTime` fails)
@@ -1865,7 +1847,6 @@ The time-based sequence locktime value (in seconds) is bounded by $65535 \times 
 **GetMedianTimePast**: $[\mathcal{H}] \rightarrow \mathbb{N}$
 
 **Properties**:
-- Defined: $\text{true}$
 - Codomain: $result \geq 0$
 
 For block headers $headers \in [\mathcal{H}]$:
@@ -1947,9 +1928,6 @@ Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is m
 
 **GetBlockSubsidy**: $\mathbb{N} \rightarrow \mathbb{Z}$
 
-**Properties**:
-- Defined: $\text{true}$
-
 $$\text{GetBlockSubsidy}(h) = \begin{cases}
 0 & \text{if } h \geq 64 \times H \\
 50 \times C \times 2^{-\lfloor h/H \rfloor} & \text{otherwise}
@@ -1973,13 +1951,7 @@ xychart-beta
 - **Blocks 840,000+**: 3.125 BTC per block
 - **Blocks 13,440,000+**: 0 BTC per block (after 64 halvings)
 
-**Properties**:
-- Upper bound: $result \leq 50 \times C$ for all $h \in \mathbb{N}$
-- Genesis block: $result = 50 \times C$
-- After 64 halvings: $result = 0$ for all $h \geq 64 \times H$
-- First halving: $result = 25 \times C$
-- Second halving: $result = 12.5 \times C$
-- Integer exhaustion: $result = 0$ for $h \geq 33 \times H$ (integer rounding exhausts INITIAL\_SUBSIDY by halving 33; the 64-halving guard is a belt-and-suspenders check)
+**Note**: Upper bound: $result \leq 50 \times C$ for all $h$. Genesis: $result = 50 \times C$. After 64 halvings: $result = 0$ for $h \geq 64 \times H$. Integer exhaustion: $result = 0$ for $h \geq 33 \times H$ (integer rounding exhausts INITIAL\_SUBSIDY by halving 33). F_* formulas cover the formally verified postconditions.
 
 **Theorem 6.1.1** (Halving Schedule Correctness): The block subsidy halves every 210,000 blocks:
 
@@ -2010,9 +1982,6 @@ Full piecewise formula: result = INITIAL_SUBSIDY >> floor(h / HALVING_INTERVAL) 
 ### 6.2 Total Supply
 
 **TotalSupply**: $\mathbb{N} \rightarrow \mathbb{Z}$
-
-**Properties**:
-- Defined: $\text{true}$
 
 **Note**: At genesis ($h = 0$), $\text{TotalSupply}(0) = \text{GetBlockSubsidy}(0) = 50 \times C = \text{INITIAL\_SUBSIDY}$.
 - Supply limit: $result \leq \text{MAX\_MONEY}$ (critical security invariant; all block subsidies sum to less than 21M BTC)
@@ -2220,9 +2189,6 @@ $$result \leq 255$$
 The exponent byte extracted from compact bits ($\text{exponent} = (bits \gg 24) \mathbin{\&} \text{0xFF}$) is always in the range $[0, 255]$. The bitwise AND with $\text{0xFF}$ masks to exactly 8 bits, bounding the result to at most 255.
 
 **GetNextWorkRequired**: $\mathcal{H} \times \mathcal{H}^* \times \text{Network} \rightarrow \mathbb{N}$
-
-**Properties**:
-- Defined: $\text{true}$
 
 Let $prev_{\text{last}}$ denote the last block of the difficulty period and $prev_{\text{first}}$ the first. Let $T_{\text{expected}} = 14 \times 24 \times 60 \times 60$ (2 weeks in seconds). The timespan and bits base use only the completed period; the new block $h$ does not affect the result (timewarp safety).
 
@@ -2666,8 +2632,6 @@ Further P2P lifecycle and dispatch details appear with [§10.3](./ARCHITECTURE.m
 
 **HandleVersionReceived**: On receipt of `version` message, node must send `verack` only after processing. VerAck is never sent before Version.
 
-**Properties**:
-
 **Note**: Version-before-VerAck ordering: $\text{VerAckSent} \implies \text{VersionReceived}$ — VerAck is only sent after Version is received and processed. This is a temporal state-machine property on protocol session state variables, not a function postcondition expressible as a Z3 arithmetic constraint.
 
 **Theorem 10.2.1** (Handshake Ordering): Version must be received before VerAck can be sent. This ensures proper connection establishment and prevents protocol violations.
@@ -2753,9 +2717,6 @@ Implemented as: $\text{WeightToVSize}(weight) = (weight + 3) / 4$ (integer ceili
 
 **CalculateBlockWeight**: $\mathcal{B} \times \mathcal{W}^* \rightarrow \mathbb{N}$
 
-**Properties**:
-- Defined: $\text{true}$
-
 For block $b$ and witnesses $w_1, \ldots, w_n$:
 
 $$\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) = \sum_{i=1}^{|b.\text{transactions}|} \text{CalculateTransactionWeight}(b.\text{transactions}[i], w_i)$$
@@ -2809,9 +2770,6 @@ When the witness stack has zero elements ($|w| = 0$), IsWitnessEmpty always retu
 
 **ExtractWitnessVersion**: $\mathbb{S} \rightarrow \{\text{None}, \text{SegWitV0}, \text{TaprootV1}\}$
 
-**Properties**:
-- Defined: $\text{true}$
-
 **Note**: Version range: $result \neq \text{None} \implies |s| \geq 2 \land (s[0] = 0x00 \lor s[0] = 0x51)$. SegWitV0: $s[0] = 0x00$. TaprootV1: $s[0] = 0x51$.
 
 For script $s$:
@@ -2823,9 +2781,6 @@ $$\text{ExtractWitnessVersion}(s) = \begin{cases}
 \end{cases}$$
 
 **ExtractWitnessProgram**: $\mathbb{S} \times \{\text{SegWitV0}, \text{TaprootV1}\} \rightarrow \mathbb{S}^?$
-
-**Properties**:
-- Defined: $\text{true}$
 
 **Note**: Program extraction: $result = \text{Some}(p) \implies |s| \geq 3$. SegWit program: $s[1] \in \{0x14, 0x20\}$. Taproot program: $s[1] = 0x20 \land |s| \geq 3$.
 
@@ -2899,8 +2854,6 @@ Let $c = \text{SHA256d}(r \,\parallel\, n)$ (64-byte preimage). A valid witness 
 **OP_RETURN format** (BIP141): `OP_RETURN` `0x24` `0xaa21a9ed` $\parallel\, c$ (total push 36 bytes after opcode: 4-byte magic + 32-byte $c$).
 
 Consensus invokes $\text{ValidateWitnessCommitment}$ on the block’s coinbase ($b.\text{transactions}[0]$) after coinbase structure rules pass; the helper itself does not re-check $\text{IsCoinbase}$.
-
-**Properties**:
 
 $$\text{ValidateWitnessCommitment}(tx, r, w_{cb}) = \text{true} \iff \neg \exists \text{ commitment output} \lor \exists o \in tx.\text{outputs} : \text{ExtractCommitment}(o.\text{scriptPubkey}) = c$$
 
@@ -2994,9 +2947,6 @@ $$\text{Preimage} = \text{nVersion}\_{32} \parallel \text{hashPrevouts}\_{256} \
 **Definition**:
 $$\text{ComputeWitnessSignatureHash}(tx, i, scriptCode, amount, type) = \text{SHA256d}(\text{Preimage})$$
 
-**Properties**:
-- Defined: $\text{true}$
-
 **Note**: Hash length: $|\text{ComputeWitnessSignatureHash}(\ldots)| = 32$. Amount binding: signature commits to UTXO value (replay protection across outputs).
 
 **Theorem 11.1.2** (BIP143 Sighash Determinism): For fixed $(tx, i, scriptCode, amount, type)$, $\text{ComputeWitnessSignatureHash}$ is uniquely determined.
@@ -3008,7 +2958,6 @@ $$\text{ComputeWitnessSignatureHash}(tx, i, scriptCode, amount, type) = \text{SH
 **DeriveWitnessScriptCode**: $\mathbb{S} \times \mathbb{S}^? \rightarrow \mathbb{S}$
 
 **Properties**:
-- Defined: $\text{true}$
 - P2WPKH length: $|result| = 25$ when $|program| = 22$
 
 Derives the BIP143 `scriptCode` parameter for SegWit v0 inputs. This is **not** the witness program bytes on the output chain; it is the script whose hash is committed in the BIP143 preimage (BIP143 §4.3).
@@ -3092,9 +3041,6 @@ $$\text{ValidateTaprootScript}(s) = (|s| = 34) \land (s[0] = 0x51) \land (s[1] =
 
 **ExtractTaprootOutputKey**: $\mathbb{S} \rightarrow \{[0,1]^{256}\}^?$
 
-**Properties**:
-- Defined: $\text{true}$
-
 **Note**: Key extraction: $result = \text{Some}(k) \implies \text{ValidateTaprootScript}(s) = \text{true}$ and $|k| = 32$.
 
 For script $s$:
@@ -3162,9 +3108,6 @@ where $v$ is the leaf version (default $\texttt{0xc0}$ for tapscript per BIP 341
 
 **ComputeScriptMerkleRoot**: $\mathbb{S} \times [\mathbb{H}]^* \times \mathbb{N}_{8} \rightarrow \mathbb{H}$
 
-**Properties**:
-- Defined: $\text{true}$
-
 Computes the Taproot script merkle root from a leaf script and merkle proof using BIP 341 TapLeaf and TapBranch tagged hashes.
 
 **TapLeaf Hash** (BIP 341):
@@ -3205,7 +3148,6 @@ $$\text{ComputeScriptMerkleRoot}(s, proof, v) = h_{|proof|}$$
 **StripTaprootAnnex**: $\mathcal{W} \rightarrow \mathcal{W} \times \mathbb{H}^?$
 
 **Properties**:
-- Defined: $\text{true}$
 - Boolean tuple: $result = (w', h) \implies |w'| \leq |w|$
 
 Optional BIP341 annex: when $|w| \geq 2$ and the last witness element begins with byte $0x50$, remove it before key/script-path dispatch and compute the annex sighash component $\text{SHA256}(\text{varint}(|annex|) \parallel annex)$.
@@ -3247,7 +3189,6 @@ $$\text{ValidateTaprootTransaction}(tx, w) = \begin{cases}
 **TryParseTaprootSchnorrWitnessSig**: $\mathbb{S} \rightarrow [0,1]^{512} \times \mathbb{N}_8^?$
 
 **Properties**:
-- Defined: $\text{true}$
 - Length: $|sig| \in \{64, 65\} \implies result \neq \bot$
 
 Parses a Taproot witness Schnorr signature element: 64 bytes → implicit `SIGHASH_DEFAULT` ($0x00$); 65 bytes → last byte is explicit sighash type (explicit $0x00$ suffix is invalid).
@@ -3268,7 +3209,6 @@ $$\text{ComputeTaprootSignatureHash}(tx, i, us, type, h_a) = \text{TaggedHash}(\
 **ComputeTapscriptSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \mathbb{S} \times \mathbb{N}_{8} \times \mathbb{N}_{32} \times \mathbb{N}_{8} \times \mathbb{H}^? \rightarrow \mathbb{H}$
 
 **Properties**:
-- Defined: $\text{true}$
 - Annex: same $\text{spend\_type}$ annex bit as key-path; script path uses $\text{spend\_type} = 0x02$ or $0x03$ when annex present; append annex hash before tapleaf extension fields
 
 Computes the signature hash for tapscript (script-path) spending. Same base SigMsg structure as key-path (11.2.6), with an extension field $ext$ that binds the signature to the specific tapscript and OP_CODESEPARATOR position.
@@ -3468,9 +3408,6 @@ $$\text{CheckSignetBlockSolution}(b, n) = \begin{cases}
 **CreateCoinbaseTransaction**: $\mathbb{N} \times \mathbb{Z} \times \mathbb{H} \times \mathbb{S} \rightarrow \mathcal{TX}$
 
 Constructs a valid coinbase transaction for block at height $h$ with total fees $fees$, witness commitment hash $witness\_commitment$, and optional extra data $extra\_data$.
-
-**Properties**:
-- Defined: $\text{true}$
 
 BIP34 requires the coinbase `scriptSig` to push the block height; see **Structure** and **Validation Rules** below. Full transaction equality for fixed arguments follows from the explicit field constraints above and the structural definition (a determinism obligation is not encoded as a separate **Property** because the current verifier cannot translate the coinbase constructor body).
 
