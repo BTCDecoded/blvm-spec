@@ -317,6 +317,10 @@ flowchart TD
 - Coinbase scriptSig length: $result = \text{valid} \land \text{IsCoinbase}(tx) \implies 2 \leq |tx.\text{inputs}[0].\text{scriptSig}| \leq 100$
 **Note**: For non-coinbase transactions, all inputs have non-null prevouts: $\neg \text{IsCoinbase}(tx) \implies \forall i \in tx.\text{inputs}: \neg i.\text{prevout}.\text{IsNull}()$
 
+**CheckCoinbaseMaturity**: $\mathbb{N} \times \mathbb{N} \times \{\text{true}, \text{false}\} \rightarrow \{\text{true}, \text{false}\}$
+
+Spend of a coinbase output at height $h$ is valid iff $h \geq \text{creation\_height} + R$ where $R = 100$ (coinbase maturity).
+
 **CheckTxInputs**: $\mathcal{TX} \times \mathcal{US} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\} \times \mathbb{Z}$
 
 **Properties**:
@@ -544,6 +548,8 @@ sequenceDiagram
 - Final stack condition: $result = \text{true} \implies$ final stack has exactly one non-zero element
 
 **VerifyScript**: $\mathcal{SC} \times \mathcal{SC} \times \mathcal{W} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
+
+**Implementation Note**: Production builds may use fast-path shortcuts (`try_verify_p2pk_fast_path`, `try_verify_p2pkh_fast_path`, etc.) that MUST be observably equivalent to full `VerifyScript` evaluation. Differential harness: `blvm-consensus/tests/script_fast_path_equivalence.rs` (toggle via `disable_fast_paths`).
 
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
@@ -865,6 +871,12 @@ Where $h_b = \text{hash}(b)$ is the block hash. Mainnet has 2 exceptions (BIP16,
 
 **ConnectBlock**: $\mathcal{B} \times \mathcal{US} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\} \times \mathcal{US}$
 
+Public entry points: `connect_block`, `connect_block_ibd`, `connect_block_ibd_with_undo` — same semantics, different performance paths (undo log, IBD batching).
+
+**CheckCoinbaseSubsidy**: $\mathcal{TX} \times \mathbb{Z} \times \mathbb{Z} \rightarrow \{\text{true}, \text{false}\}$
+
+$$\text{sum}(\text{coinbase.outputs}) \leq \text{GetBlockSubsidy}(height) + \text{total\_fees}$$
+
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
@@ -887,7 +899,17 @@ For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
 | H05 — Timestamp above MTP (BIP113) | $h.\text{timestamp} \geq \text{MedianTimePast}(\text{recent headers})$ | `validate_block_header` |
 | H06 — Non-zero bits | $h.\text{bits} \neq 0$ | `validate_block_header` |
 | H07 — Proof of work | $\text{SHA256}(\text{SHA256}(\text{serialize}(h))) < \text{ExpandTarget}(h.\text{bits})$ | `check_proof_of_work` (§7.2) |
-| H08 — Parent hash | $h.\text{prev\_block\_hash} = \text{hash}(\text{parent header})$ | node layer (chain linkage) |
+| H08 — Parent hash | $h.\text{prev\_block\_hash} = \text{BlockHeaderHash}(\text{parent})$ | `ValidatePrevBlockHash` (§5.3.1); node calls before connect |
+
+**BlockHeaderHash**: $\mathcal{H} \rightarrow \mathbb{H}$
+
+Double-SHA256 of the 80-byte serialized block header (Bitcoin block id).
+
+**ValidatePrevBlockHash**: $\mathcal{H} \times \mathcal{H} \rightarrow \{\text{true}, \text{false}\}$
+
+$$\text{ValidatePrevBlockHash}(child, parent) = (child.\text{prev\_block\_hash} = \text{BlockHeaderHash}(parent))$$
+
+Pure predicate in `blvm-consensus`; the node layer supplies the parent header and rejects blocks that fail H08 before `connect_block`.
 
 $$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } height \\ 3 & \text{if BIP66 active at } height \\ 2 & \text{if BIP34 active at } height \\ 1 & \text{otherwise} \end{cases}$$
 
@@ -900,7 +922,7 @@ $$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } heigh
 
 H01 and H02 compose: H01 is the unconditional floor (version 0 is always rejected); H02 enforces tighter minimums after BIP activation heights. Version 1 is valid before BIP34, invalid after.
 
-H08 (parent hash linkage) is enforced by the node chain layer, not by `blvm-consensus`. Rules H01–H07 are the consensus-local subset checked inside `connect_block`.
+H08 (parent hash linkage) is enforced by **ValidatePrevBlockHash** in `blvm-consensus`; the node chain layer calls it when the parent header is available. Rules H01–H07 are the connect-local subset checked inside `connect_block` (H02 and H07 are also invoked from the node in some paths).
 
 Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field check (H06) rejects an all-zero `bits` as a structural sanity check; cryptographic verification of the merkle root against the block's transaction list happens inside `connect_block` itself after header validation passes.
 
@@ -926,6 +948,8 @@ $$\text{ApplyTransaction}(tx, us, h) = \text{ApplyTransactionWithId}(tx, \text{C
 *Proof*: Both functions apply identical UTXO set transformations. The sole difference is the source of the transaction identifier: $\text{ApplyTransaction}$ computes $\text{CalculateTxId}(tx)$ internally, while $\text{ApplyTransactionWithId}$ accepts it as argument. The outputs are identical by structural induction on the transaction application steps.
 
 **Corollary 5.3.2.1**: Transaction application is deterministic and side-effect-free, regardless of which function is used.
+
+**Property (overlay equivalence)**: For all $tx, us$, `apply_transaction_to_overlay` on the UTXO overlay layer produces the same final UTXO set as **ApplyTransaction**($tx, us$).
 
 $$\text{ConnectBlock}(b = (h, txs), us, \text{height}) = \begin{cases}
 (\text{invalid}, us) & \text{if } \neg\text{ValidBlockHeader}(h) \\
@@ -1022,6 +1046,16 @@ stateDiagram-v2
         - No double spending
     end note
 ```
+
+#### 5.3.3 ConnectBlock Pipeline
+
+Implementation contract for **ConnectBlock** (`connect_block_inner` in `blvm-consensus`):
+
+1. Validate block header (H01, H03–H06; H02/H07/H08 via callers)
+2. BIP checks (BIP30, BIP34, BIP54, …) gated by activation
+3. Transaction loop: CheckTransaction, CheckTxInputs, VerifyScript, sigop/weight limits
+4. CheckCoinbaseSubsidy (coinbase output ≤ subsidy + fees)
+5. ApplyTransaction to UTXO set; optional VerifyUtxoSupply invariant (debug)
 
 ### 5.4 BIP Validation Rules
 
@@ -1688,7 +1722,13 @@ After BIP54 activation, the coinbase transaction must have $\text{lockTime} = he
 
 **BIP54 64-byte tx**: Any non-coinbase transaction whose witness-stripped serialized size equals 64 bytes is invalid (Merkle tree ambiguity).
 
+**CheckBip54TxStrippedSize**: $\mathcal{TX} \rightarrow \{\text{true}, \text{false}\}$ — valid iff not (non-coinbase ∧ $|SerializeNoWitness(tx)| = 64$).
+
 **BIP54 per-tx sigop limit**: For each non-coinbase transaction, total sigop count (legacy + P2SH + witness, with accurate legacy counting for OP_CHECKMULTISIG) must be $\leq 2500$.
+
+**CheckBip54SigOpLimit**: per-tx sigop cap when BIP54 active (implementation: `check_bip54_sigop_limit`).
+
+**ActivationHeightFromVersionBits**: $[\mathcal{H}] \times \text{Deployment} \times \mathbb{N} \times \mathbb{N} \rightarrow \mathbb{N} \cup \{\bot\}$ — BIP9 lock-in scan for activation height discovery.
 
 **Activation**: Network-specific (e.g. regtest: 0; mainnet/testnet: configurable or $u64::\text{MAX}$ until set).
 
@@ -2188,6 +2228,10 @@ $$result \leq 255$$
 
 The exponent byte extracted from compact bits ($\text{exponent} = (bits \gg 24) \mathbin{\&} \text{0xFF}$) is always in the range $[0, 255]$. The bitwise AND with $\text{0xFF}$ masks to exactly 8 bits, bounding the result to at most 255.
 
+**CompressTarget**: $\mathbb{U}_{256} \rightarrow \mathbb{N}$
+
+Inverse of **ExpandTarget** (Bitcoin Core `GetCompact`): encodes a full 256-bit PoW target as a compact `bits` word. For valid targets, $\text{ExpandTarget}(\text{CompressTarget}(T)) \leq T$ with significant bits preserved (round-trip property).
+
 **GetNextWorkRequired**: $\mathcal{H} \times \mathcal{H}^* \times \text{Network} \rightarrow \mathbb{N}$
 
 Let $prev_{\text{last}}$ denote the last block of the difficulty period and $prev_{\text{first}}$ the first. Let $T_{\text{expected}} = 14 \times 24 \times 60 \times 60$ (2 weeks in seconds). The timespan and bits base use only the completed period; the new block $h$ does not affect the result (timewarp safety).
@@ -2289,6 +2333,10 @@ Where [SHA256](https://en.wikipedia.org/wiki/SHA-2) is the [Secure Hash Algorith
 $$\sum_{i \in tx.inputs} us(i.prevout).value \geq \sum_{o \in tx.outputs} o.value$$
 
 **Theorem 8.1** (UTXO Set Invariant): The UTXO set maintains the invariant that the sum of all UTXO values equals the total money supply.
+
+**VerifyUtxoSupply**: $\mathcal{US} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
+
+$$\text{VerifyUtxoSupply}(us, h) = \text{true} \iff \sum_{utxo \in us} utxo.\text{value} = \text{TotalSupply}(h)$$
 
 *Proof*: Let $US_h$ be the UTXO set at height $h$. We prove by induction:
 
