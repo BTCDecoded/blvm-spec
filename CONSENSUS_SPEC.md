@@ -33,7 +33,7 @@ Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 
 ### HDR-001
 - **Rule:** A block header version MUST be at least 1; version 0 MUST NOT be accepted.
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H01, **F_HeaderVersionFloor**
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H01, **F_HeaderVersionFloor**. Unconditional; enforced even without `TimeContext` (§5.3.1 Notes).
 - **Implementation:** `block::header::validate_block_header` — Z3-verified (F_HeaderVersionFloor)
 
 ### HDR-002
@@ -43,22 +43,22 @@ Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 
 ### HDR-003
 - **Rule:** A block header timestamp MUST NOT be zero.
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H03
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H03. Unconditional; enforced even without `TimeContext` (§5.3.1 Notes).
 - **Implementation:** `block::header::validate_block_header` — Z3-verified (spec_locked)
 
 ### HDR-004
 - **Rule:** A block header timestamp MUST NOT exceed network time plus 7,200 seconds (T_future).
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H04, [§4.4](PROTOCOL.md#44-difficulty-constants) T_future
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H04, [§4.4](PROTOCOL.md#44-difficulty-constants) T_future. Requires `TimeContext`; not enforced during headers-first sync (§5.3.1 Notes).
 - **Implementation:** `block::header::validate_block_header` — Z3-verified (spec_locked)
 
 ### HDR-005
 - **Rule:** A block header timestamp MUST be at least the median time past of recent headers when time context is available (BIP113).
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H05, [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H05, [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast. Requires `TimeContext`; not enforced during headers-first sync (§5.3.1 Notes).
 - **Implementation:** `block::header::validate_block_header`, `bip113::get_median_time_past` — Z3-verified (spec_locked)
 
 ### HDR-006
 - **Rule:** A block header compact difficulty field (bits) MUST NOT be zero.
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H06, **F_HeaderBitsFloor**
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H06, **F_HeaderBitsFloor**. Unconditional; enforced even without `TimeContext` (§5.3.1 Notes).
 - **Implementation:** `block::header::validate_block_header` — Z3-verified (F_HeaderBitsFloor)
 
 ### HDR-007
@@ -71,16 +71,6 @@ Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H08
 - **Implementation:** `block::validate_prev_block_hash`, `block::block_header_hash` — spec_locked [§5.3.1](PROTOCOL.md#531-header-validation)
 - **Enforcement:** both — pure predicate in `blvm-consensus`; `blvm-node` calls it (or equivalent check) on sync/submitblock/IBD before `connect_block`
-
-### HDR-009
-- **Rule:** A block header merkle_root field MUST NOT be all zeros (structural sanity check).
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) (structural guard; full merkle verification in ConnectBlock)
-- **Implementation:** `block::header::validate_block_header` — Z3-verified (spec_locked)
-
-### HDR-010
-- **Rule:** When time context is unavailable, header validation MUST still enforce H01, H03, and H06.
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) Notes (headers-first sync)
-- **Implementation:** `block::header::validate_block_header` — Z3-verified (spec_locked)
 
 ---
 
