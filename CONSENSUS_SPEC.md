@@ -537,30 +537,31 @@ Height-dependent, time-dependent, and sequence-lock rules.
 
 ## 8. Activation Height Tables
 
-Canonical activation and deactivation heights. Source: `blvm-primitives` constants (`BIP*_ACTIVATION_*`), `blvm-consensus::activation::ForkActivationTable`, Orange Paper [§5.4](PROTOCOL.md#54-bip-validation-rules) and [§5.2.5](PROTOCOL.md#525-script-verification-flags). Heights are **inclusive** (rule active when `height >= activation`, except BIP30 deactivation below).
+Canonical activation and deactivation heights for this register (**not** Orange Paper [§8 Security Properties](PROTOCOL.md#8-security-properties)). Source: `blvm-primitives` constants (`BIP*_ACTIVATION_*`), `blvm-consensus::activation::ForkActivationTable`, Orange Paper [§5.4](PROTOCOL.md#54-bip-validation-rules) and [§5.2.5](PROTOCOL.md#525-script-verification-flags). Heights are **inclusive** (rule active when `height >= activation`, except BIP30 deactivation below).
 
 ### Table 1 — Soft fork activation heights
 
-| Fork | BIP | Mainnet | Testnet | Regtest | Enforced by |
-|------|-----|---------|---------|---------|-------------|
-| P2SH | 16 | 173,805 | 0 | 0 | `CalculateScriptFlags` / `ForkId::Bip16` |
-| Height in coinbase | 34 | 227,931 | 21,111 | 0 | `BIP34Check`, `BIP90Check` (min version 2) |
-| Strict DER | 66 | 363,725 | 330,776 | 0 | `BIP66Check`, `BIP90Check` (min version 3) |
-| CLTV | 65 | 388,381 | 581,885 | 0 | `BIP65Check`, `BIP90Check` (min version 4) |
-| CSV + sequence locks | 68/112 | 419,328 | 770,112 | 0 | `CalculateSequenceLocks`, `CalculateScriptFlags` |
-| Median time past | 113 | 419,328 | 770,112 | 0 | `GetMedianTimePast` (header timestamp floor) |
-| SegWit v0 | 141 | 481,824 | 834,624 | 0 | `ValidateSegWitBlock`, witness flags |
-| NULLDUMMY | 147 | 481,824 | 834,624 | 0 | `BIP147Check` |
-| Taproot | 341/342 | 709,632 | 2,011,968 | 0 | Taproot validation, `TaprootActivationHeight` |
-| CTV | 119 | — (disabled) | — (disabled) | 0 | `BIP119Check` (feature-gated; `u64::MAX` = never) |
-| CSFS | 348 | — (disabled) | — (disabled) | 0 | `BIP348Check` (feature-gated) |
-| Consensus cleanup | 54 | — (disabled) | — (disabled) | configurable | `IsBip54ActiveAt`, version bits |
+| Fork | BIP | Mainnet | Testnet | Regtest | Signet | Enforced by |
+|------|-----|---------|---------|---------|--------|-------------|
+| P2SH | 16 | 173,805 | 0 | 0 | 0 | `CalculateScriptFlags` / `ForkId::Bip16` |
+| Height in coinbase | 34 | 227,931 | 21,111 | 0 | 1 | `BIP34Check`, `BIP90Check` (min version 2) |
+| Strict DER | 66 | 363,725 | 330,776 | 0 | 1 | `BIP66Check`, `BIP90Check` (min version 3) |
+| CLTV | 65 | 388,381 | 581,885 | 0 | 1 | `BIP65Check`, `BIP90Check` (min version 4) |
+| CSV + sequence locks | 68/112 | 419,328 | 770,112 | 0 | 1 | `CalculateSequenceLocks`, `CalculateScriptFlags` |
+| Median time past | 113 | 419,328 | 770,112 | 0 | 1 | `GetMedianTimePast` (header timestamp floor) |
+| SegWit v0 | 141 | 481,824 | 834,624 | 0 | 1 | `ValidateSegWitBlock`, witness flags |
+| NULLDUMMY | 147 | 481,824 | 834,624 | 0 | 1 | `BIP147Check` |
+| Taproot | 341/342 | 709,632 | 2,011,968 | 0 | 1 | Taproot validation, `TaprootActivationHeight` |
+| CTV | 119 | — (disabled) | — (disabled) | 0 | — (disabled) | `BIP119Check` (feature-gated; `u64::MAX` = never) |
+| CSFS | 348 | — (disabled) | — (disabled) | 0 | — (disabled) | `BIP348Check` (feature-gated) |
+| Consensus cleanup | 54 | — (disabled) | — (disabled) | configurable | — (disabled) | `IsBip54ActiveAt`, version bits |
 
 **Notes:**
 - SegWit and BIP147 share mainnet height 481,824 (same deployment).
 - BIP68 and BIP112 share activation height; CSV script flag and sequence-lock enforcement activate together.
 - CTV/CSFS/BIP54 default to inactive on mainnet/testnet (`activation height = u64::MAX` or 0 = disabled per fork table builder).
 - Regtest: most forks active from height 0; BIP65 uses height 0 in `ForkActivationTable` (immediate).
+- Signet: most soft forks active from height 1 (`ForkActivationTable`); Taproot activation helper returns 1; BIP54/CTV/CSFS default inactive (`u64::MAX`).
 
 ### Table 2 — BIP90 minimum block version (HDR-002)
 
@@ -608,7 +609,7 @@ Source: [§5.2.5](PROTOCOL.md#525-script-verification-flags) `CalculateScriptFla
 
 ## 9. Soft Fork Activation
 
-BIP activation rule entries (refer to **[§8](PROTOCOL.md#8-security-properties) tables** for heights). Individual SF-* rules state the MUST invariant; Table 1 is the canonical height register.
+BIP activation rule entries (refer to **[§8 of this register](#8-activation-height-tables)** for activation height tables). Individual SF-* rules state the MUST invariant; Table 1 is the canonical height register.
 
 ### SF-001
 - **Rule:** SCRIPT_VERIFY_P2SH MUST activate at mainnet height 173,805.
@@ -646,8 +647,8 @@ BIP activation rule entries (refer to **[§8](PROTOCOL.md#8-security-properties)
 - **Implementation:** `activation::taproot_activation_height` — Z3-verified (F_TaprootActivationMainnet)
 
 ### SF-008
-- **Rule:** Taproot MUST activate at testnet height 2,011,968 and regtest height 0.
-- **Specification:** [§11.2](PROTOCOL.md#112-taproot) **F_TaprootActivationTestnet**, **F_TaprootActivationRegtest**
+- **Rule:** Taproot MUST activate at testnet height 2,011,968, regtest height 0, and signet height 1.
+- **Specification:** [§11.2](PROTOCOL.md#112-taproot) **F_TaprootActivationTestnet**, **F_TaprootActivationRegtest**; signet uses height 1 per `ForkActivationTable`
 - **Implementation:** `activation::taproot_activation_height` — Z3-verified (F_* formulas)
 
 ### SF-009
@@ -913,7 +914,7 @@ Reorg and chain-work rules (Orange Paper [§11.3](ARCHITECTURE.md#113-chain-reor
 
 ### REORG-004
 - **Rule:** ReorganizeChain MUST disconnect blocks back to common ancestor then connect new chain blocks in order.
-- **Specification:** [§11.3](ARCHITECTURE.md#113-chain-reorganization) (ARCHITECTURE.md)
+- **Specification:** [§11.3](ARCHITECTURE.md#113-chain-reorganization) ReorganizeChain
 - **Implementation:** `reorganization::reorganize_chain` — Z3-verified (spec_locked)
 
 ### SIG-001
@@ -1008,7 +1009,7 @@ Relay and mempool rules (Orange Paper [§9](PROTOCOL.md#9-mempool-protocol)). Th
 
 ## 19. Gaps Register
 
-No open gaps as of 2026-06-18. Historical closure: `docs/CONSENSUS_SPEC_GAP_CLOSURE_PLAN.md`.
+No open gaps as of 2026-06-18.
 
 ### Implemented outside `blvm-consensus` (not gaps)
 
@@ -1037,7 +1038,7 @@ HDR-008 node wiring; UTX-005 `VerifyUtxoSupply`; BIP54 BLK-012–014; ConnectBlo
 | **With Orange Paper backing** | **161** |
 | **UNIMPLEMENTED gaps (all crates)** | **0** |
 | **UNSPECIFIED / partial** | **0** |
-| **Activation height tables** | **4** ([§8](PROTOCOL.md#8-security-properties)) |
+| **Activation height tables** | **4** ([§8 of this register](#8-activation-height-tables)) |
 
 **Tier 1 Z3 functions:** `get_block_subsidy`, `expand_target`, `compress_target`, `check_proof_of_work`, `get_next_work_required`, `compute_block_tx_ids_spec`, `calculate_chain_work`, `should_reorganize`
 
