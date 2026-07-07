@@ -562,7 +562,7 @@ Canonical activation and deactivation heights for this register (**not** Orange 
 | BIP66 ≤ h < BIP65 | 3 |
 | h ≥ BIP65 activation | 4 |
 
-Versions retired after activation (informative): BIP34 retires 0,1; BIP66 retires 2; BIP65 retires 3. See Hornet [Table 1](https://hornetnode.org/spec) for the retired-version summary.
+Versions retired after activation (informative): BIP34 retires 0,1; BIP66 retires 2; BIP65 retires 3.
 
 ### Table 3 — BIP30 deactivation and grandfathered blocks
 
