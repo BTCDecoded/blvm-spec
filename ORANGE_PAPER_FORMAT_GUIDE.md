@@ -9,9 +9,9 @@ Functions should be defined using this format:
 ```markdown
 **FunctionName**: $\mathbb{N} \rightarrow \mathbb{Z}$
 
-$$\text{FunctionName}(h) = \begin{cases}
-0 & \text{if } h \geq 64 \times H \\
-50 \times C \times 2^{-\lfloor h/H \rfloor} & \text{otherwise}
+$$\text{GetBlockSubsidy}(h) = \begin{cases}
+0 & \text{if } \lfloor h/H \rfloor \geq 64 \\
+\text{INITIAL\_SUBSIDY} \gg \lfloor h/H \rfloor & \text{otherwise}
 \end{cases}$$
 
 Description of what the function does.

@@ -229,14 +229,28 @@ Four invariants are universal across this specification and never restated per-f
 ### 4.1 Monetary Constants
 
 $C = 10^8$ (satoshis per BTC, see [Economic Model](#6-economic-model))  
-$M_{max} = 21 \times 10^6 \times C$ (maximum money supply, see [§6.2](#62-total-supply))  
+$M_{max} = 21 \times 10^6 \times C$ (overflow-guard cap on output values and value sums, see [§6.2](#62-total-supply) and [§6.3](#63-supply-limit-validation); not the issued supply)  
 $H = 210,000$ (halving interval, see [Block Subsidy](#61-block-subsidy))
+
+**Remark (Constant Dependency).** The three monetary constants in §4.1 have only
+two degrees of freedom. $M_{\max}$ is not independently chosen: it equals
+$H \times \text{INITIAL\_SUBSIDY} \times 2$ exactly, which is the limit of the
+geometric series $H \times \text{INITIAL\_SUBSIDY} \times \sum_{k=0}^{\infty} 2^{-k}$.
+Changing either $H$ or $\text{INITIAL\_SUBSIDY}$ changes $M_{\max}$.
 
 ### 4.2 Block Constants
 
 $W_{max} = 4 \times 10^6$ (maximum block weight, see [Block Validation](#53-block-validation))  
 $S_{max} = 80,000$ (maximum sigops per block, see [Script Execution](#52-script-execution))  
 $R = 100$ (coinbase maturity requirement, see [Transaction Validation](#51-transaction-validation))
+
+**Remark (Implicit Sigop Price).** The ratio of block constants $W_{\max} / S_{\max}
+= 4{,}000{,}000 / 80{,}000 = 50$ weight units per permitted sigop is a derived
+quantity not stated elsewhere in this specification. It is the implicit block-space
+price of one signature operation. Additionally, the sigop density is scale-invariant
+under the SegWit weight change: $S_{\max}$ was not increased when $W_{\max}$ grew
+from the legacy 1 MB limit (4,000,000 weight units), so sigops per unit capacity
+are unchanged from the pre-SegWit regime.
 
 ### 4.3 Script Constants
 
@@ -307,8 +321,6 @@ flowchart TD
 
 **Properties**:
 - Structure validation: $result = \text{valid} \implies |tx.\text{inputs}| > 0 \land |tx.\text{outputs}| > 0$
-- Input bounds: $result = \text{valid} \implies |tx.\text{inputs}| \leq M_{\text{max\_inputs}}$
-- Output bounds: $result = \text{valid} \implies |tx.\text{outputs}| \leq M_{\text{max\_outputs}}$
 - Empty rejection: $|tx.\text{inputs}| = 0 \lor |tx.\text{outputs}| = 0 \implies \text{CheckTransaction}(tx) \neq \text{valid}$
 - Output value bounds: $result = \text{valid} \implies \forall o \in tx.\text{outputs}: 0 \leq o.\text{value} \leq M_{\text{max}}$
 - Total output sum: $result = \text{valid} \implies \sum_{o \in tx.\text{outputs}} o.\text{value} \leq M_{\text{max}}$
@@ -492,9 +504,9 @@ Bitcoin uses a stack-based scripting language for transaction validation. Script
 $\text{EvalScript}(script, S_0, f) = \text{true}$ iff execution terminates without failure and the final stack $S_f$ satisfies $|S_f| = 1 \land S_f[0] \neq 0$.
 
 Execution fails (yielding $\text{false}$) iff at any step:
-- $result$: $|S| > L_{stack}$, or
-- $result$: operation count $c > L_{ops}$, or
-- $result$: execution of $op$ on stack $S$ fails.
+- $|stack| + |altstack| > L_{stack}$, or
+- operation count $c > L_{ops}$, or
+- execution of $op$ on stack $S$ fails.
 
 Formally: $\text{EvalScript}(script, S_0, f, sv) = \text{false} \iff \text{Execute}(script, S_0, f, sv) \downarrow \land (\text{Overflow} \lor \text{OverOps} \lor \text{OpFail})$, where $\downarrow$ indicates termination and the disjunction holds at some step.
 
@@ -549,7 +561,7 @@ sequenceDiagram
 
 **VerifyScript**: $\mathcal{SC} \times \mathcal{SC} \times \mathcal{W} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
 
-**Implementation Note**: Production builds may use fast-path shortcuts (`try_verify_p2pk_fast_path`, `try_verify_p2pkh_fast_path`, etc.) that MUST be observably equivalent to full `VerifyScript` evaluation. Differential harness: `blvm-consensus/tests/script_fast_path_equivalence.rs` (toggle via `disable_fast_paths`).
+**Implementation Note**: Production builds may use fast-path shortcuts (`try_verify_p2pk_fast_path`, `try_verify_p2pkh_fast_path`, `try_verify_p2tr_unexec_if_fast_path`, etc.) that MUST be observably equivalent to full `VerifyScript` evaluation. Additional production templates must stay observably equivalent. Differential harness: `blvm-consensus/tests/script_fast_path_equivalence.rs` (toggle via `disable_fast_paths`).
 
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
@@ -692,7 +704,7 @@ Where $S_{max} = 80,000$ (MAX_BLOCK_SIGOPS_COST).
 - **Stack Input**: $[item]$ where $item \in \mathbb{S}$
 - **Stack Output**: $\emptyset$ (item moved to altstack)
 - **AltStack Output**: $[item]$ (item added to altstack)
-- **Validation**: $|stack| > 0 \land |stack| + |altstack| < L_{stack} \implies \text{OP_TOALTSTACK}(stack, altstack) = (stack', altstack')$ where $stack' = stack[1..]$ and $altstack' = altstack \cup [stack[0]]$
+- **Validation**: $|stack| > 0 \land |stack| + |altstack| \leq L_{stack} \implies \text{OP_TOALTSTACK}(stack, altstack) = (stack', altstack')$ where $stack' = stack[1..]$ and $altstack' = altstack \cup [stack[0]]$ (the move preserves the combined count)
 - **Error**: $|stack| = 0 \implies \text{OP_TOALTSTACK}(stack, altstack) = \text{error}$ (empty stack)
 
 **OP_FROMALTSTACK** (opcode 0x6c):
@@ -927,6 +939,15 @@ H08 (parent hash linkage) is enforced by **ValidatePrevBlockHash** in `blvm-cons
 Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field check (H06) rejects an all-zero `bits` as a structural sanity check; cryptographic verification of the merkle root against the block's transaction list happens inside `connect_block` itself after header validation passes.
 
 H04 and H05 require a time context (network time and recent-header MTP). When no context is available (e.g. headers-first sync), only H01, H03, H06 are enforced.
+
+**Remark (Timestamp Window Asymmetry).** The valid timestamp range for a block
+header is $[\text{MTP},\, \text{network\_time} + T_{\text{future}}]$. The upper
+bound allows $T_{\text{future}} = 7{,}200$ seconds (2 hours) of future drift.
+The lower bound is MTP (median of the last 11 timestamps), not a fixed lag
+behind wall-clock time: under on-time blocks the median sits about six
+intervals back, and slow blocks can lag further. The window is therefore
+asymmetric (MTP versus a hard $+2$ hour cap). This is a description of the
+two bounds, not a theorem that MTP lags real time by $11 \times T_{\text{block}}$.
 
 **Formula** (**F_HeaderVersionFloor**):
 $$result = 0$$
@@ -1383,6 +1404,15 @@ Where $\text{Structure}(tx)$ includes all fields except scriptSig.
 
 *Proof*: By construction, scriptSig is not included in the template preimage. Therefore, changes to scriptSig do not affect the template hash, allowing the same template to be satisfied by different scriptSigs.
 
+**Remark (Commitment Separation).** Theorem 5.4.6.4 establishes that the CTV
+template hash does not depend on scriptSig. This separates two concerns that
+legacy sighash conflates. The template hash answers: what does this transaction do?
+(which outputs it creates, which inputs it references, in what order, with what
+locktime and sequence values). The witness and scriptSig answer: who is authorized
+to do it? In legacy sighash (§5.1.1), both questions are mixed into one preimage
+via scriptCode and FindAndDelete. CTV encodes them in two distinct commitments
+computed independently, making authorization separable from structure.
+
 **Opcode Behavior**:
 
 OP_CHECKTEMPLATEVERIFY (opcode 0xb3, OP_NOP4):
@@ -1424,6 +1454,7 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xb3, OP_NOP4):
 - Locktime ordering (BIP65): $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$ (transaction locktime must be **≥** stack locktime; stack value greater than `tx.lockTime` fails)
 - Zero locktime: $(tx.\text{lockTime}, lt) = (0, 0)$ with matching types **may** be valid (mainnet block 659901); BIP65 does **not** unconditionally reject `tx.lockTime = 0`
 - Two-argument form: $\text{LocktimeType}(a) = \text{LocktimeType}(b) \land a \geq b \implies \text{valid}$
+- Two-argument result: $result == ((tx_locktime < 500000000) == (stack_locktime < 500000000) && tx_locktime >= stack_locktime)$
 
 For transaction $tx$, input index $i$, locktime value $lt$, and block header $h$:
 
@@ -1453,7 +1484,7 @@ $$\text{LocktimeType}(lt) = \begin{cases}
 
 $$\forall lt \in \mathbb{N}_{32}: \text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt$$
 
-*Proof*: By construction, the encoding uses minimal little-endian representation and decoding reconstructs the value from the byte string. This is proven by blvm-spec-lock formal verification.
+*Proof*: By construction, the encoding uses minimal little-endian representation and decoding reconstructs the value from the byte string. Byte-string encode/decode is not a Z3 arithmetic obligation.
 
 **Theorem 5.4.7.2** (Locktime Type Determination Correctness): Locktime type determination is correct:
 
@@ -1462,13 +1493,13 @@ $$\forall lt \in \mathbb{N}_{32}: \text{LocktimeType}(lt) = \begin{cases}
 \text{Timestamp} & \text{otherwise}
 \end{cases}$$
 
-*Proof*: By construction, the threshold $500000000$ correctly separates block heights (which are always $< 500000000$) from Unix timestamps (which are always $\geq 500000000$). This is proven by blvm-spec-lock formal verification.
+*Proof*: The threshold $500000000$ separates block heights from timestamps. This is proven by blvm-spec-lock formal verification of **F_LocktimeTypeIsHeight** and **F_LocktimeTypeIsTimestamp** (witnesses `_verify_f_locktime_type_is_height`, `_verify_f_locktime_type_is_timestamp`).
 
 **Theorem 5.4.7.3** (CLTV Type Matching Requirement): CLTV requires matching locktime types:
 
 $$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$$
 
-*Proof*: By construction, if the types don't match, $\text{BIP65Check}$ returns $\text{invalid}$. This ensures that block height locktimes are only compared with block heights, and timestamps are only compared with timestamps. This is proven by blvm-spec-lock formal verification.
+*Proof*: If the types do not match, $\text{BIP65Check}$ returns $\text{invalid}$. This is proven by blvm-spec-lock formal verification of **F_BIP65RejectsTypeMismatch** and **F_BIP65RejectsTypeMismatchReverse**.
 
 **Theorem 5.4.7.4** (CLTV locktime ordering): Valid CLTV requires transaction locktime at least the stack value.
 
@@ -1486,10 +1517,12 @@ $$result == true$$
 
 Symmetric to F_BIP65Passes for the timestamp domain: when transaction locktime is a timestamp ($tx\_locktime \geq 500{,}000{,}000$), stack locktime is also a timestamp ($stack\_locktime \geq 500{,}000{,}000$), and $tx\_locktime \geq stack\_locktime$ — CLTV validation passes. Both locktimes share the same type, satisfying the type-match guard; the value comparison passes by the `requires`.
 
-**Formula** (**F_BIP65RejectsZeroLocktime**):
-$$result == false$$
+**Formula** (**F_BIP65PassesZeroZero**):
+$$result == true$$
 
-When the transaction locktime is zero ($tx\_locktime = 0$), the first guard `tx_locktime != 0` is false and CLTV validation always rejects regardless of the script locktime. A transaction with `nLockTime = 0` can never satisfy any OP_CHECKLOCKTIMEVERIFY script.
+$(tx\_locktime, stack\_locktime) = (0, 0)$: types match (both height) and
+$0 \geq 0$. BIP65Check passes. Mainnet block 659901. Witness
+`_verify_f_bip65_passes_zero_zero`. There is no `tx.lockTime != 0` guard.
 
 **Formula** (**F_BIP65RejectsTypeMismatch**):
 $$result == false$$
@@ -1637,67 +1670,6 @@ CSFS complements CTV by enabling UTXO amount introspection. CTV commits to trans
 
 ---
 
-**BIP65Check**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{N} \times \mathbb{H} \rightarrow \{\text{valid}, \text{invalid}\}$
-
-**Properties**:
-- Boolean result: $result \in \{\text{true}, \text{false}\}$
-- Type consistency: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$ (types must match)
-- Locktime ordering (BIP65): $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$ (transaction locktime must be **≥** stack locktime; stack value greater than `tx.lockTime` fails)
-- Zero locktime: $(tx.\text{lockTime}, lt) = (0, 0)$ with matching types **may** be valid (mainnet block 659901); BIP65 does **not** unconditionally reject `tx.lockTime = 0`
-
-For transaction $tx$, input index $i$, locktime value $lt$, and block header $h$:
-
-$$\text{BIP65Check}(tx, i, lt, h) = \begin{cases}
-\text{invalid} & \text{if } \text{LocktimeType}(tx.\text{lockTime}) \neq \text{LocktimeType}(lt) \\
-\text{invalid} & \text{if } tx.\text{lockTime} < lt \\
-\text{valid} & \text{otherwise}
-\end{cases}$$
-
-Where $\text{LocktimeType}(x) = \begin{cases} \text{BlockHeight} & x < 5\times10^8 \\ \text{Timestamp} & \text{otherwise} \end{cases}$.
-
-**OP_CHECKLOCKTIMEVERIFY (opcode 0xb1)**:
-- **Stack Input**: $[lt]$ where $lt$ is a locktime value (encoded as minimal byte string)
-- **Stack Output**: Nothing (opcode fails if locktime check doesn't pass)
-- **Validation**: $\text{BIP65Check}(tx, i, \text{DecodeLocktime}(lt), h) = \text{valid}$
-
-**Locktime Type Determination**: 
-
-$$\text{LocktimeType}(lt) = \begin{cases}
-\text{BlockHeight} & \text{if } lt < 500000000 \\
-\text{Timestamp} & \text{otherwise}
-\end{cases}$$
-
-**Locktime Encoding/Decoding**: Locktime values are encoded as minimal little-endian byte strings (max 5 bytes) on the script stack.
-
-**Theorem 5.4.7.1** (Locktime Encoding Round-Trip): Locktime encoding and decoding are inverse operations:
-
-$$\forall lt \in \mathbb{N}_{32}: \text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt$$
-
-*Proof*: By construction, the encoding uses minimal little-endian representation and decoding reconstructs the value from the byte string. This is proven by blvm-spec-lock formal verification.
-
-**Theorem 5.4.7.2** (Locktime Type Determination Correctness): Locktime type determination is correct:
-
-$$\forall lt \in \mathbb{N}_{32}: \text{LocktimeType}(lt) = \begin{cases}
-\text{BlockHeight} & \text{if } lt < 500000000 \\
-\text{Timestamp} & \text{otherwise}
-\end{cases}$$
-
-*Proof*: By construction, the threshold $500000000$ correctly separates block heights (which are always $< 500000000$) from Unix timestamps (which are always $\geq 500000000$). This is proven by blvm-spec-lock formal verification.
-
-**Theorem 5.4.7.3** (CLTV Type Matching Requirement): CLTV requires matching locktime types:
-
-$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$$
-
-*Proof*: By construction, if the types don't match, $\text{BIP65Check}$ returns $\text{invalid}$. This ensures that block height locktimes are only compared with block heights, and timestamps are only compared with timestamps. This is proven by blvm-spec-lock formal verification.
-
-**Theorem 5.4.7.4** (CLTV locktime ordering): Valid CLTV requires transaction locktime at least the stack value.
-
-$$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$$
-
-*Proof*: Matches BIP65: the script fails when the stack locktime exceeds `tx.lockTime`.
-
----
-
 **Corollary 5.4.1** (BIP Activation Consistency): All BIP validation rules are enforced consistently across the network after their respective activation heights, ensuring consensus compatibility.
 
 *Proof*: Each BIP validation rule $P$ has an activation height $H_P$ such that for all blocks $b$ at height $h \geq H_P$, $P(b) = \text{valid}$ is required. Since all nodes enforce the same activation heights, consensus is maintained.
@@ -1715,6 +1687,16 @@ At difficulty period boundaries, block timestamps are constrained to prevent tim
 - First block of period ($height \bmod 2016 = 0$): $T_N \geq T_{N-1} - 7200$ (2-hour grace).
 
 Where $T_N$ is the block header timestamp at height $N$; $T_{N-1}$, $T_{N-2015}$ are timestamps of the previous block and the first block of the previous period. If BIP54 is active and $height \bmod 2016 \in \{0, 2015\}$, the caller must supply boundary timestamps and the check is applied; otherwise the check is skipped.
+
+**Note (BIP54 vs retarget interval count).** BIP54TimewarpCheck prevents miners
+from setting the last block of a difficulty period earlier than the first block
+of that period (and applies a 2-hour grace on the first block of the next
+period). That is independent of the forward timing bias in Theorem 7.1.4, which
+arises from measuring 2,015 intervals across a 2,016-block window and is present
+regardless of timestamp manipulation. BIP54 addresses intentional backward
+manipulation; Theorem 7.1.4 describes an unintentional forward drift in the
+retarget formula. BIP94 (testnet4, $\text{MAX\_TIMEWARP} = 600$ on the first
+block of a period) is a different rule; see §7.1.
 
 **BIP54CoinbaseCheck**: $\mathcal{TX} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
 
@@ -1884,6 +1866,13 @@ $$result \leq 33553920$$
 
 The time-based sequence locktime value (in seconds) is bounded by $65535 \times 512 = 33{,}553{,}920$ seconds. Under $value \leq 65535$ (from the 16-bit mask), $result = value \times 512 \leq 33{,}553{,}920$.
 
+**Formula** (**F_SequenceLockHeightAdd**):
+$$result \geq -1$$
+
+Height-based BIP68 lock: $required = ph + lock - 1$ with $ph \geq 0$ and
+$0 \leq lock \leq 65535$ (**F_SequenceLockTimeMask**). The $-1$ is last-invalid
+semantics. Witness `_verify_f_sequence_lock_height_add`.
+
 **GetMedianTimePast**: $[\mathcal{H}] \rightarrow \mathbb{N}$
 
 **Properties**:
@@ -1896,9 +1885,32 @@ $$\text{GetMedianTimePast}(headers) = \begin{cases}
 \text{median}(\{h.\text{timestamp} : h \in headers[\max(0, |headers| - 11):]\}) & \text{otherwise}
 \end{cases}$$
 
-Where $\text{median}(timestamps)$ is calculated as:
-- If $|timestamps|$ is odd: $\text{median}(timestamps) = timestamps[\lfloor |timestamps|/2 \rfloor]$
-- If $|timestamps|$ is even: $\text{median}(timestamps) = \lfloor (timestamps[|timestamps|/2 - 1] + timestamps[|timestamps|/2]) / 2 \rfloor$
+Let $T$ be those timestamps sorted in non-decreasing order. Then
+$\text{median}(T) = T[\lfloor |T|/2 \rfloor]$ (0-based), for both odd and even
+$|T|$. This is the upper middle element when $|T|$ is even — not the mean of
+the two central values. With 11 headers the window is always odd; the even
+case occurs only when fewer than 11 headers are available.
+
+**Formula** (**F_MtpIndex**):
+$$result == t1$$
+
+Even $|T| = 2$, already sorted $t_0 \leq t_1$: the upper middle is $T[1] = t_1$,
+not $(t_0 + t_1)/2$. Witness `_verify_f_mtp_index` under
+`requires(t0 <= t1)`.
+
+**Formula** (**F_MtpIndexN4**):
+$$result == t2$$
+
+Even $|T| = 4$, already sorted $t_0 \leq t_1 \leq t_2 \leq t_3$: the upper
+middle is $T[2] = t_2$, not the mean of the two central values. Witness
+`_verify_f_mtp_index_n4`.
+
+**Formula** (**F_MtpIndexN11**):
+$$result == t5$$
+
+The BIP113 window: $|T| = 11$, already sorted. $\lfloor 11/2 \rfloor = 5$,
+so the median is $T[5] = t_5$. Witness `_verify_f_mtp_index_n11`.
+Even $n$ is only for a short chain; after 11 headers this is the live case.
 
 **BIP113 Reference**: This function implements [BIP113: Median Time-Past](https://github.com/bitcoin/bips/blob/master/bip-0113.mediawiki), which uses the median timestamp of the last 11 blocks to prevent time-warp attacks.
 
@@ -1916,11 +1928,12 @@ $$\text{CalculateSequenceLocks}(tx, f, ph, rh) = (\text{min\_height}, \text{min\
 Where:
 - BIP68 is only enforced if $tx.\text{version} \geq 2$ and $(f \land 0x01) \neq 0$
 - For each input $i \in tx.\text{inputs}$:
-  - If $result$: skip input
-  - If $result$ (time-based):
+  - If $\text{IsSequenceDisabled}(i.\text{sequence})$: skip input
+  - If $\text{ExtractSequenceTypeFlag}(i.\text{sequence})$ (time-based):
     - $locktime\_value = \text{ExtractSequenceLocktimeValue}(i.\text{sequence})$
-    - $locktime\_seconds = locktime\_value \times 512 = locktime\_value \ll 9$ (bit shift for efficiency)
-    - $coin\_time = \text{GetMedianTimePast}(ph[i], rh)$
+    - $locktime\_seconds = locktime\_value \times 512 = locktime\_value \ll 9$
+    - $coin\_time = \text{GetMedianTimePast}(H_i)$ where $H_i$ is the last-up-to-11
+      headers ending at the block that confirmed input $i$ (height $ph[i]$)
     - $required\_time = coin\_time + locktime\_seconds - 1$
     - $\text{min\_time} = \max(\text{min\_time}, required\_time)$
   - Else (block-based):
@@ -1949,7 +1962,7 @@ Where:
 $$\forall tx \in \mathcal{TX}, ph \in [\mathbb{N}], seq \in \mathbb{N}_{32}:$$
 $$\text{CalculateSequenceLocks}(tx, f, ph, rh) \text{ does not overflow}$$
 
-*Proof*: By construction, all arithmetic operations use checked addition/subtraction. The locktime value is bounded to 16 bits (0-65535), and block heights/times are bounded to 64-bit integers. This is proven by blvm-spec-lock formal verification.
+*Proof*: The locktime value is 16 bits (**F_SequenceLockTimeMask**). Time scaling is **F_SequenceTimeEncoding**. Height addition $ph + lock - 1$ is proven by blvm-spec-lock formal verification of **F_SequenceLockHeightAdd**.
 
 **Theorem 5.5.2** (Sequence Lock Correctness): Sequence locks correctly enforce relative locktime:
 
@@ -1960,7 +1973,7 @@ $$\forall i \in tx.\text{inputs}: \text{IsSequenceDisabled}(i.\text{sequence}) \
 
 Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is met.
 
-*Proof*: By construction, $\text{CalculateSequenceLocks}$ computes the minimum height/time required by all inputs, and $\text{EvaluateSequenceLocks}$ checks if current height/time meets these requirements. This is proven by blvm-spec-lock formal verification.
+*Proof*: $\text{EvaluateSequenceLocks}$ is the case analysis of disabled / height / time guards. This is proven by blvm-spec-lock formal verification of **F_EvalSeqLocksDisabled**, **F_EvalSeqLocksHeightNotMet**, **F_EvalSeqLocksHeightMet**, **F_EvalSeqLocksTimeNotMet**, **F_EvalSeqLocksTimeMet**, and **F_EvalSeqLocksBothMet**.
 
 ## 6. Economic Model
 
@@ -1969,11 +1982,11 @@ Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is m
 **GetBlockSubsidy**: $\mathbb{N} \rightarrow \mathbb{Z}$
 
 $$\text{GetBlockSubsidy}(h) = \begin{cases}
-0 & \text{if } h \geq 64 \times H \\
-50 \times C \times 2^{-\lfloor h/H \rfloor} & \text{otherwise}
+0 & \text{if } \lfloor h/H \rfloor \geq 64 \\
+\text{INITIAL\_SUBSIDY} \gg \lfloor h/H \rfloor & \text{otherwise}
 \end{cases}$$
 
-Where $\lfloor h/H \rfloor$ represents the number of halvings that have occurred by height $h$.
+Where $\lfloor h/H \rfloor$ is the halving index $k$, $\text{INITIAL\_SUBSIDY} = 50 \times C = 5{,}000{,}000{,}000$, and $\gg$ is integer right-shift (equivalently $\lfloor \text{INITIAL\_SUBSIDY} / 2^{k} \rfloor$). The $k \geq 64$ arm exists because a 64-bit right-shift is undefined. For $33 \leq k < 64$ the shift is already $0$ (Theorem 6.1.2). The real-valued form $50 \times C \times 2^{-k}$ is not the protocol.
 
 ```mermaid
 xychart-beta
@@ -1989,17 +2002,36 @@ xychart-beta
 - **Blocks 420,000-629,999**: 12.5 BTC per block
 - **Blocks 630,000-839,999**: 6.25 BTC per block
 - **Blocks 840,000+**: 3.125 BTC per block
-- **Blocks 13,440,000+**: 0 BTC per block (after 64 halvings)
+- **Blocks 6,930,000+**: 0 BTC per block (integer right-shift exhausts $\text{INITIAL\_SUBSIDY}$ at halving 33)
+- **Blocks 13,440,000+**: still 0 (the $64 \times H$ guard in $\text{GetBlockSubsidy}$ and **F_SubsidyZeroAfter64**; needed because $x \gg 64$ is undefined for 64-bit values)
 
-**Note**: Upper bound: $result \leq 50 \times C$ for all $h$. Genesis: $result = 50 \times C$. After 64 halvings: $result = 0$ for $h \geq 64 \times H$. Integer exhaustion: $result = 0$ for $h \geq 33 \times H$ (integer rounding exhausts INITIAL\_SUBSIDY by halving 33). F_* formulas cover the formally verified postconditions.
+**Note**: Upper bound: $result \leq 50 \times C$ for all $h$. Genesis: $result = 50 \times C$.
+F\_SubsidyZeroAfter64 is the $k \geq 64$ undefined-shift guard. The tight zero is
+Theorem 6.1.2 and **F_SubsidyZeroAfter33**. F_* formulas cover the formally
+verified postconditions.
 
-**Theorem 6.1.1** (Halving Schedule Correctness): The block subsidy halves every 210,000 blocks:
+**Theorem 6.1.1** (Halving Schedule): For $k < 32$:
+$$\text{GetBlockSubsidy}(k \times H + H) =
+\left\lfloor \frac{\text{GetBlockSubsidy}(k \times H)}{2} \right\rfloor$$
 
-$$\forall h \in \mathbb{N}, h < 64 \times H: \text{GetBlockSubsidy}(h + H) = \frac{\text{GetBlockSubsidy}(h)}{2}$$
+The equality $\text{GetBlockSubsidy}(h + H) = \text{GetBlockSubsidy}(h) / 2$
+holds exactly only when the subsidy at halving $k$ is even. It fails at halvings
+$k \in \{9, 12, 13, 14, 15, 16, 18, 25, 27, 29, 32\}$ where truncation discards
+a fractional satoshi.
 
-Where $H = 210,000$ is the halving interval.
+*Proof*: $\text{GetBlockSubsidy}$ uses integer right-shift, so
+$\text{GetBlockSubsidy}((k+1) \times H) = \text{INITIAL\_SUBSIDY} \gg (k+1)
+= \lfloor (\text{INITIAL\_SUBSIDY} \gg k) / 2 \rfloor$.
+When $\text{INITIAL\_SUBSIDY} \gg k$ is odd, floor division discards 0.5 satoshis.
 
-*Proof*: By construction, $\text{GetBlockSubsidy}(h) = 50 \times C \times 2^{-\lfloor h/H \rfloor}$. For $h + H$, we have $\lfloor (h+H)/H \rfloor = \lfloor h/H \rfloor + 1$, so $\text{GetBlockSubsidy}(h + H) = 50 \times C \times 2^{-(\lfloor h/H \rfloor + 1)} = \frac{50 \times C \times 2^{-\lfloor h/H \rfloor}}{2} = \frac{\text{GetBlockSubsidy}(h)}{2}$. This is proven by blvm-spec-lock formal verification.
+**Theorem 6.1.2** (Tight Subsidy Zero):
+$$\forall h \geq 33 \times H: \text{GetBlockSubsidy}(h) = 0$$
+
+*Proof*: Let $k = \lfloor h/H \rfloor$. Then $h \geq 33 \times H$ implies $k \geq 33$.
+$\lfloor 5{,}000{,}000{,}000 / 2^{33} \rfloor = 0$, so
+$\text{INITIAL\_SUBSIDY} \gg k = 0$ for every $k \geq 33$. The $k \geq 64$
+arm of the definition (and **F_SubsidyZeroAfter64**) is a valid but non-tight
+guard for undefined 64-bit shifts.
 
 **Formula** (**F_SubsidyZeroAfter64**):
 
@@ -2010,6 +2042,16 @@ Post-condition holds under `requires(height >= HALVING_INTERVAL * 64)` (see witn
 uses only integer division and comparison — no shifts — so Z3 proves this without
 translator extensions. Full claim: ∀ h ≥ HALVING_INTERVAL × 64, GetBlockSubsidy(h) = 0.
 
+**Formula** (**F_SubsidyZeroAfter33**):
+
+$$\text{result} = 0$$
+
+Tight zero: post-condition holds under
+`requires(height >= HALVING_INTERVAL * 33)` (see witness
+`_verify_f_subsidy_zero_after_33`). The witness unrolls the same 64-arm
+literal-shift `match` as **F_SubsidyPiecewise**; arms $k \geq 33$ are $0$.
+This is not the $k \geq 64$ undefined-shift guard.
+
 **Formula** (**F_SubsidyPiecewise**):
 
 $$result \geq 0 \land result \leq INITIAL\_SUBSIDY$$
@@ -2019,15 +2061,28 @@ body where every shift RHS is a literal (Z3 translates `INITIAL_SUBSIDY >> k` as
 integer division by a power of two for each literal k).
 Full piecewise formula: result = INITIAL_SUBSIDY >> floor(h / HALVING_INTERVAL) for k < 64, else 0.
 
+**Formula** (**F_SubsidyFloorHalf**):
+
+$$\text{result} = 0$$
+
+Integer floor-half: $(\text{INITIAL\_SUBSIDY} \gg (k+1)) - \lfloor (\text{INITIAL\_SUBSIDY} \gg k)/2 \rfloor = 0$.
+Witness `_verify_f_subsidy_floor_half` uses literal $k = 9$ (an odd subsidy
+where real-valued $/2$ fails). The odd-$k$ set stays a remark.
+
 ### 6.2 Total Supply
 
 **TotalSupply**: $\mathbb{N} \rightarrow \mathbb{Z}$
 
 **Note**: At genesis ($h = 0$), $\text{TotalSupply}(0) = \text{GetBlockSubsidy}(0) = 50 \times C = \text{INITIAL\_SUBSIDY}$.
-- Supply limit: $result \leq \text{MAX\_MONEY}$ (critical security invariant; all block subsidies sum to less than 21M BTC)
+- Supply limit: $result \leq \text{MAX\_MONEY}$ (overflow guard; issued supply is strictly below this cap)
 - Monotonicity: $\text{TotalSupply}(h_1) \leq \text{TotalSupply}(h_2)$ for all $h_1 \leq h_2$ (monotonically increasing)
-- Supply convergence: $\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$ (converges to 21M BTC)
-- After 64 halvings: $\text{TotalSupply}(h)$ is constant for $h \geq \text{HALVING\_INTERVAL} \times 64$
+- Supply convergence: $\lim_{h \to \infty} \text{TotalSupply}(h) =
+  2{,}099{,}999{,}997{,}690{,}000$ satoshis $= 20{,}999{,}999.9769$ BTC
+- After 33 halvings: $\text{TotalSupply}(h)$ is constant for
+  $h \geq \text{HALVING\_INTERVAL} \times 33$ (block 6,930,000).
+  TotalSupply is also constant for all $h \geq \text{HALVING\_INTERVAL} \times 64$
+  (the F\_TotalSupplyBound bound), but that bound is not tight — supply stops
+  increasing 31 halvings earlier.
 
 **Formula** (**F_TotalSupplyNonNeg**):
 
@@ -2035,11 +2090,39 @@ $$result \geq 0$$
 
 Non-negativity invariant: the total supply is always non-negative. Verified for the accumulation loop body by `_verify_f_total_supply_non_neg` in `blvm-consensus/src/spec_witnesses.rs`.
 
+**Formula** (**F_TotalSupplyMonoStep**):
+
+$$result \geq supply$$
+
+One-step monotonicity: $supply + subsidy \geq supply$ when $supply \geq 0$ and
+$subsidy \geq 0$. Witness `_verify_f_total_supply_mono_step`. The $\forall$ over
+heights is this step plus **F_SubsidyPiecewise** ($subsidy \geq 0$).
+
 **Formula** (**F_TotalSupplyBound**):
 
 $$result \leq \text{MAX\_MONEY}$$
 
-Supply cap invariant: the total supply never exceeds the 21M BTC hard cap. Verified by `_verify_f_total_supply_bound` in `blvm-consensus/src/spec_witnesses.rs`.
+Overflow-guard invariant: $result \leq \text{MAX\_MONEY}$. Issued supply is strictly below this cap (Theorems 6.2.3 and 6.1.2). Verified by `_verify_f_total_supply_bound` in `blvm-consensus/src/spec_witnesses.rs`.
+
+**Formula** (**F_TotalSupplyExact**):
+
+$$result == 2099999997690000$$
+
+Issued supply after 33 halvings:
+$H \sum_{k=0}^{32} (\text{INITIAL\_SUBSIDY} \gg k) = 2{,}099{,}999{,}997{,}690{,}000$.
+Witness `_verify_f_total_supply_exact` computes that product of literal shifts;
+it does not return the constant and does not call production `total_supply`.
+**F_TotalSupplyBound** remains the first-epoch overflow guard.
+**F_IssuedSupplyBelowCap** is the closed-form $result \leq \text{MAX\_MONEY}$
+for the same unrolled sum (all epochs; no induction).
+
+**Formula** (**F_IssuedSupplyBelowCap**):
+
+$$result \leq MAX\_MONEY$$
+
+Same unrolled sum as **F_TotalSupplyExact**. Issued supply is
+$2{,}310{,}000$ sat below the overflow cap. Witness
+`_verify_f_issued_supply_below_cap`. Does not rewrite **F_TotalSupplyBound**.
 
 $$\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$$
 
@@ -2047,25 +2130,40 @@ $$\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$$
 
 $$\forall h_1, h_2 \in \mathbb{N}, h_1 \leq h_2: \text{TotalSupply}(h_1) \leq \text{TotalSupply}(h_2)$$
 
-*Proof*: By construction, $\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$. Since $\text{GetBlockSubsidy}(i) \geq 0$ for all $i$, adding more terms can only increase the sum. This is proven by blvm-spec-lock formal verification.
+*Proof*: $\text{GetBlockSubsidy}(i) \geq 0$ (**F_SubsidyPiecewise**), so each added term cannot decrease the sum. This is proven by blvm-spec-lock formal verification of **F_TotalSupplyMonoStep**.
 
 **Theorem 6.2.2** (Total Supply Bounded): Total supply never exceeds MAX_MONEY:
 
 $$\forall h \in \mathbb{N}: \text{TotalSupply}(h) \leq \text{MAX\_MONEY}$$
 
-Where $\text{MAX\_MONEY} = 21 \times 10^6 \times C$ is the maximum Bitcoin supply.
+Where $\text{MAX\_MONEY} = 21 \times 10^6 \times C$ is the overflow-guard cap, not the issued supply.
 
-*Proof*: By construction, the total supply converges to $21 \times 10^6 \times C$ as $h \to \infty$, and all block subsidies are non-negative. The implementation uses checked arithmetic to prevent overflow. This is proven by blvm-spec-lock formal verification.
+*Proof*: Every subsidy is non-negative and the integer schedule sums to
+$2{,}099{,}999{,}997{,}690{,}000$ satoshis (Theorem 6.2.3), which is
+$2{,}310{,}000$ satoshis below $\text{MAX\_MONEY}$. Checked arithmetic
+prevents overflow. This is proven by blvm-spec-lock formal verification of
+**F_TotalSupplyExact**, **F_IssuedSupplyBelowCap**, and first-epoch
+**F_TotalSupplyBound**.
 
-**Theorem 6.2.3** (Supply Convergence): $\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$
+**Theorem 6.2.3** (Supply Convergence): $\text{TotalSupply}(h)$ is constant for
+all $h \geq 33 \times H$ and equals exactly $2{,}099{,}999{,}997{,}690{,}000$
+satoshis.
 
-*Proof*: The total supply can be expressed as a sum of geometric series. For each halving period $k$ (where $k = \lfloor h/H \rfloor$), the subsidy is $50 \times C \times 2^{-k}$ for $H$ consecutive blocks.
+*Proof*: $\text{GetBlockSubsidy}$ uses integer right-shift:
+$\text{INITIAL\_SUBSIDY} \gg \lfloor h/H \rfloor$ where
+$\text{INITIAL\_SUBSIDY} = 5{,}000{,}000{,}000$ satoshis.
+At $k = 33$, $\lfloor 5{,}000{,}000{,}000 / 2^{33} \rfloor = 0$, so all halvings
+$k \geq 33$ contribute zero subsidy. The finite integer sum is:
 
-The total supply is:
-$$\text{TotalSupply}(\infty) = \sum_{k=0}^{63} H \times 50 \times C \times 2^{-k} = H \times 50 \times C \times \sum_{k=0}^{63} 2^{-k}$$
+$$\text{TotalSupply}(\infty) = H \sum_{k=0}^{32} \left\lfloor
+\frac{\text{INITIAL\_SUBSIDY}}{2^k} \right\rfloor = 2{,}099{,}999{,}997{,}690{,}000
+\text{ sat}$$
 
-Since $\sum_{k=0}^{63} 2^{-k} = 2 - 2^{-63} \approx 2$ for large $k$:
-$$\text{TotalSupply}(\infty) \approx H \times 50 \times C \times 2 = 210,000 \times 50 \times 10^8 \times 2 = 21 \times 10^6 \times 10^8 = 21 \times 10^6 \times C$$
+This is $2{,}310{,}000$ satoshis short of $\text{MAX\_MONEY}$, arising from
+accumulated floor truncation across 33 halvings. The real-valued series
+$H \times \text{INITIAL\_SUBSIDY} \times 2 = \text{MAX\_MONEY}$ is the
+theoretical limit without integer truncation; the actual integer protocol
+produces a supply that approaches but does not reach that limit.
 
 ### 6.3 Supply Limit Validation
 
@@ -2076,7 +2174,7 @@ $$\text{ValidateSupplyLimit}(h) = \begin{cases}
 \text{invalid} & \text{otherwise}
 \end{cases}$$
 
-Validates that the total supply at height $h$ does not exceed the maximum money supply.
+Validates that the total supply at height $h$ does not exceed the overflow-guard cap $M_{\max}$. Issued supply is strictly below this cap (Theorem 6.2.3).
 
 **Properties**:
 - Supply bound: $\text{result} = (\text{TotalSupply}(h) \leq \text{MAX\_MONEY})$
@@ -2089,7 +2187,19 @@ Validates that the total supply at height $h$ does not exceed the maximum money 
 
 $$\forall h \in \mathbb{N}: \text{ValidateSupplyLimit}(h) = \text{valid} \iff \text{TotalSupply}(h) \leq \text{MAX\_MONEY}$$
 
-*Proof*: By construction, the validation function directly checks the condition. This is proven by blvm-spec-lock formal verification.
+*Proof*: $\text{ValidateSupplyLimit}$ is defined as that biconditional. The
+right-hand side holds by blvm-spec-lock formal verification of
+**F_IssuedSupplyBelowCap**, **F_TotalSupplyExact**, and **F_TotalSupplyBound**.
+
+**Note (MAX\_MONEY Roles).** $M_{\max}$ serves two structurally distinct roles.
+In §5.1 and §13.3.1 it is an overflow guard: output values and their sums are
+checked against $M_{\max}$ to prevent integer overflow in monetary arithmetic.
+In $\text{ValidateSupplyLimit}$ it is a supply bound. In this second role it is
+a non-binding invariant: the true total issuance ($2{,}099{,}999{,}997{,}690{,}000$
+satoshis) is $2{,}310{,}000$ satoshis below $M_{\max}$, so
+$\text{ValidateSupplyLimit}(h) = \text{valid}$ for all $h$ unconditionally.
+The effective supply ceiling is enforced implicitly by the halving schedule
+geometry, not by this predicate.
 
 ### 6.4 Coinbase Detection
 
@@ -2122,7 +2232,7 @@ Where:
 
 $$\forall b = (h, txs) \in \mathcal{B}: \sum_{tx \in txs} \text{IsCoinbase}(tx) = 1$$
 
-*Proof*: By Bitcoin consensus rules, each block must have exactly one coinbase transaction as its first transaction. This is proven by blvm-spec-lock formal verification.
+*Proof*: A valid block's first transaction is the unique coinbase; every later transaction fails $\text{IsCoinbase}$. Block structure is not a Z3 arithmetic obligation.
 
 ### 6.5 Fee Market
 
@@ -2152,11 +2262,11 @@ $$\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in 
 
 $$\text{FeeRate}(tx, us) = \frac{\text{Fee}(tx, us)}{\text{Weight}(tx)}$$
 
-**Theorem 6.3.1** (Fee Non-Negativity): Transaction fees are always non-negative for valid transactions:
+**Theorem 6.5** (Fee Non-Negativity): Transaction fees are always non-negative for valid transactions:
 
 $$\forall tx \in \mathcal{TX}, us \in \mathcal{US}: \text{Fee}(tx, us) \geq 0$$
 
-*Proof*: By construction, $\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in tx.outputs} o.value$. For a valid transaction, the sum of input values must be at least the sum of output values (otherwise the transaction would be invalid). This is proven by blvm-spec-lock formal verification.
+*Proof*: $\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in tx.outputs} o.value$. For a valid transaction, inputs cover outputs. This is proven by blvm-spec-lock formal verification of **F_FeeNonNeg**.
 
 ```mermaid
 flowchart TD
@@ -2211,7 +2321,7 @@ Where:
 
 - **Domain (compact exponent):** Let $e = \text{exponent}$ and $m = \text{mantissa}$. $\text{ExpandTarget}(bits)$ is defined only when $e \in \{3,4,\ldots,32\}$; for $e \notin \{3,\ldots,32\}$, the compact encoding is outside the PoW-valid domain (consensus rejects such headers). For $e \in \{3,\ldots,32\}$ and $m = 0$, $\text{ExpandTarget}(bits) = 0 \in \mathbb{U}_{256}$.
 
-*Proof*: This function converts the compact difficulty representation (used in block headers) to a full 256-bit target value. The encoding is one exponent byte ($e$) together with a 32-bit compact word whose low 23 bits are $m$; bit `0x00800000` of that word is not part of $m$. This is proven by blvm-spec-lock formal verification.
+*Proof*: Compact encoding is one exponent byte ($e$) and a 23-bit mantissa $m$. This is proven by blvm-spec-lock formal verification of **F_ExpandTargetZeroMantissa**, **F_ExpandTargetNonZeroMantissa**, and **F_ExpandTargetExponent**.
 
 **Formula** (**F_ExpandTargetZeroMantissa**):
 $$result = 0$$
@@ -2228,9 +2338,25 @@ $$result \leq 255$$
 
 The exponent byte extracted from compact bits ($\text{exponent} = (bits \gg 24) \mathbin{\&} \text{0xFF}$) is always in the range $[0, 255]$. The bitwise AND with $\text{0xFF}$ masks to exactly 8 bits, bounding the result to at most 255.
 
+**Formula** (**F_RetargetIntervalCount**):
+
+$$result == 2015$$
+
+A $D = 2016$-block window measures $D-1 = 2015$ inter-block intervals
+(`prev_last.time - prev_first.time`). Witness `_verify_f_retarget_interval_count`.
+This is the lockable integer claim. It does not lock a real-valued fixed point.
+
+**Formula** (**F_NextWorkClamped**):
+
+$$result > 0 \land result \leq 486604799$$
+
+$\text{GetNextWorkRequired}$ clamps compact bits to
+$\text{MAX\_TARGET} = \text{0x1d00ffff} = 486604799$ and rejects $0$.
+Witness `_verify_f_next_work_clamped`.
+
 **CompressTarget**: $\mathbb{U}_{256} \rightarrow \mathbb{N}$
 
-Inverse of **ExpandTarget** (Bitcoin Core `GetCompact`): encodes a full 256-bit PoW target as a compact `bits` word. For valid targets, $\text{ExpandTarget}(\text{CompressTarget}(T)) \leq T$ with significant bits preserved (round-trip property).
+Inverse of **ExpandTarget**: encodes a full 256-bit PoW target as a compact `bits` word. For valid targets, $\text{ExpandTarget}(\text{CompressTarget}(T)) \leq T$ with significant bits preserved (round-trip property).
 
 **GetNextWorkRequired**: $\mathcal{H} \times \mathcal{H}^* \times \text{Network} \rightarrow \mathbb{N}$
 
@@ -2303,14 +2429,74 @@ flowchart TD
 $$\forall h \in \mathcal{H}, prev \in \mathcal{H}^*, n \in \text{Network}:$$
 $$\text{GetNextWorkRequired}(h, prev, n) \leq \text{MAX\_TARGET} \land \text{GetNextWorkRequired}(h, prev, n) > 0$$
 
-*Proof*: By construction, the difficulty adjustment algorithm clamps the result to ensure it never exceeds $\text{MAX\_TARGET}$ and is always positive. This is proven by blvm-spec-lock formal verification.
+*Proof*: The algorithm clamps compact bits to $\text{MAX\_TARGET}$ and rejects $0$. This is proven by blvm-spec-lock formal verification of **F_NextWorkClamped**.
 
-**Theorem 7.2** (Difficulty Convergence): Under constant hash rate, the difficulty converges to the target block time.
+**Theorem 7.1.3** (Halving-Difficulty Grand Cycle). The halving interval $H$ and
+the difficulty adjustment interval $D$ are commensurable with ratio $H/D = 625/6$.
+Their least common multiple is:
 
-*Proof*: Let $H$ be the constant hash rate and $D$ be the current difficulty. The expected time for the next block is:
-$$E[T] = \frac{D \times 2^{256}}{H}$$
+$$\text{lcm}(H, D) = 1{,}260{,}000 \text{ blocks} = 6 \text{ halvings}
+= 625 \text{ difficulty epochs}$$
 
-If $E[T] > targetTime$, then $timeSpan > expectedTime$, so $adjustment > 1$, increasing difficulty. If $E[T] < targetTime$, then $adjustment < 1$, decreasing difficulty. This creates a negative feedback loop that converges to $E[T] = targetTime$.
+Within each grand cycle, each halving lands exactly $H \bmod D = 336$ blocks
+deeper into its difficulty epoch than the previous one, stepping through offsets:
+
+$$\{0,\; 336,\; 672,\; 1{,}008,\; 1{,}344,\; 1{,}680\}$$
+
+and returning to offset 0 at the sixth halving. The mid-epoch displacement of
+each halving is therefore not random drift but a deterministic six-phase rotation.
+
+*Proof*: $\gcd(H, D) = \gcd(210{,}000, 2{,}016) = 336$, so
+$\text{lcm}(H, D) = H \times D / 336 = 1{,}260{,}000$. The offset of halving $k$
+into its difficulty epoch is $(k \times H) \bmod D = (k \times 336) \bmod 2{,}016$,
+which cycles with period 6 since $6 \times 336 = 2{,}016 = D$.
+
+**Theorem 7.1.4** (Retarget Convergence Target). Under constant hash rate,
+$\text{GetNextWorkRequired}$ converges to a mean block interval of
+$T_{\text{block}} \times D/(D-1) = 600 \times 2016/2015 \approx 600.2978$
+seconds, not $T_{\text{block}} = 600$ seconds.
+
+*Proof*: $\text{timeSpan}$ in §7.1 is
+$\text{prev\_last}.\text{time} - \text{prev\_first}.\text{time}$ across a
+$D$-block window, so it spans $D-1 = 2{,}015$ inter-block intervals
+(**F_RetargetIntervalCount**). $T_{\text{expected}} = D \times T_{\text{block}}
+= 2{,}016 \times 600$. The adjustment is
+$\text{new\_target} = \text{old\_target} \times \text{timeSpan} /
+T_{\text{expected}}$. At equilibrium the target is constant, so
+$\text{timeSpan} = T_{\text{expected}}$:
+
+$$(D-1) \cdot T = D \cdot T_{\text{block}}
+\implies T = 600 \times 2016/2015 \approx 600.2978\,\text{s}.$$
+
+If blocks are exactly $600$ seconds, $\text{timeSpan}/\text{T\_expected}
+= 2015/2016 < 1$: the target decreases, difficulty increases, and the
+next period is slower. The ratio $600 \times 2015/2016 \approx 599.7024$
+is $\text{timeSpan}/D$ at $600$ seconds per block, not the fixed point.
+The equilibrium offset from $T_{\text{block}}$ is
+
+$$\Delta t_{\text{halving}} = H \times T_{\text{block}} / (D-1)
+= 210{,}000 \times 600 / 2{,}015 \approx 62{,}531 \text{ seconds}
+\approx 17.37 \text{ hours}$$
+
+per halving period, and approximately $23.88$ days over the 33-halving
+issuance schedule to block $6{,}930{,}000$. This identity is not an
+$F_*$ (Z3 is integer).
+
+**Note (BIP94 Scope).** The BIP94 timewarp constraint (testnet4 / $\text{EnforceBIP94}$)
+prevents the first block of a new difficulty period from being more than
+$\text{MAX\_TIMEWARP} = 600$ seconds earlier than the last block of the previous
+period. That is independent of the $D-1$ interval bias in Theorem 7.1.4.
+BIP94 addresses intentional backward manipulation of the period-start timestamp;
+Theorem 7.1.4 describes the unintentional pull toward intervals slightly
+longer than $T_{\text{block}}$. BIP54 (§5.4.9) is the related mainnet-cleanup
+rule on period boundaries.
+
+**Theorem 7.2** (Difficulty Convergence): Under constant hash rate, difficulty
+converges to the fixed point of Theorem 7.1.4
+($T_{\text{block}} \times D/(D-1) = 600 \times 2016/2015$), not to
+$T_{\text{block}} = 600$.
+
+*Proof*: Immediate from Theorem 7.1.4.
 
 ### 7.2 Block Validation
 
@@ -2354,18 +2540,21 @@ $$\text{VerifyUtxoSupply}(us, h) = \text{true} \iff \sum_{utxo \in us} utxo.\tex
 
 Therefore, the total UTXO value increases by exactly the block subsidy plus fees, maintaining the invariant.
 
-**Supply Limit**: For any height $h$:
-$$\text{TotalSupply}(h) \leq 21 \times 10^6 \times C$$
+**Supply Limit** (Theorem 6.2.2): For any height $h$:
+$$\text{TotalSupply}(h) \leq \text{MAX\_MONEY} = 21 \times 10^6 \times C$$
+Issued supply is strictly below this cap (Theorems 6.2.3 and 8.2).
 
-**Theorem 8.2** (Supply Convergence): The total supply converges to exactly 21 million BTC.
+**Theorem 8.2** (Supply Convergence): The total supply is constant for all
+$h \geq 33 \times H$ (block 6,930,000) and equals exactly
+$2{,}099{,}999{,}997{,}690{,}000$ satoshis ($20{,}999{,}999.9769$ BTC).
 
-*Proof*: From [Theorem 6.2.3](#62-total-supply), we have:
-$$\lim_{h \to \infty} \text{TotalSupply}(h) = 21 \times 10^6 \times C$$
-
-Since the subsidy becomes 0 after 64 halvings (height 13,440,000), the total supply is exactly:
-$$\text{TotalSupply}(13,440,000) = 50 \times C \times \sum_{i=0}^{63} \left(\frac{1}{2}\right)^i = 50 \times C \times \frac{1 - (1/2)^{64}}{1 - 1/2} = 100 \times C \times (1 - 2^{-64})$$
-
-For practical purposes, $2^{-64} \approx 0$, so the total supply is effectively 21 million BTC.
+*Proof*: From Theorem 6.2.3. The integer right-shift semantics of
+$\text{GetBlockSubsidy}$ cause the subsidy to reach zero at halving 33, not
+halving 64. The real-valued approximation
+$100 \times C \times (1 - 2^{-64})$ overstates the supply and describes a
+hypothetical non-integer protocol; it does not describe Bitcoin.
+The shortfall of $2{,}310{,}000$ satoshis from $\text{MAX\_MONEY}$ is permanent
+and cannot be recovered.
 
 ### 8.2 Integration and Round-Trip Properties
 
@@ -2445,6 +2634,19 @@ $$\text{ScriptSecure}(s, f) = |s| \leq L_{script} \land \text{OpCount}(s) \leq L
 
 Since each operation takes constant time and the combined stack and altstack size is bounded, script execution is [$O(L_{ops}) = O(1)$](https://en.wikipedia.org/wiki/Big_O_notation) in the worst case.
 
+**Remark (Script Stack Amplification).** Theorem 8.4 establishes $O(L_{\text{ops}})$
+execution time. The constant factor concealed by this bound is non-trivial.
+A single script of maximum size $L_{\text{script}} = 10{,}000$ bytes can materialize
+up to $L_{\text{stack}} \times L_{\text{element}} = 1{,}000 \times 520 = 520{,}000$
+bytes of combined stack state, a 52-fold amplification of wire bytes into in-memory
+state. At P2WSH witness pricing (1 weight unit per witness byte), approximately 400
+maximum-length scripts fit within $W_{\max}$, yielding up to 208 MB of aggregate
+materializable stack per block against a 4 MB wire limit. This is the product of
+the published limits, not a constructed script (a 10{,}000-byte script cannot
+actually fill 1{,}000 elements of 520 bytes). Block weight prices bytes on the
+wire; it makes no direct statement about the stack bytes those wire bytes
+are entitled to produce.
+
 ### 8.4 Merkle Tree Security
 
 #### 8.4.1 ComputeMerkleRoot
@@ -2498,14 +2700,14 @@ Many consensus functions must be deterministic to ensure all nodes reach the sam
 
 $$\forall h \in \mathcal{H}: \text{CheckProofOfWork}(h) \text{ is deterministic}$$
 
-*Proof*: The function uses only the block header and deterministic hash functions (SHA256). Given the same header, it always produces the same result. This is proven by blvm-spec-lock formal verification.
+*Proof*: The function uses only the block header and SHA256. Same header, same digest. Hash determinism is not a Z3 arithmetic obligation.
 
 **Theorem 8.5.2** (Transaction Application Determinism): Transaction application is deterministic:
 
 $$\forall tx \in \mathcal{TX}, us \in \mathcal{US}, h \in \mathbb{N}:$$
 $$\text{ApplyTransaction}(tx, us, h) \text{ is deterministic}$$
 
-*Proof*: Transaction application uses only the transaction, UTXO set, and height. All operations (UTXO removal, UTXO addition) are deterministic. The consistency and correctness of transaction application is proven by blvm-spec-lock formal verification.
+*Proof*: Transaction application uses only the transaction, UTXO set, and height. UTXO insert/remove is not a Z3 arithmetic obligation.
 
 **Theorem 8.5.3** (Block Connection Determinism): Block connection is deterministic:
 
@@ -2743,6 +2945,22 @@ Counts witness-committed signature operations per BIP141/BIP143.
 For transaction $tx$ and witness $w$:
 
 $$\text{CalculateTransactionWeight}(tx, w) = 3 \times \text{BaseSize}(tx) + \text{TotalSize}(tx, w)$$
+
+**Theorem 11.1.1** (Weight Formula Equivalence):
+$$3 \times |\text{non-witness}| + |\text{total}|
+= 4 \times |\text{non-witness}| + |\text{witness}|$$
+
+*Proof*: $|\text{total}| = |\text{non-witness}| + |\text{witness}|$, so
+$3B + (B+W) = 4B + W$. The first form is how a legacy block of $n$ bytes
+maps to the weight cap ($4n$). The second states the pricing: non-witness
+bytes cost 4 weight units, witness bytes cost 1.
+
+**Formula** (**F_WeightEquiv**):
+$$result == 4 * base + wit$$
+
+Under $total = base + wit$, $3 \times base + total = 4 \times base + wit$.
+Witness `_verify_f_weight_equiv`. **F_WeightToVSizeFloor** / **F_WeightToVSizeCeiling**
+are a different claim.
 
 Where:
 - $result = |\text{Serialize}(tx \setminus witness)|$ (transaction size without witness data)
@@ -2997,7 +3215,7 @@ $$\text{ComputeWitnessSignatureHash}(tx, i, scriptCode, amount, type) = \text{SH
 
 **Note**: Hash length: $|\text{ComputeWitnessSignatureHash}(\ldots)| = 32$. Amount binding: signature commits to UTXO value (replay protection across outputs).
 
-**Theorem 11.1.2** (BIP143 Sighash Determinism): For fixed $(tx, i, scriptCode, amount, type)$, $\text{ComputeWitnessSignatureHash}$ is uniquely determined.
+**Theorem 11.1.4** (BIP143 Sighash Determinism): For fixed $(tx, i, scriptCode, amount, type)$, $\text{ComputeWitnessSignatureHash}$ is uniquely determined.
 
 *Proof*: Preimage is deterministic from inputs; SHA256d is deterministic. Thus the hash is unique.
 
@@ -3107,6 +3325,10 @@ s[2..34] & \text{if } \text{ValidateTaprootScript}(s) \\
 For transaction output $o$:
 
 $$\text{IsTaprootOutput}(o) = \text{ValidateTaprootScript}(o.\text{scriptPubkey})$$
+
+**Theorem 11.2.1** (Taproot Empty ScriptSig): Taproot transactions require empty scriptSig for all inputs spending P2TR outputs.
+
+*Proof*: Taproot validation happens entirely through witness data (key path or script path). The scriptPubKey `OP_1 <32-byte-hash>` is not executable as a script, so scriptSig must be empty. If scriptSig is non-empty, validation fails before witness processing.
 
 **Formula** (**F_TaprootOutputScriptLengthInvalid**):
 $$result == false$$
@@ -3285,10 +3507,6 @@ where $ext = \text{LE}_{32}(\text{codesep}) \parallel 0x00 \parallel \text{TapLe
 
 *Proof*: SigMsgBase is deterministic from $(tx, i, us, type)$. TapLeafHash is deterministic. The extension $ext$ is concatenation of fixed-length fields. TaggedHash is a deterministic cryptographic hash. Thus the full computation is deterministic and produces a unique 32-byte hash.
 
-**Theorem 11.2.1** (Taproot Empty ScriptSig): Taproot transactions require empty scriptSig for all inputs spending P2TR outputs.
-
-*Proof*: By construction, Taproot validation happens entirely through witness data (key path or script path). The scriptPubKey `OP_1 <32-byte-hash>` is not executable as a script, so scriptSig must be empty. If scriptSig is non-empty, validation fails before witness processing.
-
 #### 11.2.8 Tapscript Opcodes and SigOp Counting (BIP 342)
 
 **OP_CHECKSIGADD** (opcode 0xba): Tapscript-only opcode for signature aggregation.
@@ -3301,6 +3519,14 @@ n+1 & \text{if } \text{VerifySchnorr}(pk, sig, \text{ComputeTapscriptSignatureHa
 \end{cases}$$
 
 **SigOp cost**: $\text{SigOpCount}(\texttt{0xba}) = 1$ (same as OP_CHECKSIG, OP_CHECKSIGVERIFY).
+
+**Remark (CHECKSIGADD Complexity).** OP_CHECKSIGADD performs one signature
+check per opcode (the designated key only). A 15-of-15 tapscript therefore
+does 15 verifications (one CHECKSIG plus fourteen CHECKSIGADD, or fifteen
+CHECKSIGADD). OP_CHECKMULTISIG is a one-pass greedy walk: each key is consumed
+at most once, so worst-case checks are $O(m)$ in the key count, not a
+cartesian $n \times m$ (15-of-15 is at most 15 ECDSA checks, not 225).
+Tapscript disables CHECKMULTISIG; CHECKSIGADD is the $O(n)$ replacement.
 
 **CountTapscriptSigOps**: $\mathbb{S} \rightarrow \mathbb{N}$; counts CHECKSIG-family opcodes in a tapscript per **BIP 342** (used for the **per-tapscript sigops budget** during Tapscript execution / validation weight). This count is **not** added to the **legacy block** $\text{GetTransactionSigOpCost}$ witness term ($\text{CountWitnessSigOps}$ is witness-v0-only for that cost; see [§5.2.2](#522-signature-operation-counting)).
 
@@ -3396,7 +3622,7 @@ $$\text{VerifyConsensusCommitment}(uc, hs) = \begin{cases}
 $$\forall cs \in [\mathcal{UC}], t \in [0,1]:$$
 $$\text{FindConsensus}(cs, t) = c \iff \lceil |cs| \times t \rceil \text{ peers agree on } c$$
 
-*Proof*: The threshold check uses integer arithmetic: $required = \lceil |cs| \times t \rceil$. If $agreement\_count \geq required$, then $agreement\_count / |cs| \geq t$ (within floating-point precision). This avoids floating-point precision issues and is proven by blvm-spec-lock formal verification.
+*Proof*: The threshold is $required = \lceil |cs| \times t \rceil$ in integer arithmetic. The $\forall$ over rational $t$ and floating-point $\epsilon$ is not a Z3 integer obligation.
 
 **Integer Arithmetic for Threshold Calculations**: To avoid floating-point precision issues in consensus-critical calculations, we use integer arithmetic with ceiling operations. For threshold $t \in [0,1]$ and count $n \in \mathbb{N}$:
 
@@ -3411,7 +3637,7 @@ $$(agreement < required \implies \frac{agreement}{n} < t + \epsilon)$$
 
 Where $\epsilon$ is floating-point precision error (typically $< 10^{-15}$).
 
-*Proof*: By properties of ceiling function and floating-point arithmetic. The integer calculation ensures we err on the side of requiring more agreement, which is safer for consensus. This is proven by blvm-spec-lock formal verification.
+*Proof*: Ceiling of an integer product errs toward a larger $required$. The floating-point $\epsilon$ bound is not a Z3 integer obligation.
 
 **Theorem 11.4.3** (Commitment Verification): UTXO commitments can be verified without full UTXO set:
 
@@ -3462,13 +3688,17 @@ BIP34 requires the coinbase `scriptSig` to push the block height; see **Structur
 **Structure**:
 - **Input**: Single input with $prevout = \text{null}$, $scriptSig = \langle height, OP_0 \rangle$
 - **Output**: Single output with $value = \text{GetBlockSubsidy}(height) + \text{totalFees}$
-- **LockTime**: $nLockTime = height - 1$
+- **LockTime**: $nLockTime = height - 1$ before BIP54; $nLockTime = height - 13$ after BIP54 (§5.4.9)
 
 **Validation Rules**:
 1. **Height Encoding**: $scriptSig$ must encode current block height
 2. **No Inputs**: Must have exactly one input with null $prevout$
 3. **Value Limit**: $value \leq \text{GetBlockSubsidy}(height) + \text{totalFees}$
-4. **LockTime**: Must equal $height - 1$
+4. **LockTime**: $height - 1$ before BIP54; $height - 13$ after BIP54, with coinbase $nSequence \neq 0xffffffff$
+
+**Note**: After BIP54 activation (§5.4.9), the required coinbase $\text{nLockTime}$
+is $\text{height} - 13$ and the coinbase $nSequence \neq 0xffffffff$.
+Before $H_{54}$, $\text{nLockTime} = height - 1$ remains valid.
 
 ### 12.4 Block Template Interface
 
@@ -3512,6 +3742,13 @@ Subsections **[13.3.1](#1331-integer-arithmetic-overflowunderflow)**–**[13.3.5
 
 **Implementation**: Use `checked_add()` and `checked_sub()` for all value arithmetic. Satoshi-denominated amounts must follow the same overflow and range rules as the live network (typically a signed 64-bit money type with `MAX_MONEY` bounds).
 
+**Note**: Fee accumulation across a block (summing fees from all transactions
+to validate the coinbase output) also requires checked arithmetic.
+The theoretical maximum aggregate fee ($\approx 3.79 \times$ `i64::MAX`) exceeds
+the signed 64-bit range if an attacker burned $\text{MAX\_MONEY}$ per transaction at
+minimum weight. Implementations must use checked addition when accumulating
+block fees, not only per-transaction fee arithmetic.
+
 **Formula** (**F_FeeArithmeticNonNeg**):
 $$result \geq 0$$
 
@@ -3540,21 +3777,21 @@ $$\forall x \in \mathcal{D}: \text{deserialize}(\text{serialize}(x)) = x$$
 
 Where $\mathcal{D}$ is the domain of serializable data structures (block headers, transactions, etc.).
 
-*Proof*: By construction, the serialization format is designed to be lossless and reversible. All fields are encoded in a deterministic format that can be exactly reconstructed. This is proven by blvm-spec-lock formal verification.
+*Proof*: Wire fields are encoded in a fixed little-endian / VarInt layout that decode inverts. Byte-string round-trip is not a Z3 arithmetic obligation.
 
 **Theorem 13.3.2.2** (Serialization Determinism): Serialization is deterministic:
 
 $$\forall x \in \mathcal{D}: \text{serialize}(x) \text{ is deterministic (same input always produces same output)}$$
 
-*Proof*: The serialization process uses only the input data structure and deterministic encoding rules. There are no random elements or non-deterministic operations. This is proven by blvm-spec-lock formal verification.
+*Proof*: Serialization uses only the input structure and fixed encoding rules. Determinism of a byte encoder is not a Z3 arithmetic obligation.
 
 #### 13.3.3 Resource Limit Enforcement
 
 **Critical Requirement**: DoS protection limits must be enforced deterministically at exact boundaries.
 
 **Edge Cases**:
-1. **Script Operation Limit**: Exactly 201 operations must fail (limit check happens after increment)
-2. **Stack Size Limit**: Exactly 1000 stack items must fail before next push
+1. **Script Operation Limit**: Increment then compare $c > L_{ops}$ ($L_{ops} = 201$). Exactly 201 counted non-push opcodes must pass; the 202nd must fail. (Base / WitnessV0 only; Tapscript has no 201-op cap.)
+2. **Combined stack limit**: $|stack| + |altstack| \leq L_{stack} = 1000$ must pass; 1001 must fail. The check is the combined size, not the main stack alone.
 3. **Transaction Size**: Exactly 1,000,000 bytes must pass, 1,000,001 must fail
 4. **Coinbase ScriptSig**: Must be exactly 2-100 bytes (boundary validation)
 
@@ -3574,6 +3811,20 @@ Distance below the 100-byte maximum for a valid coinbase scriptSig: $result = 10
 $$result \geq 0$$
 
 Stack headroom before the 1000-item limit: $result = 999 - depth \geq 0$ when $depth < 1000$.
+
+**Formula** (**F_StackCombinedSafe**):
+$$result \geq 0$$
+
+Combined-stack headroom: $result = 1000 - (stack + alt) \geq 0$ when
+$stack \geq 0$, $alt \geq 0$, and $stack + alt \leq 1000$. Witness
+`_verify_f_stack_combined_safe`. **F_StackSizeSafe** is one stack only.
+
+**Formula** (**F_StackCombinedFail**):
+$$result \geq 0$$
+
+Overflow past the combined limit: $result = (stack + alt) - 1001 \geq 0$ when
+$stack + alt \geq 1001$. Witness `_verify_f_stack_combined_fail`.
+1000 combined items pass; 1001 fail.
 
 #### 13.3.4 Parser Determinism
 
@@ -3596,7 +3847,7 @@ $$\forall lt \in \mathbb{N}_{32}:$$
 $$\text{DecodeLocktime}(\text{EncodeLocktime}(lt)) = lt \land$$
 $$\text{LocktimeType}(lt) \text{ is consistent for CLTV and CSV}$$
 
-*Proof*: Both BIP65 and BIP112 use the same locktime encoding/decoding and type determination functions. The shared implementation ensures consistency. This is proven by blvm-spec-lock formal verification.
+*Proof*: CLTV and CSV share $\text{LocktimeType}$. Type determination is proven by blvm-spec-lock formal verification of **F_LocktimeTypeIsHeight** and **F_LocktimeTypeIsTimestamp**. Encode/decode round-trip is not a Z3 arithmetic obligation.
 
 **Formula** (**F_LocktimeTypeIsHeight**):
 $$result \geq 0$$
@@ -3613,14 +3864,14 @@ Excess above the block-height/timestamp boundary: $result = lt - 500{,}000{,}000
 $$\forall tx \in \mathcal{TX}, script \in \mathcal{SC}, lt \in \mathbb{N}_{32}:$$
 $$\text{ExecuteScript}(script, tx, lt) \text{ uses consistent locktime validation}$$
 
-*Proof*: Script execution uses the same locktime validation functions as standalone locktime checks, ensuring consistency between script-level and transaction-level locktime validation. This is proven by blvm-spec-lock formal verification.
+*Proof*: Script CLTV uses the same $\text{BIP65Check}$ as transaction locktime. This is proven by blvm-spec-lock formal verification of **F_BIP65Passes**, **F_BIP65PassesZeroZero**, **F_BIP65PassesTimestamp**, **F_BIP65RejectsTypeMismatch**, **F_BIP65RejectsTypeMismatchReverse**, **F_BIP65RejectsValueTooLow**, and **F_BIP65RejectsTimestampValueTooLow**.
 
 **Theorem 13.3.5.3** (Economic/Block Integration): Economic rules integrate correctly with block validation:
 
 $$\forall b \in \mathcal{B}, h \in \mathbb{N}:$$
 $$\text{ConnectBlock}(b, us, h) \text{ enforces economic invariants (subsidy, fees, supply limits)}$$
 
-*Proof*: Block connection validates economic rules (subsidy calculation, fee validation, supply limits) as part of the block validation process, ensuring economic correctness is maintained. This is proven by blvm-spec-lock formal verification.
+*Proof*: ConnectBlock applies subsidy, fee, and supply checks. Those checks are proven by blvm-spec-lock formal verification of **F_SubsidyZeroAfter33**, **F_FeeNonNeg**, and **F_TotalSupplyBound**.
 
 #### 13.3.6 Spec-lock Formula Anchor Witness
 

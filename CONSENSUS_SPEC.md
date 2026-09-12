@@ -180,8 +180,8 @@ Structural and local validation rules for transactions.
 - **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### TX-006
-- **Rule:** Input count MUST NOT exceed M_max_inputs and output count MUST NOT exceed M_max_outputs.
-- **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction Properties
+- **Rule:** CheckTransaction MUST NOT impose a maximum input or output count. The per-transaction consensus bound is stripped size × 4 ≤ W_max (TX-007).
+- **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction (no $M_{max\_inputs}$ / $M_{max\_outputs}$)
 - **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### TX-007
@@ -231,7 +231,7 @@ Structural and local validation rules for transactions.
 
 ### TX-016
 - **Rule:** BIP143 witness sighash MUST bind prevouts, sequences, outpoint, scriptCode, amount, outputs, locktime, and sighash type.
-- **Specification:** [§11.1.9](PROTOCOL.md#1119-bip143-witness-sighash-computewitnesssignaturehash) ComputeWitnessSignatureHash, **Theorem 11.1.2**
+- **Specification:** [§11.1.9](PROTOCOL.md#1119-bip143-witness-sighash-computewitnesssignaturehash) ComputeWitnessSignatureHash, **Theorem 11.1.4**
 - **Implementation:** `transaction_hash::calculate_bip143_sighash` — Z3-verified (spec_locked)
 
 ### TX-017
@@ -312,9 +312,9 @@ Script execution, flags, and signature-operation counting.
 - **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
 
 ### SC-002
-- **Rule:** Script execution MUST fail if combined main and alt stack size exceeds L_stack (1,000).
-- **Specification:** [§5.2](PROTOCOL.md#52-script-execution) EvalScript, [§4.3](PROTOCOL.md#43-script-constants) L_stack, [§13.3.3](PROTOCOL.md#1333-resource-limit-enforcement) **F_StackSizeSafe**
-- **Implementation:** `script::eval_script` — Z3-verified (F_StackSizeSafe)
+- **Rule:** Script execution MUST fail if combined main and alt stack size exceeds L_stack (1,000). 1,000 combined items MUST pass; 1,001 MUST fail. The check is the combined size, not the main stack alone.
+- **Specification:** [§5.2](PROTOCOL.md#52-script-execution) EvalScript, [§4.3](PROTOCOL.md#43-script-constants) L_stack, [§13.3.3](PROTOCOL.md#1333-resource-limit-enforcement) **F_StackSizeSafe**, **F_StackCombinedSafe**, **F_StackCombinedFail**
+- **Implementation:** `script::eval_script` — Z3-verified (F_* formulas)
 
 ### SC-003
 - **Rule:** Base and WitnessV0 scripts MUST NOT exceed L_script (10,000) bytes or L_ops (201) non-push opcodes.
@@ -393,7 +393,7 @@ Script execution, flags, and signature-operation counting.
 
 ### SC-018
 - **Rule:** OP_CHECKLOCKTIMEVERIFY (BIP65) MUST reject when locktime types mismatch; MUST require tx.lockTime ≥ stack value when types match.
-- **Specification:** [§5.4.7](PROTOCOL.md#547-bip65-op_checklocktimeverify-cltv) BIP65Check, **Theorem 5.4.7.3–5.4.7.4**, **F_BIP65Passes**, **F_BIP65Rejects***
+- **Specification:** [§5.4.7](PROTOCOL.md#547-bip65-op_checklocktimeverify-cltv) BIP65Check, **Theorem 5.4.7.3–5.4.7.4**, **F_BIP65Passes**, **F_BIP65PassesZeroZero**, **F_BIP65Rejects***
 - **Implementation:** `locktime::check_bip65` — Z3-verified (F_* formulas)
 
 ### SC-019
@@ -490,8 +490,8 @@ Height-dependent, time-dependent, and sequence-lock rules.
 
 ### CTX-006
 - **Rule:** Height-based sequence locks MUST use coin height + value − 1.
-- **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) CalculateSequenceLocks
-- **Implementation:** `sequence_locks::calculate_sequence_locks` — Z3-verified (spec_locked)
+- **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) CalculateSequenceLocks, **F_SequenceLockHeightAdd**
+- **Implementation:** `sequence_locks::calculate_sequence_locks` — Z3-verified (F_* formulas)
 
 ### CTX-007
 - **Rule:** EvaluateSequenceLocks MUST return true iff block height > min_height (when set) AND block time > min_time (when set).
@@ -499,9 +499,9 @@ Height-dependent, time-dependent, and sequence-lock rules.
 - **Implementation:** `sequence_locks::evaluate_sequence_locks` — Z3-verified (F_* formulas)
 
 ### CTX-008
-- **Rule:** Median time past MUST be the median of the last up-to-11 block timestamps (BIP113).
-- **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast
-- **Implementation:** `bip113::get_median_time_past` — Z3-verified (spec_locked)
+- **Rule:** Median time past MUST be T[⌊|T|/2⌋] after sorting the last up-to-11 timestamps (BIP113). When |T| is even this is the upper middle element, not the mean of the two central values.
+- **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast, **F_MtpIndex**, **F_MtpIndexN4**, **F_MtpIndexN11**
+- **Implementation:** `bip113::get_median_time_past` — Z3-verified (spec_locked + F_* formulas)
 
 ### CTX-009
 - **Rule:** Mempool admission MUST require absolute and relative locktimes satisfied at chain tip.
@@ -509,9 +509,9 @@ Height-dependent, time-dependent, and sequence-lock rules.
 - **Implementation:** `mempool::is_final_tx` — Z3-verified (spec_locked)
 
 ### CTX-010
-- **Rule:** Difficulty retarget timespan MUST be clamped to [T_expected/4, 4×T_expected] (factor-of-4 bound).
-- **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) GetNextWorkRequired, **Theorem 7.1**
-- **Implementation:** `pow::get_next_work_required` — Z3-verified (Tier 1)
+- **Rule:** Difficulty retarget timespan MUST be last−first over the completed D-block period (D−1 = 2015 intervals) and MUST be clamped to [T_expected/4, 4×T_expected] (factor-of-4 bound).
+- **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) GetNextWorkRequired, **Theorem 7.1**, **F_RetargetIntervalCount**
+- **Implementation:** `pow::get_next_work_required` — Z3-verified (Tier 1 + F_* formulas)
 
 ### CTX-011
 - **Rule:** When EnforceBIP94(n), first block of new difficulty period MUST have time ≥ prev.time − 600.
@@ -729,8 +729,8 @@ Numeric limits referenced by consensus rules (Orange Paper [§4](PROTOCOL.md#4-c
 Subsidy, supply, and fee rules (Orange Paper [§6](PROTOCOL.md#6-economic-model)).
 
 ### ECO-001
-- **Rule:** Block subsidy MUST be 50×C×2^(−⌊h/H⌋) for h < 64×H; MUST be 0 for h ≥ 64×H.
-- **Specification:** [§6.1](PROTOCOL.md#61-block-subsidy) GetBlockSubsidy, **Theorem 6.1.1**, **F_SubsidyZeroAfter64**, **F_SubsidyPiecewise**
+- **Rule:** Block subsidy MUST equal INITIAL_SUBSIDY right-shifted by k = ⌊h/H⌋ (integer `>>`, not the real-valued form 50×C×2^(−k)). The result MUST be 0 for every height h ≥ 33×H. The k ≥ 64 arm MUST return 0 because a 64-bit right-shift is undefined.
+- **Specification:** [§6.1](PROTOCOL.md#61-block-subsidy) GetBlockSubsidy, **Theorem 6.1.1**, **Theorem 6.1.2**, **F_SubsidyZeroAfter33**, **F_SubsidyZeroAfter64**, **F_SubsidyPiecewise**, **F_SubsidyFloorHalf**
 - **Implementation:** `economic::get_block_subsidy` — Z3-verified (Tier 1 + F_* formulas)
 
 ### ECO-002
@@ -739,24 +739,29 @@ Subsidy, supply, and fee rules (Orange Paper [§6](PROTOCOL.md#6-economic-model)
 - **Implementation:** `economic::total_supply` — Z3-verified (spec_locked)
 
 ### ECO-003
-- **Rule:** TotalSupply MUST NOT exceed MAX_MONEY (21M BTC) at any height.
-- **Specification:** [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.2**, **F_TotalSupplyBound**
+- **Rule:** TotalSupply MUST NOT exceed MAX_MONEY at any height. MAX_MONEY is the overflow-guard cap, not the issued supply.
+- **Specification:** [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.2**, **F_TotalSupplyBound**, **F_IssuedSupplyBelowCap**
 - **Implementation:** `economic::total_supply`, `economic::validate_supply_limit` — Z3-verified (F_* formulas)
 
 ### ECO-004
 - **Rule:** TotalSupply MUST be monotonically non-decreasing in height.
-- **Specification:** [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.1**, **F_TotalSupplyNonNeg**
+- **Specification:** [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.1**, **F_TotalSupplyNonNeg**, **F_TotalSupplyMonoStep**
 - **Implementation:** `economic::total_supply` — Z3-verified (F_* formulas)
 
 ### ECO-005
 - **Rule:** ValidateSupplyLimit(h) MUST pass iff TotalSupply(h) ≤ MAX_MONEY.
-- **Specification:** [§6.3](PROTOCOL.md#63-supply-limit-validation) **Theorem 6.3.1**
+- **Specification:** [§6.3](PROTOCOL.md#63-supply-limit-validation) **Theorem 6.3.1**, **F_TotalSupplyBound**, **F_TotalSupplyExact**, **F_IssuedSupplyBelowCap**
 - **Implementation:** `economic::validate_supply_limit` — Z3-verified (spec_locked)
 
 ### ECO-006
 - **Rule:** Valid transaction fees MUST be ≥ 0 (inputs ≥ outputs).
 - **Specification:** [§6.5](PROTOCOL.md#65-fee-market) CalculateFee, **F_FeeNonNeg**, **Theorem 6.5**
 - **Implementation:** `economic::calculate_fee` — Z3-verified (F_* formulas)
+
+### ECO-007
+- **Rule:** For every height h ≥ 33×H, TotalSupply(h) MUST equal 2,099,999,997,690,000 satoshis.
+- **Specification:** [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.3**, **F_TotalSupplyExact**
+- **Implementation:** `economic::total_supply` — Z3-verified (F_TotalSupplyExact); production 64-epoch loop is body-locked
 
 ---
 
@@ -776,8 +781,8 @@ Difficulty encoding and validation (Orange Paper [§7](PROTOCOL.md#7-proof-of-wo
 
 ### POW-003
 - **Rule:** GetNextWorkRequired result MUST be > 0 and ≤ MAX_TARGET.
-- **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) **Theorem 7.1.2**
-- **Implementation:** `pow::get_next_work_required` — Z3-verified (Tier 1)
+- **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) **Theorem 7.1.2**, **F_NextWorkClamped**
+- **Implementation:** `pow::get_next_work_required` — Z3-verified (F_* formulas)
 
 ### POW-004
 - **Rule:** CompressTarget MUST be the inverse of ExpandTarget for valid compact encodings.
@@ -796,9 +801,9 @@ Difficulty encoding and validation (Orange Paper [§7](PROTOCOL.md#7-proof-of-wo
 Segregated witness rules (Orange Paper [§11.1](PROTOCOL.md#111-segregated-witness-segwit)).
 
 ### SEG-001
-- **Rule:** Transaction weight MUST equal 3 × baseSize + totalSize (BIP141).
-- **Specification:** [§11.1.1](PROTOCOL.md#1111-weight-and-size-calculations) CalculateTransactionWeight
-- **Implementation:** `segwit::calculate_transaction_weight`, `witness::calculate_transaction_weight_segwit` — Z3-verified (spec_locked)
+- **Rule:** Transaction weight MUST equal 3 × baseSize + totalSize (BIP141), which MUST equal 4 × baseSize + witnessSize when totalSize = baseSize + witnessSize.
+- **Specification:** [§11.1.1](PROTOCOL.md#1111-weight-and-size-calculations) CalculateTransactionWeight, **Theorem 11.1.1**, **F_WeightEquiv**
+- **Implementation:** `segwit::calculate_transaction_weight`, `witness::calculate_transaction_weight_segwit` — Z3-verified (spec_locked + F_* formulas)
 
 ### SEG-002
 - **Rule:** Virtual size MUST satisfy weight/4 ≤ vsize ≤ weight/4 + 1.
@@ -1024,15 +1029,15 @@ HDR-008 node wiring; UTX-005 `VerifyUtxoSupply`; BIP54 BLK-012–014; ConnectBlo
 
 | Metric | Count |
 |--------|------:|
-| **Total rules** | **161** |
-| **With Orange Paper backing** | **161** |
+| **Total rules** | **160** |
+| **With Orange Paper backing** | **160** |
 | **UNIMPLEMENTED gaps (all crates)** | **0** |
 | **UNSPECIFIED / partial** | **0** |
 | **Activation height tables** | **4** ([§8 of this register](#8-activation-height-tables)) |
 
 **Tier 1 Z3 functions:** `get_block_subsidy`, `expand_target`, `compress_target`, `check_proof_of_work`, `get_next_work_required`, `compute_block_tx_ids_spec`, `calculate_chain_work`, `should_reorganize`
 
-**F_* formula witnesses (Z3):** 59 functions in `spec_witnesses.rs` covering subsidy, fees, headers, BIP pre-activation passes, CLTV, CSV, SegWit, Taproot activation, and engineering invariants.
+**F_* formula witnesses (Z3):** 73 functions in `spec_witnesses.rs` covering subsidy (including tight zero at 33H, exact issued supply, issued-below-cap, and one-step monotonicity), fees, headers, BIP pre-activation passes, CLTV (including `(0,0)` pass), CSV, SegWit, Taproot activation, MTP index (n=2/4/11), combined stack limits, sequence-lock height add, next-work clamp, and engineering invariants.
 
 ---
 
