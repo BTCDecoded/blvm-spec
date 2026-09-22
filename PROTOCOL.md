@@ -607,6 +607,134 @@ Where $\text{IsPushOpcode}(op) \iff op \in \text{PushOpcode}$, and $\text{PushOp
 - OP_PUSHDATA2: $op = 0x4d$ (followed by 2-byte length)
 - OP_PUSHDATA4: $op = 0x4e$ (followed by 4-byte length)
 - OP_0: $op = 0x00$ (push empty array)
+- OP_1NEGATE: $op = 0x4f$
+- OP_RESERVED: $op = 0x50$
+- OP_1 through OP_16: $0x51 \leq op \leq 0x60$
+
+An opcode is an immediate success when it equals $0x50$ or $0x62$, or lies in $0x7e \leq op \leq 0x81$, $0x83 \leq op \leq 0x86$, $0x89 \leq op \leq 0x8a$, $0x8d \leq op \leq 0x8e$, $0x95 \leq op \leq 0x99$, or $0xbb \leq op \leq 0xfe$.
+
+**Opcode table** (name, byte, minimum stack, operation word):
+
+| opcode | byte | stack | operation |
+|---|---|---|---|
+| OP_0 | 0x00 | 0 | push |
+| OP_FALSE | 0x00 | 0 | push |
+| OP_PUSHDATA1 | 0x4c | 0 | push |
+| OP_PUSHDATA2 | 0x4d | 0 | push |
+| OP_PUSHDATA4 | 0x4e | 0 | push |
+| OP_1NEGATE | 0x4f | 0 | pushneg |
+| OP_RESERVED | 0x50 | 0 | disabled |
+| OP_1 | 0x51 | 0 | pushn |
+| OP_TRUE | 0x51 | 0 | pushn |
+| OP_2 | 0x52 | 0 | pushn |
+| OP_3 | 0x53 | 0 | pushn |
+| OP_4 | 0x54 | 0 | pushn |
+| OP_5 | 0x55 | 0 | pushn |
+| OP_6 | 0x56 | 0 | pushn |
+| OP_7 | 0x57 | 0 | pushn |
+| OP_8 | 0x58 | 0 | pushn |
+| OP_9 | 0x59 | 0 | pushn |
+| OP_10 | 0x5a | 0 | pushn |
+| OP_11 | 0x5b | 0 | pushn |
+| OP_12 | 0x5c | 0 | pushn |
+| OP_13 | 0x5d | 0 | pushn |
+| OP_14 | 0x5e | 0 | pushn |
+| OP_15 | 0x5f | 0 | pushn |
+| OP_16 | 0x60 | 0 | pushn |
+| OP_NOP | 0x61 | 0 | nop |
+| OP_VER | 0x62 | 0 | disabled |
+| OP_IF | 0x63 | 1 | control |
+| OP_NOTIF | 0x64 | 1 | control |
+| OP_VERIF | 0x65 | 0 | disabled |
+| OP_VERNOTIF | 0x66 | 0 | disabled |
+| OP_ELSE | 0x67 | 0 | control |
+| OP_ENDIF | 0x68 | 1 | control |
+| OP_VERIFY | 0x69 | 1 | verify |
+| OP_RETURN | 0x6a | 0 | fail |
+| OP_TOALTSTACK | 0x6b | 1 | altstack |
+| OP_FROMALTSTACK | 0x6c | 1 | altstack |
+| OP_2DROP | 0x6d | 2 | drop |
+| OP_2DUP | 0x6e | 2 | 2dup |
+| OP_3DUP | 0x6f | 3 | 3dup |
+| OP_2OVER | 0x70 | 4 | 2over |
+| OP_2ROT | 0x71 | 6 | 2rot |
+| OP_2SWAP | 0x72 | 4 | 2swap |
+| OP_IFDUP | 0x73 | 1 | dup |
+| OP_DEPTH | 0x74 | 0 | depth |
+| OP_DROP | 0x75 | 1 | drop |
+| OP_DUP | 0x76 | 1 | dup |
+| OP_NIP | 0x77 | 2 | nip |
+| OP_OVER | 0x78 | 2 | over |
+| OP_PICK | 0x79 | 1 | pick |
+| OP_ROLL | 0x7a | 1 | roll |
+| OP_ROT | 0x7b | 3 | rot |
+| OP_SWAP | 0x7c | 2 | swap |
+| OP_TUCK | 0x7d | 2 | tuck |
+| OP_CAT | 0x7e | 0 | disabled |
+| OP_SUBSTR | 0x7f | 0 | disabled |
+| OP_LEFT | 0x80 | 0 | disabled |
+| OP_RIGHT | 0x81 | 0 | disabled |
+| OP_SIZE | 0x82 | 1 | size |
+| OP_INVERT | 0x83 | 0 | disabled |
+| OP_AND | 0x84 | 0 | disabled |
+| OP_OR | 0x85 | 0 | disabled |
+| OP_XOR | 0x86 | 0 | disabled |
+| OP_EQUAL | 0x87 | 2 | equal |
+| OP_EQUALVERIFY | 0x88 | 2 | equalverify |
+| OP_RESERVED1 | 0x89 | 0 | disabled |
+| OP_RESERVED2 | 0x8a | 0 | disabled |
+| OP_1ADD | 0x8b | 1 | add1 |
+| OP_1SUB | 0x8c | 1 | sub1 |
+| OP_2MUL | 0x8d | 0 | disabled |
+| OP_2DIV | 0x8e | 0 | disabled |
+| OP_NEGATE | 0x8f | 1 | neg |
+| OP_ABS | 0x90 | 1 | abs |
+| OP_NOT | 0x91 | 1 | not |
+| OP_0NOTEQUAL | 0x92 | 1 | nz |
+| OP_ADD | 0x93 | 2 | add |
+| OP_SUB | 0x94 | 2 | sub |
+| OP_MUL | 0x95 | 0 | disabled |
+| OP_DIV | 0x96 | 0 | disabled |
+| OP_MOD | 0x97 | 0 | disabled |
+| OP_LSHIFT | 0x98 | 0 | disabled |
+| OP_RSHIFT | 0x99 | 0 | disabled |
+| OP_BOOLAND | 0x9a | 2 | and |
+| OP_BOOLOR | 0x9b | 2 | or |
+| OP_NUMEQUAL | 0x9c | 2 | equal |
+| OP_NUMEQUALVERIFY | 0x9d | 2 | equal |
+| OP_NUMNOTEQUAL | 0x9e | 2 | notequal |
+| OP_LESSTHAN | 0x9f | 2 | less |
+| OP_GREATERTHAN | 0xa0 | 2 | greater |
+| OP_LESSTHANOREQUAL | 0xa1 | 2 | le |
+| OP_GREATERTHANOREQUAL | 0xa2 | 2 | ge |
+| OP_MIN | 0xa3 | 2 | min |
+| OP_MAX | 0xa4 | 2 | max |
+| OP_WITHIN | 0xa5 | 3 | within |
+| OP_RIPEMD160 | 0xa6 | 1 | ripemd160 |
+| OP_SHA1 | 0xa7 | 1 | sha1 |
+| OP_SHA256 | 0xa8 | 1 | sha256 |
+| OP_HASH160 | 0xa9 | 1 | hash160 |
+| OP_HASH256 | 0xaa | 1 | hash256 |
+| OP_CODESEPARATOR | 0xab | 0 | nop |
+| OP_CHECKSIG | 0xac | 2 | checksig |
+| OP_CHECKSIGVERIFY | 0xad | 2 | checksig |
+| OP_CHECKMULTISIG | 0xae | 2 | checksig |
+| OP_CHECKMULTISIGVERIFY | 0xaf | 2 | checksig |
+| OP_NOP1 | 0xb0 | 0 | nop |
+| OP_CHECKLOCKTIMEVERIFY | 0xb1 | 1 | bip65 |
+| OP_NOP2 | 0xb1 | 0 | nop |
+| OP_CHECKSEQUENCEVERIFY | 0xb2 | 1 | csv |
+| OP_NOP3 | 0xb2 | 0 | nop |
+| OP_CHECKTEMPLATEVERIFY | 0xb3 | 0 | nop |
+| OP_NOP4 | 0xb3 | 0 | nop |
+| OP_NOP5 | 0xb4 | 0 | nop |
+| OP_NOP6 | 0xb5 | 0 | nop |
+| OP_NOP7 | 0xb6 | 0 | nop |
+| OP_NOP8 | 0xb7 | 0 | nop |
+| OP_NOP9 | 0xb8 | 0 | nop |
+| OP_NOP10 | 0xb9 | 0 | nop |
+| OP_CHECKSIGADD | 0xba | 3 | sigadd |
+| OP_CHECKSIGFROMSTACK | 0xcc | 0 | nop |
 
 **P2SH Detection**: $\text{IsP2SH}(spk) = (|spk| = 23) \land (spk[0] = 0xa9) \land (spk[1] = 0x14) \land (spk[22] = 0x87)$
 
@@ -981,6 +1109,7 @@ $$\text{ApplyTransaction}(tx, us, h) = \text{ApplyTransactionWithId}(tx, \text{C
 **Property (overlay equivalence)**: For all $tx, us$, `apply_transaction_to_overlay` on the UTXO overlay layer produces the same final UTXO set as **ApplyTransaction**($tx, us$).
 
 $$\text{ConnectBlock}(b = (h, txs), us, \text{height}) = \begin{cases}
+(\text{invalid}, us) & \text{if } \exists tx \in txs : \neg\text{CheckFinalTx}(tx, \text{height}) \\
 (\text{invalid}, us) & \text{if } \neg\text{ValidBlockHeader}(h) \\
 (\text{invalid}, us) & \text{if } \exists tx \in txs : \text{CheckTransaction}(tx) \neq \text{valid} \\
 (\text{invalid}, us) & \text{if } \exists tx \in txs : \text{CheckTxInputs}(tx, us, \text{height}) = (\text{invalid}, \cdot) \\
@@ -1080,11 +1209,12 @@ stateDiagram-v2
 
 Implementation contract for **ConnectBlock** (`connect_block_inner` in `blvm-consensus`):
 
-1. Validate block header (H01, H03–H06; H02/H07/H08 via callers)
-2. BIP checks (BIP30, BIP34, BIP54, …) gated by activation
-3. Transaction loop: CheckTransaction, CheckTxInputs, VerifyScript, sigop/weight limits
-4. CheckCoinbaseSubsidy (coinbase output ≤ subsidy + fees)
-5. ApplyTransaction to UTXO set; optional VerifyUtxoSupply invariant (debug)
+1. CheckFinalTx for every transaction (a non-final transaction is invalid before later checks)
+2. Validate block header (H01, H03–H06; H02/H07/H08 via callers)
+3. BIP checks (BIP30, BIP34, BIP54, …) gated by activation
+4. Transaction loop: CheckTransaction, CheckTxInputs, VerifyScript, sigop limit, and the consensus weight cap (weight above 4000000)
+5. CheckCoinbaseSubsidy (coinbase output ≤ subsidy + fees) and the witness commitment when a witness is present
+6. ApplyTransaction to UTXO set; optional VerifyUtxoSupply invariant (debug)
 
 ### 5.4 BIP Validation Rules
 

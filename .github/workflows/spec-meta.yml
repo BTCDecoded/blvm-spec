@@ -8,6 +8,15 @@ on:
       - 'ARCHITECTURE.md'
       - 'THE_ORANGE_PAPER.md'
       - 'scripts/spec-meta.mjs'
+      - 'SPEC_META.json'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'PROTOCOL.md'
+      - 'ARCHITECTURE.md'
+      - 'THE_ORANGE_PAPER.md'
+      - 'scripts/spec-meta.mjs'
+      - 'SPEC_META.json'
   release:
     types: [published]
   workflow_dispatch:
@@ -18,6 +27,7 @@ permissions:
 jobs:
   update-spec-meta:
     name: Update SPEC_META.json
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, Linux, X64, builds]
 
     steps:

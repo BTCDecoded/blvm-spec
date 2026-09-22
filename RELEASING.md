@@ -44,7 +44,7 @@ Consumers **must** record `source_sha` (and `content_sha256` when present) in th
 
 ## `SPEC_META.json`
 
-`SPEC_META.json` at the repo root is **generated automatically** by CI (via `scripts/spec-meta.mjs`) on every push to `main` and on release. Do **not** edit it by hand — CI will fail if the committed file diverges from the script output.
+`SPEC_META.json` at the repo root is **generated automatically** by CI (via `scripts/spec-meta.mjs`) on every push to `main` and on release. Do **not** edit it by hand. Pull requests fail when `content_sha256` does not match `PROTOCOL.md`, `ARCHITECTURE.md`, and `THE_ORANGE_PAPER.md`. The git snapshot fields (`sha`, `git_describe`, `version`, `ref`) are refreshed by that main-branch job; they name the commit the generator ran on, not the commit that contains this file.
 
 To regenerate locally before pushing:
 ```bash

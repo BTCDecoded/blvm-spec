@@ -4,7 +4,8 @@
  *
  * Fields:
  *   version         – semver tag if HEAD is tagged, else "0.0.0-dev+<shortsha>"
- *   git_describe    – output of `git describe --tags --always --dirty`
+ *   git_describe    – output of `git describe --tags --always`
+ *                     (`--dirty` is omitted: a dirty worktree is not a snapshot)
  *   sha             – full HEAD commit SHA
  *   ref             – current branch or tag ref (e.g. "main", "v1.0.0")
  *   content_sha256  – SHA-256 over the concatenated bytes of the canonical spec files
@@ -92,7 +93,7 @@ function computeContentHash() {
 // ---------------------------------------------------------------------------
 
 const sha = git("rev-parse HEAD");
-const gitDescribe = git("describe --tags --always --dirty");
+const gitDescribe = git("describe --tags --always");
 
 const meta = {
   version: resolveVersion(),
@@ -114,8 +115,10 @@ if (VERIFY_MODE) {
   }
   const existing = readFileSync(OUTPUT_PATH, "utf8");
   const existingParsed = JSON.parse(existing);
-  // Fields that must be stable (not timestamp-dependent)
-  const STABLE = ["version", "git_describe", "sha", "ref", "content_sha256"];
+  // The content hash is the spec bytes. version, sha, git_describe, and ref
+  // name the commit the generator ran on, which is the parent of the
+  // `[skip ci]` meta commit, so they do not equal HEAD when this file is read.
+  const STABLE = ["content_sha256"];
   let drift = false;
   for (const key of STABLE) {
     if (existingParsed[key] !== meta[key]) {
