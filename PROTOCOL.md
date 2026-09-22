@@ -326,6 +326,12 @@ flowchart TD
 - Total output sum: $result = \text{valid} \implies \sum_{o \in tx.\text{outputs}} o.\text{value} \leq M_{\text{max}}$
 - Stripped-size weight (consensus): $result = \text{valid} \implies 4 \cdot \text{CalculateTransactionSize}(tx) \leq W_{\max}$ (same $W_{\max}$ as block weight cap, §11.1.1; see **CalculateTransactionSize** below)
 - No duplicate prevouts: $result = \text{valid} \implies \forall i,j \in tx.\text{inputs}: i \neq j \implies i.\text{prevout} \neq j.\text{prevout}$
+
+**Formula** (**F_NoDuplicateInputs**):
+$$result == 0$$
+
+When two inputs share a prevout (txid and vout), CheckTransaction rejects. `result == 0` is that rejection. A match on txid alone is not a duplicate.
+
 - Coinbase scriptSig length: $result = \text{valid} \land \text{IsCoinbase}(tx) \implies 2 \leq |tx.\text{inputs}[0].\text{scriptSig}| \leq 100$
 **Note**: For non-coinbase transactions, all inputs have non-null prevouts: $\neg \text{IsCoinbase}(tx) \implies \forall i \in tx.\text{inputs}: \neg i.\text{prevout}.\text{IsNull}()$
 
@@ -371,6 +377,8 @@ $$\text{where} \quad \text{fee} := \sum_{i \in tx.\text{inputs}} us(i.\text{prev
 For transaction $tx$, input index $i$, UTXO set $us$, sighash type $st$, and height $h$:
 
 $$\text{CalculateSighash}(tx, i, us, st, h) = \text{SHA256}(\text{SHA256}(\text{SighashPreimage}(tx, i, us, st, h)))$$
+
+**Legacy SIGHASH_SINGLE exception**: When the sighash type is single (base type `0x03`) and the input index is greater than or equal to the number of outputs, CalculateSighash does not hash a preimage. The 32-byte result has byte 0 equal to `0x01` and the other 31 bytes equal to `0`. This is the historical consensus encoding. It does not apply to BIP143 witness sighash (§11.1.9).
 
 **SighashScriptCode**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \rightarrow \mathbb{S}$
 
@@ -1185,13 +1193,19 @@ $$\text{BIP66Check}(sig, h) = \begin{cases}
 
 Where:
 - $H_{66}$ is the BIP66 activation height (mainnet: 363,725; testnet: 330,776; regtest: 0)
-- $result$ verifies that $sig$ is strictly DER-encoded according to [X.690](https://www.itu.int/rec/T-REC-X.690/) ASN.1 encoding rules
+- $\text{IsStrictDER}(sig)$ is the byte predicate below. [X.690](https://www.itu.int/rec/T-REC-X.690/) is background for DER, not this predicate.
 
-**Strict DER Requirements**:
-1. **Sequence Structure**: $sig$ must be a valid DER-encoded SEQUENCE
-2. **Integer Encoding**: Both $r$ and $s$ values must be strictly DER-encoded integers
-3. **No Leading Zeros**: Integers must not have leading zero bytes (except for negative numbers)
-4. **Minimal Length**: Encoding must use minimal length representation
+**IsStrictDER** (Bitcoin `IsValidSignatureEncoding`; the sighash byte sits outside the DER body):
+
+Let $n = |sig|$. $\text{IsStrictDER}(sig)$ holds only when all of the following hold:
+
+1. $9 \leq n \leq 73$
+2. $sig[0] = \mathtt{0x30}$
+3. $sig[1] = n - 3$ (the length byte covers the DER body and excludes the final sighash byte)
+4. $sig[2] = \mathtt{0x02}$, $R_\ell = sig[3]$, $R_\ell \neq 0$, and $5 + R_\ell < n$
+5. $sig[R_\ell + 4] = \mathtt{0x02}$, $S_\ell = sig[5 + R_\ell]$, $S_\ell \neq 0$, and $R_\ell + S_\ell + 7 = n$
+6. $R$ begins at $sig[4]$ and $S$ begins at $sig[R_\ell + 6]$. Neither integer has its high bit set ($sig[4] \mathbin{\&} \mathtt{0x80} = 0$ and $sig[R_\ell + 6] \mathbin{\&} \mathtt{0x80} = 0$), so a negative encoding is rejected.
+7. No unnecessary leading zero: if $R_\ell > 1$ and $sig[4] = \mathtt{0x00}$, then $sig[5] \mathbin{\&} \mathtt{0x80} \neq 0$. The same rule applies to $S$ at $sig[R_\ell + 6]$ and $sig[R_\ell + 7]$.
 
 **Mathematical Property**: BIP66 enforces strict DER signature encoding:
 
@@ -1201,10 +1215,20 @@ $$\forall sig \in \mathbb{S}, h \geq H_{66} : \text{BIP66Check}(sig, h) = \text{
 
 *Proof*: For any signature $sig$ at height $h \geq H_{66}$, if $\neg \text{IsStrictDER}(sig)$, then $\text{BIP66Check}(sig, h) = \text{invalid}$, causing script validation to fail. This ensures that all signatures after activation conform to strict DER encoding, preventing signature malleability.
 
-**Formula** (**F_BIP66PreActivationPass**):
+**Formula** (**F_BIP66ActivationBelow**):
 $$result == 1$$
 
-Before BIP66 activation (fork not yet active), the DER signature check always passes. Any signature is accepted when the fork is inactive.
+Below height 363,725, `check_bip66_network` returns true for every signature.
+
+**Formula** (**F_BIP66ActivationAt**):
+$$result == strict_der$$
+
+At height 363,725 and above, `check_bip66_network(sig)` equals `is_strict_der(sig)`.
+
+**Formula** (**F_StrictDERSoundness**):
+$$result == 0$$
+
+`is_strict_der` is true only when every clause holds: length in 9..=73, `s[0] == 0x30`, `s[1] == len - 3`, both integer tags are `0x02`, neither integer's first byte has the high bit set, neither integer has an unnecessary leading zero, and the lengths sum to `n`. A failed clause makes the result 0.
 
 ---
 
@@ -2658,17 +2682,16 @@ are entitled to produce.
 - Single element: $|H| = 1 \implies result = H[0]$
 - Collision resistance: $result(H_1) = result(H_2) \implies H_1 = H_2$ (assuming SHA-256 collision resistance)
 
-**Formula** (**F_MerkleRootDeterminism**):
+**Formula** (**F_MerkleMutationRejected**):
+$$result == 0$$
 
-$$result(H_1) == result(H_2)$$
-
-Determinism: ComputeMerkleRoot is a pure function — the same input transaction hash list always produces the same root. Verified by blvm-spec-lock formal determinism check.
+If any adjacent pair on an unpadded level is equal, the merkle function reports the mutation. The copy appended for an odd level is not a mutation: when no unpadded pair is equal, the result is not the mutation error.
 
 **Definition** (Bitcoin standard, double SHA-256):
 1. Let $L_0 = H$ (leaf level).
 2. While $|L_i| > 1$:
-   - **Odd-duplicate rule**: If $|L_i|$ is odd, append $L_i[|L_i|-1]$ to $L_i$.
-   - **CVE-2012-2459**: If any pair $(L_i[2j], L_i[2j+1])$ has $L_i[2j] = L_i[2j+1]$, the block is invalid (mutation detected).
+   - **CVE-2012-2459**: On the unpadded level, if any adjacent pair $(L_i[2j], L_i[2j+1])$ already present in $L_i$ has $L_i[2j] = L_i[2j+1]$, the block is invalid (mutation detected).
+   - **Odd-duplicate rule**: If $|L_i|$ is odd, append a copy of $L_i[|L_i|-1]$. That padded copy is not a mutation.
    - **Pair-and-hash**: $L_{i+1}[j] = \text{SHA256d}(L_i[2j] \parallel L_i[2j+1])$ for $j \in [0, |L_i|/2)$.
    - Set $L_i = L_{i+1}$.
 3. $\text{ComputeMerkleRoot}(H) = L_{\text{final}}[0]$.
@@ -3741,6 +3764,11 @@ Subsections **[13.3.1](#1331-integer-arithmetic-overflowunderflow)**–**[13.3.5
 4. **Fee Accumulation**: Summing fees across block transactions can overflow
 
 **Implementation**: Use `checked_add()` and `checked_sub()` for all value arithmetic. Satoshi-denominated amounts must follow the same overflow and range rules as the live network (typically a signed 64-bit money type with `MAX_MONEY` bounds).
+
+**Formula** (**F_OutputSumBounded**):
+$$result == 0$$
+
+The output sum is a signed 64-bit `bvadd`. CheckTransaction returns the overflow error exactly when that addition overflows. A valid result implies every output value is non-negative, no output exceeds `MAX_MONEY`, and a value equal to `MAX_MONEY` is still in range.
 
 **Note**: Fee accumulation across a block (summing fees from all transactions
 to validate the coinbase output) also requires checked arithmetic.

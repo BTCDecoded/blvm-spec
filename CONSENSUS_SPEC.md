@@ -653,8 +653,8 @@ BIP activation rule entries (refer to **[§8 of this register](#8-activation-hei
 
 ### SF-011
 - **Rule:** Before BIP66 activation, DER check MUST pass for any signature.
-- **Specification:** [§5.4.3](PROTOCOL.md#543-bip66-strict-der-signature-validation) **F_BIP66PreActivationPass**
-- **Implementation:** `bip_validation::check_bip66` — Z3-verified (F_BIP66PreActivationPass)
+- **Specification:** [§5.4.3](PROTOCOL.md#543-bip66-strict-der-signature-validation) **F_BIP66ActivationBelow**, **F_BIP66ActivationAt**, **F_StrictDERSoundness**
+- **Implementation:** `bip_validation::check_bip66`, `is_strict_der`
 
 ### SF-012
 - **Rule:** Before BIP90 activation, version check MUST pass for any version ≥ 1.
@@ -925,7 +925,7 @@ Cross-cutting security invariants (Orange Paper [§8](PROTOCOL.md#8-security-pro
 
 ### SEC-001
 - **Rule:** ComputeMerkleRoot MUST be deterministic for fixed input hash list.
-- **Specification:** [§8.4.1](PROTOCOL.md#841-computemerkleroot) **F_MerkleRootDeterminism**, **Theorem 8.4.1**
+- **Specification:** [§8.4.1](PROTOCOL.md#841-computemerkleroot) **F_MerkleMutationRejected**, **Theorem 8.4.1**
 - **Implementation:** `mining::calculate_merkle_root` — Z3-verified (spec_locked)
 
 ### SEC-002
