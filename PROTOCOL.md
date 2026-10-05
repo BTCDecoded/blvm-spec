@@ -800,7 +800,7 @@ $$\text{GetLegacySigOpCount}(tx) = \sum_{i \in tx.\text{inputs}} \text{CountSigO
 Walk `scriptSig` one instruction at a time. A truncated push, or any opcode above `OP_16` ($0x60$), yields none, and that input contributes 0 P2SH sigops. Otherwise the result is the immediate data of the last instruction: the pushed bytes when the opcode is at most `OP_PUSHDATA4` ($0x4e$), and the empty string when the opcode is `OP_1NEGATE` ($0x4f$), `OP_RESERVED` ($0x50$), or `OP_1` through `OP_16`. The same extraction supplies the redeem script when `CountWitnessSigOps` scores a P2SH-wrapped version-0 program.
 
 **Formula** (**F_SigopCountPushOpcode**):
-$$result = (op \le 96)$$
+$$op \leq 96$$
 
 An opcode is a push for this extraction exactly when it is at most `OP_16` (96). `OP_1NEGATE` and `OP_RESERVED` are pushes. Witness `_verify_f_sigop_count_push_opcode`.
 
