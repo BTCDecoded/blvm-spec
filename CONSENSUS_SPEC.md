@@ -271,14 +271,14 @@ Rules specific to coinbase transaction structure and validation.
 - **Implementation:** `bip_validation::check_bip34` — Z3-verified (F_BIP34PreActivationPass)
 
 ### CB-005
-- **Rule:** Before BIP30 deactivation (mainnet h ≤ 91,722), coinbase txid MUST NOT already exist in the UTXO set.
+- **Rule:** A coinbase txid that already has an unspent output is invalid at every height, except the two mainnet blocks in Table 3.
 - **Specification:** [§5.4.1](PROTOCOL.md#541-bip30-duplicate-coinbase-prevention) BIP30Check, **Theorem 5.4.1**
 - **Implementation:** `bip_validation::check_bip30` — Z3-verified (spec_locked)
 
 ### CB-006
-- **Rule:** After BIP30 deactivation, duplicate-coinbase check MUST always pass.
-- **Specification:** [§5.4.1](PROTOCOL.md#541-bip30-duplicate-coinbase-prevention) **F_BIP30DeactivationPass**
-- **Implementation:** `bip_validation::check_bip30` — Z3-verified (F_BIP30DeactivationPass)
+- **Rule:** A duplicate coinbase that is not one of those two blocks MUST be rejected.
+- **Specification:** [§5.4.1](PROTOCOL.md#541-bip30-duplicate-coinbase-prevention) **F_BIP30DuplicateRejected**
+- **Implementation:** `bip_validation::check_bip30` — Z3-verified (F_BIP30DuplicateRejected)
 
 ### CB-007
 - **Rule:** After BIP54 activation, coinbase lockTime MUST equal height − 13 and first input sequence MUST NOT be 0xFFFFFFFF.
@@ -527,7 +527,7 @@ Height-dependent, time-dependent, and sequence-lock rules.
 
 ## 8. Activation Height Tables
 
-Canonical activation and deactivation heights for this register (**not** Orange Paper [§8 Security Properties](PROTOCOL.md#8-security-properties)). Source: `blvm-primitives` constants (`BIP*_ACTIVATION_*`), `blvm-consensus::activation::ForkActivationTable`, Orange Paper [§5.4](PROTOCOL.md#54-bip-validation-rules) and [§5.2.5](PROTOCOL.md#525-script-verification-flags). Heights are **inclusive** (rule active when `height >= activation`, except BIP30 deactivation below).
+Canonical activation and deactivation heights for this register (**not** Orange Paper [§8 Security Properties](PROTOCOL.md#8-security-properties)). Source: `blvm-primitives` constants (`BIP*_ACTIVATION_*`), `blvm-consensus::activation::ForkActivationTable`, Orange Paper [§5.4](PROTOCOL.md#54-bip-validation-rules) and [§5.2.5](PROTOCOL.md#525-script-verification-flags). Heights are **inclusive** (rule active when `height >= activation`). The duplicate-coinbase rule is active at every height.
 
 ### Table 1 — Soft fork activation heights
 
@@ -564,22 +564,18 @@ Canonical activation and deactivation heights for this register (**not** Orange 
 
 Versions retired after activation (informative): BIP34 retires 0,1; BIP66 retires 2; BIP65 retires 3.
 
-### Table 3 — BIP30 deactivation and grandfathered blocks
+### Table 3 — BIP30 exempt blocks
 
-| Network | Deactivation height | Effect |
-|---------|---------------------|--------|
-| Mainnet | 91,722 | BIP30 duplicate-coinbase check **inactive** when h > 91,722 |
-| Testnet | 0 | BIP30 never enforced |
-| Regtest | 0 | BIP30 never enforced |
-
-**Grandfathered duplicate coinbases** (mainnet; allowed because BIP30 was deactivated before these blocks):
+The duplicate-coinbase check is active on every network at every height. Only these two mainnet blocks are exempt, and only when the block hash matches:
 
 | Height | Block hash |
 |--------|------------|
 | 91,842 | `00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec` |
 | 91,880 | `00000000000743f190a18c5577a3c2d2a1f610ae9601ac046a38084ccb7cd721` |
 
-Enforced by `bip_validation::check_bip30` (consensus) using `ForkId::Bip30` (active when `height <= deactivation`).
+On a chain whose block at the height-in-coinbase activation is the known one, the lookup may be skipped after that block until height 1,983,702. From that height the lookup is mandatory again. Testnet, regtest, and signet have no exempt blocks. Regtest and signet never skip the lookup.
+
+Enforced by `bip_validation::check_bip30`. `ForkId::Bip30` is active at every height (`height <= u64::MAX`).
 
 ### Table 4 — Consensus script verification flags at activation (mainnet)
 
@@ -834,6 +830,11 @@ Segregated witness rules (Orange Paper [§11.1](PROTOCOL.md#111-segregated-witne
 - **Rule:** Empty witness stack (|w| = 0) MUST be considered empty by IsWitnessEmpty.
 - **Specification:** [§11.1.2](PROTOCOL.md#1112-witness-structure-validation) **F_WitnessEmptyByLength**
 - **Implementation:** `witness::is_witness_empty` — Z3-verified (F_* formulas)
+
+### SEG-008
+- **Rule:** A witness version byte MUST be OP_0 or OP_1 through OP_16. OP_1NEGATE and OP_RESERVED are not witness versions.
+- **Specification:** [§11.1.3](PROTOCOL.md#1113-witness-program-extraction) **F_WitnessVersionRejected**, **F_WitnessVersionAccepted**
+- **Implementation:** `witness::is_upgradable_witness_program` — Z3-verified (F_WitnessVersionRejected, F_WitnessVersionAccepted)
 
 ---
 

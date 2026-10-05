@@ -1242,39 +1242,37 @@ This section specifies the mathematical properties of critical Bitcoin Improveme
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: Deactivation pass: $h > H_{30\_deact}(n) \implies result = \text{true}$. Before the deactivation height, `BIP30Check` rejects any block when the coinbase txid already exists in the UTXO set.
+**Note**: A block is invalid when its coinbase transaction id already has an unspent output. Two mainnet blocks are exempt, and only when the block hash is the one listed below. There is no height at which the check turns off.
 
-For block $b = (h, txs)$ with UTXO set $us$, height $h$, and network $n$:
+For block $b$ with UTXO set $us$, height $h$, and block hash $id$:
 
-$$\text{BIP30Check}(b, us, h, n) = \begin{cases}
-\text{valid} & \text{if } h > H_{30\_deact}(n) \\
-\text{invalid} & \text{if } h \leq H_{30\_deact}(n) \land \exists tx \in txs : \text{IsCoinbase}(tx) \land \text{txid}(tx) \in \text{CoinbaseTxids}(us) \\
+$$\text{BIP30Check}(b, us, h, id) = \begin{cases}
+\text{valid} & \text{if } (h, id) \in \text{BIP30Repeat} \\
+\text{invalid} & \text{if } \exists tx \in txs : \text{IsCoinbase}(tx) \land \text{txid}(tx) \in \text{CoinbaseTxids}(us) \\
 \text{valid} & \text{otherwise}
 \end{cases}$$
 
-Where:
-- $H_{30\_deact}(n)$ is the BIP30 deactivation height for network $n$:
-  - Mainnet: $H_{30\_deact}(\text{mainnet}) = 91,722$
-  - Testnet: $H_{30\_deact}(\text{testnet}) = 0$ (never enforced)
-  - Regtest: $H_{30\_deact}(\text{regtest}) = 0$ (never enforced)
-- $result$ is the set of all coinbase transaction IDs that have created UTXOs in $us$.
+$\text{BIP30Repeat}$ contains exactly two mainnet blocks:
 
-**Deactivation**: BIP30 was disabled after block 91,722 (mainnet) to allow duplicate coinbases in blocks 91,842 and 91,880 (historical bug, grandfathered exception).
+| Height | Block hash |
+|--------|------------|
+| 91,842 | `00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec` |
+| 91,880 | `00000000000743f190a18c5577a3c2d2a1f610ae9601ac046a38084ccb7cd721` |
 
-**Mathematical Property**: BIP30 ensures coinbase transaction uniqueness before deactivation:
+Testnet, regtest, and signet have an empty exception set. A different block at either height is not exempt.
 
-$$\forall b_1, b_2 \in \mathcal{B}, b_1 \neq b_2, h \leq H_{30\_deact}(n) : \text{IsCoinbase}(tx_1) \land \text{IsCoinbase}(tx_2) \implies \text{txid}(tx_1) \neq \text{txid}(tx_2)$$
+**Theorem 5.4.1** (BIP30 Uniqueness): Except for those two blocks, a coinbase whose transaction id still has an unspent output is not a valid block.
 
-**Theorem 5.4.1** (BIP30 Uniqueness): BIP30 prevents duplicate coinbase transactions before deactivation height.
+*Proof*: If $\text{txid}(tx) \in \text{CoinbaseTxids}(us)$ and $(h, id) \notin \text{BIP30Repeat}$, then $\text{BIP30Check} = \text{invalid}$.
 
-*Proof*: By construction, if a coinbase transaction $tx$ at height $h \leq H_{30\_deact}(n)$ has $\text{txid}(tx) \in \text{CoinbaseTxids}(us)$, then $\text{BIP30Check}(b, us, h, n) = \text{invalid}$, preventing the block from being accepted. Since coinbase transactions create new UTXOs, their transaction IDs are recorded in the UTXO set, ensuring uniqueness across all blocks before deactivation.
+After the height-in-coinbase rule, a chain whose block at that activation has the known hash cannot create a new duplicate until a pre-activation coinbase carries an indicated height of 1,983,702 or greater. The check is mandatory again from that height. Skipping the lookup is allowed only inside that window, and only on that chain.
 
-**Activation**: Block 0 (always active until deactivation)  
+**Activation**: Block 0. The rule does not deactivate.
 
-**Formula** (**F_BIP30DeactivationPass**):
-$$result == 1$$
+**Formula** (**F_BIP30DuplicateRejected**):
+$$result == 0$$
 
-When `bip30_active == 0` (fork inactive), the duplicate-coinbase check always passes (returns 1). The full property $\forall b, us, n : h > H_{30\_\text{deact}}(n) \implies \text{BIP30Check}(b, us, h, n) = \text{valid}$ is stated in prose; the Z3-verifiable guard is the postcondition under `requires(bip30_active == 0)`.
+When `duplicate == 1` and `exception == 0`, the check result is invalid (`0`). The two blocks in $\text{BIP30Repeat}$ are the only `exception == 1` cases.
 
 ---
 
@@ -3291,6 +3289,18 @@ $$result == false$$
 
 When the witness program length is neither 20 nor 32 bytes, ValidateWitnessProgramLength returns false (invalid length).
 
+A witness program version byte is `OP_0` ($0$) or `OP_1` through `OP_16` ($81$ through $96$). `OP_1NEGATE` ($79$) and `OP_RESERVED` ($80$) are ordinary opcodes. Before Taproot activation, a native version-1 32-byte program is still a witness program: the script must be empty and the witness is ignored. After activation, Taproot rules apply to that program.
+
+**Formula** (**F_WitnessVersionRejected**):
+$$result == false$$
+
+When `op` is 79 (`OP_1NEGATE`) or 80 (`OP_RESERVED`), the opcode is not a witness version. Witness `_verify_f_witness_version_rejected`.
+
+**Formula** (**F_WitnessVersionAccepted**):
+$$result == true$$
+
+When `op` is 0 (`OP_0`), 81 (`OP_1`), or 96 (`OP_16`), the opcode is a witness version. Witness `_verify_f_witness_version_accepted`.
+
 #### 11.1.4 Witness Merkle Root
 
 **ComputeWitnessMerkleRoot**: $\mathcal{B} \times \mathcal{W}^* \rightarrow \mathbb{H}$
@@ -3531,7 +3541,7 @@ $$\text{IsTaprootOutput}(o) = \text{ValidateTaprootScript}(o.\text{scriptPubkey}
 
 **Theorem 11.2.1** (Taproot Empty ScriptSig): Taproot transactions require empty scriptSig for all inputs spending P2TR outputs.
 
-*Proof*: Taproot validation happens entirely through witness data (key path or script path). The scriptPubKey `OP_1 <32-byte-hash>` is not executable as a script, so scriptSig must be empty. If scriptSig is non-empty, validation fails before witness processing.
+*Proof*: Taproot validation happens entirely through witness data (key path or script path). The scriptPubKey `OP_1 <32-byte-hash>` is not executable as a script, so scriptSig must be empty. If scriptSig is non-empty, validation fails before witness processing. Before activation the same output is a witness program whose witness is ignored.
 
 **Formula** (**F_TaprootOutputScriptLengthInvalid**):
 $$result == false$$
