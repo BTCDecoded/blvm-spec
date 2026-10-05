@@ -801,8 +801,8 @@ Difficulty encoding and validation (Orange Paper [§7](PROTOCOL.md#7-proof-of-wo
 Segregated witness rules (Orange Paper [§11.1](PROTOCOL.md#111-segregated-witness-segwit)).
 
 ### SEG-001
-- **Rule:** Transaction weight MUST equal 3 × baseSize + totalSize (BIP141), which MUST equal 4 × baseSize + witnessSize when totalSize = baseSize + witnessSize.
-- **Specification:** [§11.1.1](PROTOCOL.md#1111-weight-and-size-calculations) CalculateTransactionWeight, **Theorem 11.1.1**, **F_WeightEquiv**
+- **Rule:** Transaction weight MUST equal 3 × baseSize + totalSize (BIP141), which MUST equal 4 × baseSize + witnessSize when totalSize = baseSize + witnessSize. The stripped size MUST include every script byte.
+- **Specification:** [§11.1.1](PROTOCOL.md#1111-weight-and-size-calculations) CalculateTransactionWeight, **Theorem 11.1.1**, **F_WeightEquiv**, **F_StrippedSizeCountsScripts**
 - **Implementation:** `segwit::calculate_transaction_weight`, `witness::calculate_transaction_weight_segwit` — Z3-verified (spec_locked + F_* formulas)
 
 ### SEG-002
