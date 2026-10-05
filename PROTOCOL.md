@@ -1698,6 +1698,28 @@ $$result == false$$
 
 When both locktimes are timestamps ($tx\_locktime \geq 500{,}000{,}000$ and $stack\_locktime \geq 500{,}000{,}000$) but the transaction locktime does not meet the script minimum ($tx\_locktime < stack\_locktime$), CLTV validation rejects. Symmetric to F_BIP65RejectsValueTooLow in the timestamp domain. Together all rejection and acceptance cases form a complete case analysis of BIP65 correctness.
 
+CLTV and CSV read the stack element as a script number of at most 5 bytes. The high bit of the last byte is the sign. A negative value fails the opcode. Negative zero (the sign bit set and every magnitude bit clear, including the single byte `0x80`) is 0. A non-negative CLTV value above $2^{32}-1$ fails the comparison. CSV, after rejecting a negative value, uses the low 32 bits.
+
+**Formula** (**F_DecodeLocktimeNegativeZero**):
+$$result == 0$$
+
+A one-byte stack element `0x80` is negative zero and decodes to 0. Witness `_verify_f_decode_locktime_negative_zero`.
+
+**Formula** (**F_DecodeLocktimeNegativeOne**):
+$$result == -1$$
+
+A one-byte stack element `0x81` has its sign bit set and magnitude 1, so it decodes to $-1$. Witness `_verify_f_decode_locktime_negative_one`.
+
+**Formula** (**F_CltvRejectsNegative**):
+$$result == false$$
+
+A negative script number fails CLTV before the transaction locktime is compared. Witness `_verify_f_cltv_rejects_negative`.
+
+**Formula** (**F_CltvRejectsAboveU32**):
+$$result == false$$
+
+A non-negative script number greater than $2^{32}-1$ cannot satisfy CLTV. Witness `_verify_f_cltv_rejects_above_u32`.
+
 ---
 
 #### 5.4.8 BIP348: OP_CHECKSIGFROMSTACK (CSFS)
@@ -2128,6 +2150,18 @@ $$\forall i \in tx.\text{inputs}: \text{IsSequenceDisabled}(i.\text{sequence}) \
 Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is met.
 
 *Proof*: $\text{EvaluateSequenceLocks}$ is the case analysis of disabled / height / time guards. This is proven by blvm-spec-lock formal verification of **F_EvalSeqLocksDisabled**, **F_EvalSeqLocksHeightNotMet**, **F_EvalSeqLocksHeightMet**, **F_EvalSeqLocksTimeNotMet**, **F_EvalSeqLocksTimeMet**, and **F_EvalSeqLocksBothMet**.
+
+**OP_CHECKSEQUENCEVERIFY** (opcode `0xb2`), when the CSV flag is set, reads the same 5-byte signed script number as CLTV. If bit 31 of that non-negative value is set, the opcode succeeds on every transaction version and does not compare input sequences. Otherwise the transaction version must be at least 2; a smaller version fails the opcode.
+
+**Formula** (**F_CsvVersionBelowTwoFails**):
+$$result == false$$
+
+When the stack disable bit is clear and the transaction version is less than 2, CSV fails. Witness `_verify_f_csv_version_below_two_fails`.
+
+**Formula** (**F_CsvDisableBitSkipsVersion**):
+$$result == true$$
+
+When the stack disable bit is set, CSV succeeds even if the transaction version is less than 2. Witness `_verify_f_csv_disable_bit_skips_version`.
 
 ## 6. Economic Model
 
@@ -3627,6 +3661,13 @@ For transaction $tx$, input index $i$, UTXO set $us$, sighash type $type$, and o
 
 $$\text{ComputeTaprootSignatureHash}(tx, i, us, type, h_a) = \text{TaggedHash}(\text{"TapSighash"}, \text{SigMsg}(tx, i, us, type, h_a))$$
 
+SIGHASH_SINGLE (output type $type \mathbin{\&} \mathtt{0x03} = \mathtt{0x03}$, including $\mathtt{0x83}$) commits to the output at index $i$ only. If $i$ is not an index of $tx.\text{outputs}$, the function returns no hash and the signature check fails.
+
+**Formula** (**F_TaprootSighashSingleMissingOutput**):
+$$result == false$$
+
+When the output type is 3 and $input\_index \geq n\_outputs$, no Taproot signature hash is produced. Witness `_verify_f_taproot_sighash_single_missing_output`.
+
 #### 11.2.7 Tapscript Signature Hash (BIP 342)
 
 **ComputeTapscriptSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathcal{US} \times \mathbb{S} \times \mathbb{N}_{8} \times \mathbb{N}_{32} \times \mathbb{N}_{8} \times \mathbb{H}^? \rightarrow \mathbb{H}$
@@ -3637,19 +3678,19 @@ $$\text{ComputeTaprootSignatureHash}(tx, i, us, type, h_a) = \text{TaggedHash}(\
 Computes the signature hash for tapscript (script-path) spending. Same base SigMsg structure as key-path (11.2.6), with an extension field $ext$ that binds the signature to the specific tapscript and OP_CODESEPARATOR position.
 
 **Extension field** (BIP 342):
-$$ext = \operatorname{codesep\_pos}_{32} \parallel \operatorname{key\_version}_{8} \parallel \operatorname{tapleaf\_hash}_{256}$$
+$$ext = \operatorname{tapleaf\_hash}_{256} \parallel \operatorname{key\_version}_{8} \parallel \operatorname{codesep\_pos}_{32}$$
 
 where:
-- $\text{codesep\_pos}_{32}$: 4-byte little-endian encoding of the last OP_CODESEPARATOR position (0 if none executed)
+- $\text{tapleaf\_hash}_{256}$: 32-byte hash of the executing tapscript
 - $\text{key\_version}_{8}$: 1 byte, value $0x00$ for current tapscript
-- $\text{tapleaf\_hash}_{256}$: 32-byte $result$ of the executing tapscript
+- $\text{codesep\_pos}_{32}$: 4-byte little-endian opcode index of the last executed OP_CODESEPARATOR, or `0xffffffff` if none has executed
 
 **Definition**:
 $$\text{SigMsgBase}(tx, i, us, type) = \text{version} \parallel \text{inputs} \parallel \text{outputs} \parallel \text{locktime} \parallel type \parallel i \parallel \text{value}_i \parallel \text{scriptPubKey}_i$$
 
 $$\text{ComputeTapscriptSignatureHash}(tx, i, us, s, v, \text{codesep}, type) = \text{TaggedHash}(\texttt{"TapSighash"}, 0x00 \parallel \text{SigMsgBase}(tx, i, us, type) \parallel ext)$$
 
-where $ext = \text{LE}_{32}(\text{codesep}) \parallel 0x00 \parallel \text{TapLeafHash}(v, s)$.
+where $ext = \text{TapLeafHash}(v, s) \parallel 0x00 \parallel \text{LE}_{32}(\text{codesep})$, and $\text{codesep} = \mathtt{0xffffffff}$ when no OP_CODESEPARATOR has executed.
 
 **Properties**:
 - Hash length: $result = h \implies |h| = 32$
@@ -3658,7 +3699,12 @@ where $ext = \text{LE}_{32}(\text{codesep}) \parallel 0x00 \parallel \text{TapLe
 
 **Theorem 11.2.3** (Tapscript Sighash Uniqueness): For fixed transaction $tx$, input index $i$, UTXO data $us$, tapscript $s$, leaf version $v$, codesep position $\text{codesep}$, and sighash type $type$, $\text{ComputeTapscriptSignatureHash}(tx, i, us, s, v, \text{codesep}, type)$ is uniquely determined.
 
-*Proof*: SigMsgBase is deterministic from $(tx, i, us, type)$. TapLeafHash is deterministic. The extension $ext$ is concatenation of fixed-length fields. TaggedHash is a deterministic cryptographic hash. Thus the full computation is deterministic and produces a unique 32-byte hash.
+*Proof*: SigMsgBase is deterministic from $(tx, i, us, type)$ when a hash is returned. TapLeafHash is deterministic. The extension $ext$ is concatenation of fixed-length fields. TaggedHash is a deterministic cryptographic hash, so each successful call produces one 32-byte hash. SIGHASH_SINGLE with no output at index $i$ is not one of those calls: it returns no hash, for both this function and $\text{ComputeTaprootSignatureHash}$.
+
+**Formula** (**F_TapscriptSighashSingleMissingOutput**):
+$$result == false$$
+
+When the output type is 3 and $input\_index \geq n\_outputs$, no tapscript signature hash is produced. Witness `_verify_f_tapscript_sighash_single_missing_output`.
 
 #### 11.2.8 Tapscript Opcodes and SigOp Counting (BIP 342)
 
