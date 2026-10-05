@@ -795,6 +795,15 @@ $$\text{GetLegacySigOpCount}(tx) = \sum_{i \in tx.\text{inputs}} \text{CountSigO
 
 **Note**: Coinbase transactions contribute zero P2SH sigops. P2SH-attributed sigops only arise when at least one input spends a P2SH output: $\text{GetP2SHSigOpCount}(tx, us) > 0 \implies \exists i \in tx.\text{inputs}: \text{IsP2SH}(us(i.\text{prevout}).\text{scriptPubkey})$
 
+**ExtractRedeemScript**: $\mathbb{S} \rightarrow \mathbb{S}^?$
+
+Walk `scriptSig` one instruction at a time. A truncated push, or any opcode above `OP_16` ($0x60$), yields none, and that input contributes 0 P2SH sigops. Otherwise the result is the immediate data of the last instruction: the pushed bytes when the opcode is at most `OP_PUSHDATA4` ($0x4e$), and the empty string when the opcode is `OP_1NEGATE` ($0x4f$), `OP_RESERVED` ($0x50$), or `OP_1` through `OP_16`. The same extraction supplies the redeem script when `CountWitnessSigOps` scores a P2SH-wrapped version-0 program.
+
+**Formula** (**F_SigopCountPushOpcode**):
+$$result = (op \le 96)$$
+
+An opcode is a push for this extraction exactly when it is at most `OP_16` (96). `OP_1NEGATE` and `OP_RESERVED` are pushes. Witness `_verify_f_sigop_count_push_opcode`.
+
 For transaction $tx$ and UTXO set $us$:
 
 $$\text{GetP2SHSigOpCount}(tx, us) = \begin{cases}
