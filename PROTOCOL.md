@@ -1053,7 +1053,7 @@ For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
 | H02 — Height-dependent version (BIP90) | $h.\text{version} \geq \text{MinVersion}(height)$ | `check_bip90` (§5.4.4) |
 | H03 — Non-zero timestamp | $h.\text{timestamp} \neq 0$ | `validate_block_header` |
 | H04 — Timestamp within window | $h.\text{timestamp} \leq ctx.\text{network\_time} + \text{MAX\_FUTURE\_BLOCK\_TIME}$ | `validate_block_header` |
-| H05 — Timestamp above MTP (BIP113) | $h.\text{timestamp} \geq \text{MedianTimePast}(\text{recent headers})$ | `validate_block_header` |
+| H05 — Timestamp after MTP | $h.\text{timestamp} > \text{MedianTimePast}(\text{recent headers})$ | `validate_block_header` |
 | H06 — Non-zero bits | $h.\text{bits} \neq 0$ | `validate_block_header` |
 | H07 — Proof of work | $\text{SHA256}(\text{SHA256}(\text{serialize}(h))) < \text{ExpandTarget}(h.\text{bits})$ | `check_proof_of_work` (§7.2) |
 | H08 — Parent hash | $h.\text{prev\_block\_hash} = \text{BlockHeaderHash}(\text{parent})$ | `ValidatePrevBlockHash` (§5.3.1); node calls before connect |
@@ -1086,13 +1086,19 @@ Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field ch
 H04 and H05 require a time context (network time and recent-header MTP). When no context is available (e.g. headers-first sync), only H01, H03, H06 are enforced.
 
 **Remark (Timestamp Window Asymmetry).** The valid timestamp range for a block
-header is $[\text{MTP},\, \text{network\_time} + T_{\text{future}}]$. The upper
+header is $(\text{MTP},\, \text{network\_time} + T_{\text{future}}]$. The upper
 bound allows $T_{\text{future}} = 7{,}200$ seconds (2 hours) of future drift.
-The lower bound is MTP (median of the last 11 timestamps), not a fixed lag
-behind wall-clock time: under on-time blocks the median sits about six
-intervals back, and slow blocks can lag further. The window is therefore
-asymmetric (MTP versus a hard $+2$ hour cap). This is a description of the
-two bounds, not a theorem that MTP lags real time by $11 \times T_{\text{block}}$.
+The lower bound is exclusive: the timestamp must be strictly later than MTP
+(median of the last 11 timestamps), not a fixed lag behind wall-clock time.
+Under on-time blocks the median sits about six intervals back, and slow blocks
+can lag further. The window is therefore asymmetric (an open MTP bound versus
+a hard $+2$ hour cap). This is a description of the two bounds, not a theorem
+that MTP lags real time by $11 \times T_{\text{block}}$.
+
+**Formula** (**F_HeaderTimestampAfterMtp**):
+$$(timestamp > mtp) == result$$
+
+When a time context is present, H05 holds exactly when the header timestamp is strictly greater than the median time past. A timestamp equal to that median is invalid.
 
 **Formula** (**F_HeaderVersionFloor**):
 $$result = 0$$
@@ -1293,11 +1299,7 @@ Where:
 - $H_{34}$ is the BIP34 activation height (mainnet: 227,931; testnet: 21,111; regtest: 0)
 - $result$ extracts the block height from coinbase scriptSig using CScriptNum encoding
 
-**Height Encoding**: The block height is encoded in the coinbase scriptSig as a script number:
-
-$$\text{EncodeHeight}(h) = \text{CScriptNum}(h)$$
-
-Where $\text{CScriptNum}$ encodes the height as a variable-length integer in the script format.
+**Height Encoding**: After activation, the coinbase scriptSig must begin with the minimal script-number push of $h$. Height 0 is the single byte `OP_0`. A positive height is one length byte followed by the little-endian magnitude. When the high bit of the last magnitude byte is set, one extra `0x00` byte follows so the number stays non-negative. Bytes after that prefix are ignored. `OP_PUSHDATA` and extra zero bytes are not that prefix, even when they decode to the same integer.
 
 **Mathematical Property**: BIP34 ensures coinbase height consistency:
 
@@ -3314,15 +3316,15 @@ $$\text{ComputeWitnessMerkleRoot}(b, w_1, \ldots, w_n) = \text{ComputeMerkleRoot
 
 **Inputs**: coinbase transaction $tx$, computed witness merkle root $r$, and the coinbase transaction’s witness stacks (to obtain the **witness reserved value**).
 
-Let $n \in \{0,1\}^{256}$ be the 32-byte witness reserved value: the first push of the first witness stack of the coinbase input, or $0^{32}$ if missing or not exactly 32 bytes.
+Let $n$ be the coinbase witness reserved value. It is present only when the coinbase witness is exactly one stack of one 32-byte item. A missing stack, an empty stack, or any other shape is not $0^{32}$.
 
-Let $c = \text{SHA256d}(r \,\parallel\, n)$ (64-byte preimage). A valid witness commitment output stores $c$ (not $r$ alone).
+Let $c = \text{SHA256d}(r \,\parallel\, n)$ (64-byte preimage) when $n$ is present. A valid witness commitment output stores $c$ (not $r$ alone).
 
 **OP_RETURN format** (BIP141): `OP_RETURN` `0x24` `0xaa21a9ed` $\parallel\, c$ (total push 36 bytes after opcode: 4-byte magic + 32-byte $c$).
 
-Consensus invokes $\text{ValidateWitnessCommitment}$ on the block’s coinbase ($b.\text{transactions}[0]$) after coinbase structure rules pass; the helper itself does not re-check $\text{IsCoinbase}$.
+Consensus invokes $\text{ValidateWitnessCommitment}$ on the block’s coinbase ($b.\text{transactions}[0]$) after coinbase structure rules pass; the helper itself does not re-check $\text{IsCoinbase}$. With no commitment output the helper returns true. Block connection then rejects any non-empty witness stack. With a commitment output, the helper returns true only when $n$ is present and the last matching output stores $c$.
 
-$$\text{ValidateWitnessCommitment}(tx, r, w_{cb}) = \text{true} \iff \neg \exists \text{ commitment output} \lor \exists o \in tx.\text{outputs} : \text{ExtractCommitment}(o.\text{scriptPubkey}) = c$$
+$$\text{ValidateWitnessCommitment}(tx, r, w_{cb}) = \text{true} \iff \neg \exists \text{ commitment output} \lor (n \text{ is one 32-byte item} \land \text{ExtractCommitment}(o_{\text{last}}) = c)$$
 
 Where $\text{ExtractCommitment}(spk)$ returns the 32-byte hash after the BIP141 magic prefix when $spk$ matches the standard witness commitment pattern; otherwise undefined.
 
@@ -3357,7 +3359,7 @@ $$\text{ValidateSegWitBlock}(b, w_1, \ldots, w_n, W_{\text{max}}) = \begin{cases
 \text{invalid} & \text{otherwise}
 \end{cases}$$
 
-(If no witness commitment output exists in the coinbase, [§11.1.5](#1115-witness-commitment-validation) treats validation as satisfied for pre-SegWit coinbase layouts; implementations gate full SegWit rules on deployment context.)
+After SegWit activation, any non-empty witness stack requires a coinbase commitment output, and that output requires one 32-byte reserved value. Witness data before activation is rejected. With no witness data and no commitment output, [§11.1.5](#1115-witness-commitment-validation) returns true.
 
 #### 11.1.8 Nested SegWit (P2WSH-in-P2SH, P2WPKH-in-P2SH)
 

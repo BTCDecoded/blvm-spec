@@ -52,9 +52,9 @@ Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 - **Implementation:** `block::header::validate_block_header` — Z3-verified (spec_locked)
 
 ### HDR-005
-- **Rule:** A block header timestamp MUST be at least the median time past of recent headers when time context is available (BIP113).
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H05, [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast. Requires `TimeContext`; not enforced during headers-first sync (§5.3.1 Notes).
-- **Implementation:** `block::header::validate_block_header`, `bip113::get_median_time_past` — Z3-verified (spec_locked)
+- **Rule:** A block header timestamp must be strictly later than the median time past of recent headers when a time context is available. Equality is invalid.
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H05, **F_HeaderTimestampAfterMtp**, [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast. Requires `TimeContext`; not enforced during headers-first sync (§5.3.1 Notes).
+- **Implementation:** `block::header::validate_block_header`, `bip113::get_median_time_past` — Z3-verified (F_HeaderTimestampAfterMtp)
 
 ### HDR-006
 - **Rule:** A block header compact difficulty field (bits) MUST NOT be zero.
@@ -261,7 +261,7 @@ Rules specific to coinbase transaction structure and validation.
 - **Implementation:** `transaction::check_transaction` — Z3-verified (F_* formulas)
 
 ### CB-003
-- **Rule:** After BIP34 activation, coinbase scriptSig MUST encode the block height.
+- **Rule:** After BIP34 activation, the coinbase scriptSig must begin with the minimal script-number push of the block height. A non-minimal push of the same integer is invalid.
 - **Specification:** [§5.4.2](PROTOCOL.md#542-bip34-block-height-in-coinbase) BIP34Check, **Theorem 5.4.2**
 - **Implementation:** `bip_validation::check_bip34` — Z3-verified (spec_locked)
 
