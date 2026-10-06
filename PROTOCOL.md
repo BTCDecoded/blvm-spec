@@ -357,6 +357,11 @@ $$\text{CheckTxInputs}(tx, us, h) = \begin{cases}
 
 $$\text{where} \quad \text{fee} := \sum_{i \in tx.\text{inputs}} us(i.\text{prevout}).\text{value} - \sum_{o \in tx.\text{outputs}} o.\text{value}$$
 
+**Formula** (**F_InputSumWithinMaxMoney**):
+$$result == 0$$
+
+Each input value is already in range. The running sum is checked after every addition and must stay in $[0, M_{\text{max}}]$. A sum above $M_{\text{max}}$ makes CheckTxInputs return $(\text{invalid}, 0)$. One input of exactly $M_{\text{max}}$ is still in range. Witness `_verify_f_input_sum_within_max_money`.
+
 **CalculateTransactionSize**: $\mathcal{TX} \rightarrow \mathbb{N}$
 
 **Properties**:
@@ -521,6 +526,16 @@ Formally: $\text{EvalScript}(script, S_0, f, sv) = \text{false} \iff \text{Execu
 **Resource limits by SigVersion**:
 - **Base** and **WitnessV0**: $|script| \leq L_{script} = 10{,}000$; non-push opcode count $c \leq L_{ops} = 201$.
 - **Tapscript**: neither the 10k script-size nor 201-op limits apply; BIP342 enforces tapscript validation weight and sigops budget separately (§11.2.8).
+
+**Formula** (**F_CheckMultisigCountsPubkeys**):
+$$result == 0$$
+
+When `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` actually runs, outside tapscript, and the pubkey count $n$ decodes in $0..20$, $n$ is added to the opcode count. The opcode itself is already counted. A total above 201 fails the script. A count outside that range is not added. An unexecuted branch does not add $n$. Witness `_verify_f_checkmultisig_counts_pubkeys`.
+
+**Formula** (**F_FalseResultEmpty**):
+$$result == 0$$
+
+A false result from `OP_EQUAL`, `OP_CHECKSIG`, or `OP_CHECKMULTISIG` is the empty vector. A true result is the single byte `0x01`. Witness `_verify_f_false_result_empty`.
 
 ```mermaid
 sequenceDiagram
@@ -1055,7 +1070,7 @@ For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
 | H04 — Timestamp within window | $h.\text{timestamp} \leq ctx.\text{network\_time} + \text{MAX\_FUTURE\_BLOCK\_TIME}$ | `validate_block_header` |
 | H05 — Timestamp after MTP | $h.\text{timestamp} > \text{MedianTimePast}(\text{recent headers})$ | `validate_block_header` |
 | H06 — Non-zero bits | $h.\text{bits} \neq 0$ | `validate_block_header` |
-| H07 — Proof of work | $\text{SHA256}(\text{SHA256}(\text{serialize}(h))) < \text{ExpandTarget}(h.\text{bits})$ | `check_proof_of_work` (§7.2) |
+| H07 — Proof of work | $\text{SHA256}(\text{SHA256}(\text{serialize}(h))) \leq \text{ExpandTarget}(h.\text{bits})$, and the compact target is not negative or zero | `check_proof_of_work` (§7.2) |
 | H08 — Parent hash | $h.\text{prev\_block\_hash} = \text{BlockHeaderHash}(\text{parent})$ | `ValidatePrevBlockHash` (§5.3.1); node calls before connect |
 
 **BlockHeaderHash**: $\mathcal{H} \rightarrow \mathbb{H}$
@@ -1274,6 +1289,11 @@ $$result == 0$$
 
 When `duplicate == 1` and `exception == 0`, the check result is invalid (`0`). The two blocks in $\text{BIP30Repeat}$ are the only `exception == 1` cases.
 
+**Formula** (**F_Bip30RepeatRetiresPriorOutputs**):
+$$result == 0$$
+
+On those two blocks the earlier coinbase outputs with the same txid are removed before the new coinbase outputs are inserted. The bip30 index then counts only the new outputs. Witness `_verify_f_bip30_repeat_retires_prior_outputs`.
+
 ---
 
 #### 5.4.2 BIP34: Block Height in Coinbase
@@ -1368,6 +1388,11 @@ At height 363,725 and above, `check_bip66_network(sig)` equals `is_strict_der(si
 $$result == 0$$
 
 `is_strict_der` is true only when every clause holds: length in 9..=73, `s[0] == 0x30`, `s[1] == len - 3`, both integer tags are `0x02`, neither integer's first byte has the high bit set, neither integer has an unnecessary leading zero, and the lengths sum to `n`. A failed clause makes the result 0.
+
+**Formula** (**F_NonDerAbortsScript**):
+$$result == 0$$
+
+After activation, a non-empty signature that fails `IsStrictDER` aborts the script. An empty signature does not: it pushes the empty vector and execution continues. A signature that is strict DER and simply does not verify also continues. Witness `_verify_f_non_der_aborts_script`.
 
 ---
 
@@ -2699,14 +2724,24 @@ $T_{\text{block}} = 600$.
 
 **CheckProofOfWork**: $\mathcal{H} \rightarrow \{\text{true}, \text{false}\}$
 
-$$\text{CheckProofOfWork}(h) = \text{SHA256}(\text{SHA256}(h)) < \text{ExpandTarget}(h.bits)$$
+$$\text{CheckProofOfWork}(h) = \text{SHA256}(\text{SHA256}(h)) \leq \text{ExpandTarget}(h.bits)$$
 
-Where [SHA256](https://en.wikipedia.org/wiki/SHA-2) is the [Secure Hash Algorithm](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf) and $\text{ExpandTarget}$ converts the compact difficulty representation to a full 256-bit target.
+Where [SHA256](https://en.wikipedia.org/wiki/SHA-2) is the [Secure Hash Algorithm](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf) and $\text{ExpandTarget}$ converts the compact difficulty representation to a full 256-bit target. A compact word with the sign bit `0x00800000` set, or a target that expands to zero, is not proof of work.
 
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: PoW correctness: $result = \text{true} \iff \text{SHA256}(\text{SHA256}(h)) < \text{ExpandTarget}(h.bits)$. Valid target expansion requires `h.bits` to have a non-zero exponent byte.
+**Note**: PoW correctness: $result = \text{true} \iff \text{SHA256}(\text{SHA256}(h)) \leq \text{ExpandTarget}(h.bits)$, the compact sign bit is clear, and the expanded target is not zero. Valid target expansion requires `h.bits` to have a non-zero exponent byte.
+
+**Formula** (**F_ProofNegativeCompactRejected**):
+$$result == false$$
+
+Compact bit `0x00800000` makes CheckProofOfWork false before the hash is compared. Witness `_verify_f_proof_negative_compact_rejected`.
+
+**Formula** (**F_ProofEqualHashAccepted**):
+$$result == true$$
+
+A header hash equal to a positive expanded target meets the proof-of-work check. A hash one unit above that target does not. Witness `_verify_f_proof_equal_hash_accepted`.
 
 ## 8. Security Properties
 
@@ -3401,6 +3436,16 @@ For P2WSH-in-P2SH:
 
 *Proof*: Witness program validation dispatches v0 programs to WitnessV0 regardless of WITNESS_PUBKEYTYPE; Tapscript applies only to v1 P2TR witness programs (BIP341).
 
+**Formula** (**F_NestedRedeemPushCanonical**):
+$$result == false$$
+
+The scriptSig of a nested witness spend is the canonical push of the redeem script and nothing else. A 22-byte or 34-byte redeem uses a direct push. `OP_PUSHDATA1` of that redeem fails. Witness `_verify_f_nested_redeem_push_canonical`.
+
+**Formula** (**F_P2shUnknownWitnessSucceeds**):
+$$result == true$$
+
+A P2SH redeem that is a witness program, but not a 20-byte or 32-byte version-0 program, is not taproot. With the discourage-upgradable flag clear and a canonical redeem push, the spend succeeds and the witness bytes are ignored. An invalid version-0 length still fails. Witness `_verify_f_p2sh_unknown_witness_succeeds`.
+
 **Activation**: Block 481,824 (mainnet) - Same as SegWit activation
 
 #### 11.1.9 BIP143 Witness Sighash (ComputeWitnessSignatureHash)
@@ -3760,6 +3805,11 @@ Parse $s$ sequentially. For each byte: if it is a push opcode (0x01–0x4b, or 0
 $$\text{CountTapscriptSigOps}(s) = \sum_{\text{opcode positions } i} \mathbf{1}[s[i] \in \{0xac, 0xad, 0xba\}]$$
 
 where $0xac = \text{OP\_CHECKSIG}$, $0xad = \text{OP\_CHECKSIGVERIFY}$, $0xba = \text{OP\_CHECKSIGADD}$. Bytes inside push-data payloads are not counted (they are data, not opcodes).
+
+**Formula** (**F_TapscriptTruncatedPushNotSuccess**):
+$$result == false$$
+
+The tapscript success-opcode scan uses the same push rule. A direct push or `OP_PUSHDATA1`/`OP_PUSHDATA2`/`OP_PUSHDATA4` whose length header or payload does not fit is not an opcode. The scan stops. Leftover length bytes are not success opcodes, so the script does not succeed. Witness `_verify_f_tapscript_truncated_push_not_success`.
 
 **Properties**:
 - Bounds: $result \leq |s|$ (each opcode byte counts at most once)
