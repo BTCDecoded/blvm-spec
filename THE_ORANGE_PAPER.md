@@ -3,7 +3,7 @@
 
 **Version 1.0**  
 **Consensus specification (implementation-agnostic)**  
-**Authors: BTCDecoded.org, MyBitcoinFuture.com, @secsovereign**
+**Authors: BTCDecoded.org, @secsovereign**
 ---
 
 ## Abstract

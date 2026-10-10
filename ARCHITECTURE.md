@@ -408,7 +408,7 @@ $$|peer\_commitments| \geq min\_peers \land \frac{result.\text{agreement\_count}
 
 ## 14. Conclusion
 
-This Orange Paper is a **complete, definitive** mathematical specification of Bitcoin consensus within the scope of PROTOCOL.md and this document (see each table of contents). BLVM validates it through **extensive differential testing against Bitcoin Core**, integration tests on consensus crates, and **mainnet-observable behavior**; when a discrepancy appears, implementation and this specification are reconciled so the rules here remain the single authoritative statement for what “consensus correct” means in scope.
+This Orange Paper is a **complete, definitive** mathematical specification of Bitcoin consensus within the scope of PROTOCOL.md and this document (see each table of contents). BLVM validates it through differential tests, integration tests on consensus crates, and **mainnet-observable behavior**; when a discrepancy appears, implementation and this specification are reconciled so the rules here remain the single authoritative statement for what “consensus correct” means in scope.
 
 ### 14.1 Summary of Contributions
 
@@ -439,9 +439,8 @@ The specification covers the topics it defines, from basic transaction validatio
 ## References
 
 ### Bitcoin Protocol
-1. [Reference implementation (bitcoin/bitcoin)](https://github.com/bitcoin/bitcoin)
-2. [Bitcoin Improvement Proposals (BIPs)](https://github.com/bitcoin/bips)
-3. Satoshi Nakamoto, ["Bitcoin: A Peer-to-Peer Electronic Cash System"](https://bitcoin.org/bitcoin.pdf) (2008)
+1. [Bitcoin Improvement Proposals (BIPs)](https://github.com/bitcoin/bips)
+2. Satoshi Nakamoto, ["Bitcoin: A Peer-to-Peer Electronic Cash System"](https://bitcoin.org/bitcoin.pdf) (2008)
 
 ### Cryptographic Standards
 4. [FIPS 180-4: Secure Hash Standard](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)

@@ -48,12 +48,12 @@ Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 
 ### HDR-004
 - **Rule:** A block header timestamp MUST NOT exceed network time plus 7,200 seconds (T_future).
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H04, [§4.4](PROTOCOL.md#44-difficulty-constants) T_future. Requires `TimeContext`; not enforced during headers-first sync (§5.3.1 Notes).
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H04, [§4.4](PROTOCOL.md#44-difficulty-constants) T_future. Requires `TimeContext`. Connect supplies that context, including during initial block download. A missing parent header above height 0 rejects the block (§5.3.1 Notes).
 - **Implementation:** `block::header::validate_block_header` — Z3-verified (spec_locked)
 
 ### HDR-005
 - **Rule:** A block header timestamp must be strictly later than the median time past of recent headers when a time context is available. Equality is invalid.
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H05, **F_HeaderTimestampAfterMtp**, [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast. Requires `TimeContext`; not enforced during headers-first sync (§5.3.1 Notes).
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H05, **F_HeaderTimestampAfterMtp**, [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast. Requires `TimeContext`. Connect supplies that context, including during initial block download. A missing parent header above height 0 rejects the block (§5.3.1 Notes).
 - **Implementation:** `block::header::validate_block_header`, `bip113::get_median_time_past` — Z3-verified (F_HeaderTimestampAfterMtp)
 
 ### HDR-006
@@ -281,7 +281,7 @@ Rules specific to coinbase transaction structure and validation.
 - **Implementation:** `bip_validation::check_bip30` — Z3-verified (F_BIP30DuplicateRejected)
 
 ### CB-007
-- **Rule:** After BIP54 activation, coinbase lockTime MUST equal height − 13 and first input sequence MUST NOT be 0xFFFFFFFF.
+- **Rule:** After BIP54 activation, coinbase lockTime MUST equal height − 1 and first input sequence MUST NOT be 0xFFFFFFFF.
 - **Specification:** [§5.4.9](PROTOCOL.md#549-bip54-consensus-cleanup) CheckBip54Coinbase
 - **Implementation:** `bip_validation::check_bip54_coinbase` — Z3-verified (spec_locked)
 

@@ -3,7 +3,7 @@
 
 **Version 1.0**  
 **Consensus specification (implementation-agnostic)**  
-**Authors: BTCDecoded.org, MyBitcoinFuture.com, @secsovereign**
+**Authors: BTCDecoded.org, @secsovereign**
 ---
 
 ## Abstract
@@ -1098,7 +1098,7 @@ H08 (parent hash linkage) is enforced by **ValidatePrevBlockHash** in `blvm-cons
 
 Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field check (H06) rejects an all-zero `bits` as a structural sanity check; cryptographic verification of the merkle root against the block's transaction list happens inside `connect_block` itself after header validation passes.
 
-H04 and H05 require a time context (network time and recent-header MTP). When no context is available (e.g. headers-first sync), only H01, H03, H06 are enforced.
+H04 and H05 run when a time context is supplied (network time, and the median of the previous headers). Connect supplies that context, including during initial block download. The median window is the headers before this block, at most 11, ending at the parent. A block at height 0 has no parents, so the median is 0. A missing header in that window above height 0 rejects the block. When the caller supplies no time context, H04 and H05 are not applied and only H01, H03, and H06 are enforced.
 
 **Remark (Timestamp Window Asymmetry).** The valid timestamp range for a block
 header is $(\text{MTP},\, \text{network\_time} + T_{\text{future}}]$. The upper
@@ -1317,7 +1317,7 @@ Where:
 - $H_{34}$ is the BIP34 activation height (mainnet: 227,931; testnet: 21,111; regtest: 0)
 - $result$ extracts the block height from coinbase scriptSig using CScriptNum encoding
 
-**Height Encoding**: After activation, the coinbase scriptSig must begin with the minimal script-number push of $h$. Height 0 is the single byte `OP_0`. A positive height is one length byte followed by the little-endian magnitude. When the high bit of the last magnitude byte is set, one extra `0x00` byte follows so the number stays non-negative. Bytes after that prefix are ignored. `OP_PUSHDATA` and extra zero bytes are not that prefix, even when they decode to the same integer.
+**Height Encoding**: After activation, the coinbase scriptSig must begin with the minimal script-number encoding of $h$. Height 0 is the single byte `OP_0`. Heights 1 through 16 are the single opcodes `OP_1` through `OP_16`. A taller height is one length byte followed by the little-endian magnitude. When the high bit of the last magnitude byte is set, one extra `0x00` byte follows so the number stays non-negative. Bytes after that prefix are ignored. `OP_PUSHDATA` and extra zero bytes are not that prefix, even when they decode to the same integer.
 
 **Mathematical Property**: BIP34 ensures coinbase height consistency:
 
@@ -1910,7 +1910,7 @@ block of a period) is a different rule; see §7.1.
 
 **BIP54CoinbaseCheck**: $\mathcal{TX} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
 
-After BIP54 activation, the coinbase transaction must have $\text{lockTime} = height - 13$ and the first input's $\text{sequence} \neq 0xffffffff$.
+After BIP54 activation, the coinbase transaction must have $\text{lockTime} = height - 1$ and the first input's $\text{sequence} \neq 0xffffffff$.
 
 **BIP54 64-byte tx**: Any non-coinbase transaction whose witness-stripped serialized size equals 64 bytes is invalid (Merkle tree ambiguity).
 
@@ -1924,7 +1924,7 @@ After BIP54 activation, the coinbase transaction must have $\text{lockTime} = he
 
 **Activation**: Network-specific (e.g. regtest: 0; mainnet/testnet: configurable or $u64::\text{MAX}$ until set).
 
-**References**: [BIP 54](https://bips.dev/54/), Bitcoin Inquisition PR #99.
+**References**: [BIP 54](https://bips.dev/54/).
 
 **Bip9Deployment for BIP54**: all networks use the same signaling parameters:
 - Signal bit: 15 (out of the 29 available BIP9 version bits)
@@ -1973,7 +1973,7 @@ After BIP54 activation, the coinbase transaction must satisfy both the nLockTime
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: LockTime necessary: $result = \text{true} \implies coinbase.\text{lockTime} = height - 13$. Sequence necessary: $result = \text{true} \implies coinbase.\text{inputs}[0].\text{sequence} \neq 0\text{xffffffff}$. Non-empty inputs: $result = \text{true} \implies |coinbase.\text{inputs}| > 0$.
+**Note**: LockTime necessary: $result = \text{true} \implies coinbase.\text{lockTime} = height - 1$. Sequence necessary: $result = \text{true} \implies coinbase.\text{inputs}[0].\text{sequence} \neq 0\text{xffffffff}$. Non-empty inputs: $result = \text{true} \implies |coinbase.\text{inputs}| > 0$.
 
 ---
 
@@ -3963,17 +3963,17 @@ BIP34 requires the coinbase `scriptSig` to push the block height; see **Structur
 **Structure**:
 - **Input**: Single input with $prevout = \text{null}$, $scriptSig = \langle height, OP_0 \rangle$
 - **Output**: Single output with $value = \text{GetBlockSubsidy}(height) + \text{totalFees}$
-- **LockTime**: $nLockTime = height - 1$ before BIP54; $nLockTime = height - 13$ after BIP54 (§5.4.9)
+- **LockTime**: $nLockTime = height - 1$. After BIP54 this value is required (§5.4.9).
 
 **Validation Rules**:
 1. **Height Encoding**: $scriptSig$ must encode current block height
 2. **No Inputs**: Must have exactly one input with null $prevout$
 3. **Value Limit**: $value \leq \text{GetBlockSubsidy}(height) + \text{totalFees}$
-4. **LockTime**: $height - 1$ before BIP54; $height - 13$ after BIP54, with coinbase $nSequence \neq 0xffffffff$
+4. **LockTime**: $height - 1$. After BIP54, that locktime is required and the coinbase $nSequence \neq 0xffffffff$.
 
 **Note**: After BIP54 activation (§5.4.9), the required coinbase $\text{nLockTime}$
-is $\text{height} - 13$ and the coinbase $nSequence \neq 0xffffffff$.
-Before $H_{54}$, $\text{nLockTime} = height - 1$ remains valid.
+is $\text{height} - 1$ and the coinbase $nSequence \neq 0xffffffff$.
+Before $H_{54}$, coinbase $\text{nLockTime}$ is not constrained by this rule.
 
 ### 12.4 Block Template Interface
 

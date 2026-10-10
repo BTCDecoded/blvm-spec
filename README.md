@@ -75,7 +75,7 @@ We welcome contributions to improve the mathematical precision and completeness 
 ### Contribution Guidelines
 - **Mathematical Accuracy**: All formulas must be mathematically correct
 - **Proof Completeness**: Provide complete proofs for new theorems
-- **Implementation Validation**: Verify against a reference node implementation when possible
+- **Implementation Validation**: Verify formulas against the BIP text and the checks in this specification
 - **Clear Notation**: Use consistent mathematical notation throughout
 - **Cross-References**: Update related sections when making changes
 - **GFM / LaTeX**: Prefer `\parallel` for byte concatenation in math; in long `$$…$$` blocks use `\_{n}` for subscripts when underscores would pair incorrectly in GitHub-flavored Markdown
@@ -87,7 +87,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📚 References
 
 ### Bitcoin Protocol
-- [Reference implementation (bitcoin/bitcoin)](https://github.com/bitcoin/bitcoin)
 - [Bitcoin Improvement Proposals (BIPs)](https://github.com/bitcoin/bips)
 - Satoshi Nakamoto, ["Bitcoin: A Peer-to-Peer Electronic Cash System"](https://bitcoin.org/bitcoin.pdf) (2008)
 
