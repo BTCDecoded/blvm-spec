@@ -1332,6 +1332,21 @@ $$result == 1$$
 
 When `bip34_active == 0` (fork inactive), the coinbase-height check always passes (returns 1). The full property $\forall b, n : h < H_{34}(n) \implies \text{BIP34Check}(b, h) = \text{valid}$ is stated in prose; the Z3-verifiable guard is the postcondition under `requires(bip34_active == 0)`.
 
+**Formula** (**F_BIP34SmallHeightOpcode**):
+$$result == 80 + height$$
+
+Heights 1 through 16 are one opcode. `OP_1` is `0x51` and `OP_16` is `0x60`, which is `0x50 + height`. Witness `_verify_f_bip34_small_height_opcode`.
+
+**Formula** (**F_BIP34HeightZero**):
+$$result == 0$$
+
+Height 0 is the single byte `OP_0`, not `0x50`. Witness `_verify_f_bip34_height_zero`.
+
+**Formula** (**F_BIP34HeightSeventeen**):
+$$result == 1$$
+
+Height 17 is a one-byte push, so its first byte is the length `1`, not the opcode `0x50 + 17`. Witness `_verify_f_bip34_height_seventeen`.
+
 ---
 
 #### 5.4.3 BIP66: Strict DER Signature Validation
@@ -1622,6 +1637,11 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xb3, OP_NOP4):
 - **Public test networks** (default `testnet` / `testnet4` parameters): Same as mainnet under default parameters (no consensus activation unless a future network explicitly deploys BIP119).
 - **Regtest**: Height **0** when the local node enables the proposal for development (implementation-defined feature gate).
 
+**Formula** (**F_CtvTestnet4Inactive**):
+$$(height >= 0) == result$$
+
+`result` is the inactive bit. It is true for every non-negative height, so on testnet4 the opcode stays `OP_NOP4`. Witness `_verify_f_ctv_testnet4_inactive`.
+
 **Implementation Notes**:
 
 - Template hash calculation must match BIP119 specification exactly
@@ -1863,6 +1883,11 @@ When the signature is empty ($|sig| = 0$) and the pubkey is non-zero ($|pk| > 0$
 - **Public test networks** (default `testnet` / `testnet4` parameters): Same as mainnet under default parameters (no consensus activation unless a future network explicitly deploys BIP348).
 - **Regtest**: Height **0** when the local node enables the proposal for development (implementation-defined feature gate).
 
+**Formula** (**F_CsfsTestnet4Inactive**):
+$$(height >= 0) == result$$
+
+`result` is the inactive bit. It is true for every non-negative height, so on testnet4 the opcode stays inactive. Witness `_verify_f_csfs_testnet4_inactive`.
+
 **Implementation Notes**:
 
 - CSFS is only available in Tapscript (leaf version 0xc0)
@@ -1974,6 +1999,16 @@ After BIP54 activation, the coinbase transaction must satisfy both the nLockTime
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
 **Note**: LockTime necessary: $result = \text{true} \implies coinbase.\text{lockTime} = height - 1$. Sequence necessary: $result = \text{true} \implies coinbase.\text{inputs}[0].\text{sequence} \neq 0\text{xffffffff}$. Non-empty inputs: $result = \text{true} \implies |coinbase.\text{inputs}| > 0$.
+
+**Formula** (**F_Bip54CoinbaseLocktime**):
+$$result == height - 1$$
+
+The coinbase lock time is the previous height. Witness `_verify_f_bip54_coinbase_locktime`.
+
+**Formula** (**F_Bip54CoinbaseSequence**):
+$$(sequence != 4294967295) == result$$
+
+The coinbase sequence is not `0xffffffff`. Witness `_verify_f_bip54_coinbase_sequence`.
 
 ---
 
@@ -2601,6 +2636,38 @@ b & \text{if } |prev| \ge 2 \text{ and } T \otimes \tau \text{ is undefined} \\
 where $\min_{\mathbb{N}}$ is the usual total order on $\mathbb{N}$, applied to the two compact encodings as unsigned integers.
 
 **BIP94 Timestamp Rule** (when $\text{EnforceBIP94}(n)$): For the first block of a new difficulty period, $\text{block}.\text{time} \geq \text{prev}.\text{time} - 600$ (MAX_TIMEWARP). Violation yields invalid block.
+
+Off a difficulty boundary the required compact bits are the parent header's bits. A header passes that check exactly when its bits word equals the required word.
+
+**Formula** (**F_Bip94BitsFromFirst**):
+$$result == first_bits$$
+
+When BIP94 is enforced, the retarget base is the first block of the period. Witness `_verify_f_bip94_bits_from_first`.
+
+**Formula** (**F_Bip94BitsFromLast**):
+$$result == last_bits$$
+
+When BIP94 is not enforced, the retarget base is the last block of the period. Witness `_verify_f_bip94_bits_from_last`.
+
+**Formula** (**F_Bip94Timewarp**):
+$$(timestamp + 600 >= parent_time) == result$$
+
+For a parent at least 600 seconds old, the addition form is the same bound as $\text{parent}.\text{time} - 600$. Witness `_verify_f_bip94_timewarp`.
+
+**Formula** (**F_Bip94TimewarpOffBoundary**):
+$$result == true$$
+
+The 600-second check applies on a difficulty-period boundary. Off that boundary the check does not reject. Witness `_verify_f_bip94_timewarp_off_boundary`.
+
+**Formula** (**F_OffBoundaryParentBits**):
+$$result == parent_bits$$
+
+Off a difficulty boundary the required compact bits are the parent header's bits. Witness `_verify_f_off_boundary_parent_bits`.
+
+**Formula** (**F_HeaderBitsMatchRequired**):
+$$(header_bits == required_bits) == result$$
+
+Witness `_verify_f_header_bits_match_required`.
 
 ```mermaid
 flowchart TD
@@ -3268,6 +3335,11 @@ $$result == true$$
 
 When the witness stack has zero elements ($|w| = 0$), IsWitnessEmpty always returns true. The outer emptiness check `is_empty()` returns true immediately.
 
+**Formula** (**F_WitnessStackNullByLength**):
+$$(len == 0) == result$$
+
+A witness stack is absent exactly when it has no items. One empty item is still present. Witness `_verify_f_witness_stack_null_by_length`.
+
 #### 11.1.3 Witness Program Extraction
 
 **ExtractWitnessVersion**: $\mathbb{S} \rightarrow \{\text{None}, \text{SegWitV0}, \text{TaprootV1}\}$
@@ -3336,6 +3408,28 @@ $$result == true$$
 
 When `op` is 0 (`OP_0`), 81 (`OP_1`), or 96 (`OP_16`), the opcode is a witness version. Witness `_verify_f_witness_version_accepted`.
 
+**Formula** (**F_WitnessPayloadByte**):
+$$result == (byte * (byte - 128) != 0)$$
+
+A one-byte payload is a true program exactly when that byte is neither `0x00` nor `0x80`. Witness `_verify_f_witness_payload_byte`.
+
+**Formula** (**F_WitnessPayloadEmpty**):
+$$result = 0$$
+
+An empty payload is not a true program. Witness `_verify_f_witness_payload_empty`.
+
+`prefix_nonzero` is nonzero when any byte before the last is nonzero. The payload is a true program exactly when its length is at least one and either that prefix is nonzero or the last byte is neither 0 nor 128. That covers an empty payload, a zero payload of any length, and a negative zero of any length. An upgradable witness program also requires an empty scriptSig, the witness flag, and a clear discourage flag.
+
+**Formula** (**F_CastToBoolSummary**):
+$$result == (len >= 1 && (prefix_nonzero != 0 || (last != 0 && last != 128)))$$
+
+Witness `_verify_f_cast_to_bool_summary`.
+
+**Formula** (**F_UpgradableProgramShape**):
+$$result == (script_sig_len == 0 && witness_flag != 0 && discourage == 0 && len >= 1 && (prefix_nonzero != 0 || (last != 0 && last != 128)))$$
+
+The program accepts exactly when those gates are open and the payload summary is true. Witness `_verify_f_upgradable_program_shape`.
+
 #### 11.1.4 Witness Merkle Root
 
 **ComputeWitnessMerkleRoot**: $\mathcal{B} \times \mathcal{W}^* \rightarrow \mathbb{H}$
@@ -3368,6 +3462,15 @@ Let $c = \text{SHA256d}(r \,\parallel\, n)$ (64-byte preimage) when $n$ is prese
 **OP_RETURN format** (BIP141): `OP_RETURN` `0x24` `0xaa21a9ed` $\parallel\, c$ (total push 36 bytes after opcode: 4-byte magic + 32-byte $c$).
 
 Consensus invokes $\text{ValidateWitnessCommitment}$ on the block’s coinbase ($b.\text{transactions}[0]$) after coinbase structure rules pass; the helper itself does not re-check $\text{IsCoinbase}$. With no commitment output the helper returns true. Block connection then rejects any non-empty witness stack. With a commitment output, the helper returns true only when $n$ is present and the last matching output stores $c$.
+
+The digest is `implied_hash(root, nonce)`. Both the witness root and the reserved nonce are inputs. The compression function stays uninterpreted, so two different preimages are not claimed to have different digests.
+
+Block connection accepts a missing commitment output only when no witness data is present. It accepts a commitment output only when the reserved item is 32 bytes and the stored word equals that digest.
+
+**Formula** (**F_WitnessCommitmentShape**):
+$$result == ((has_commitment == 0 && any_witness == 0) || (has_commitment != 0 && reserved_len == 32 && stored == implied_hash(root, nonce)))$$
+
+Witness `_verify_f_witness_commitment_shape`.
 
 $$\text{ValidateWitnessCommitment}(tx, r, w_{cb}) = \text{true} \iff \neg \exists \text{ commitment output} \lor (n \text{ is one 32-byte item} \land \text{ExtractCommitment}(o_{\text{last}}) = c)$$
 
