@@ -18,7 +18,7 @@ explicitly documented extension / policy decision.
 | Bitcoin Core | `int64_t` for amounts, subsidies, fees (implicit non-negativity enforced by assertion) |
 | BLVM | `Integer` (alias for `i64`) with explicit `#[ensures(result >= 0)]` postconditions |
 | Files | `economic.rs`, `lib.rs` |
-| Status | Formally verified: `get_block_subsidy` and `total_supply` carry `ensures(result >= 0)` proven by blvm-spec-lock / Z3 |
+| Status | Annotated / Z3-checked: `get_block_subsidy` (`#[spec_locked("6.1")]`) and `total_supply` (`#[spec_locked("6.2")]`) carry `ensures(result >= 0)`, checked by blvm-spec-lock / Z3. `total_supply` also declares its bounds as `#[axiom]`. Neither is mutation-validated; only 3 of 182 anchors are ([VERIFICATION.md](https://github.com/BTCDecoded/blvm-consensus/blob/main/docs/VERIFICATION.md)). |
 
 **Rationale:** The Orange Paper models economic quantities as integers
 ($\mathbb{Z}$) so that the type system does not silently hide underflow bugs.
@@ -113,12 +113,12 @@ for clarity and testability.
 | Bitcoin Core | Fee is computed inline; overflow aborts / returns error via exception or assert |
 | BLVM | `calculate_fee` returns `Result<Integer>` with `#[ensures(result >= 0)]` on the inner value |
 | Files | `economic.rs` |
-| Status | Formally verified: non-negativity proven by blvm-spec-lock / Z3 |
+| Status | Annotated / Z3-checked: `calculate_fee` (`#[spec_locked("6.5")]`) carries `ensures(result >= 0)`, checked by blvm-spec-lock / Z3. Not mutation-validated; only 3 of 182 anchors are ([VERIFICATION.md](https://github.com/BTCDecoded/blvm-consensus/blob/main/docs/VERIFICATION.md)). |
 
 **Rationale:** Explicit `Result` makes the overflow / invalid-input failure mode
 part of the function's API contract instead of a runtime panic.  The postcondition
-`ensures(result >= 0)` is a semantic proof: fees can never be negative when inputs
-cover outputs.
+`ensures(result >= 0)` states the contract the Z3 check targets: fees are never
+negative when inputs cover outputs.
 
 ---
 
