@@ -62,9 +62,9 @@ Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 - **Implementation:** `block::header::validate_block_header` — Z3-verified (F_HeaderBitsFloor)
 
 ### HDR-007
-- **Rule:** A block header MUST satisfy proof of work: double-SHA256(serialized header) MUST be less than ExpandTarget(bits).
+- **Rule:** A block header MUST satisfy proof of work: double-SHA256(serialized header) MUST be less than or equal to ExpandTarget(bits). A bits field that matches the ancestor is not a substitute. `connect_block_inner` calls the check after the ancestor-bits comparison and the BIP94 timewarp check, and before BIP54.
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H07, [§7.2](PROTOCOL.md#72-block-validation) CheckProofOfWork
-- **Implementation:** `pow::check_proof_of_work` — Z3-verified (Tier 1)
+- **Implementation:** `pow::check_proof_of_work`, called from `block::connect::connect_block_inner` — Z3-verified predicate (Tier 1)
 
 ### HDR-008
 - **Rule:** A block header prev_block_hash MUST equal the hash of the parent header (chain linkage).
@@ -416,6 +416,16 @@ Script execution, flags, and signature-operation counting.
 - **Specification:** [§5.4.5.1](PROTOCOL.md#545-bip147-nulldummy-enforcement) **Theorem 5.4.5.1**, DecodeCScriptNum
 - **Implementation:** `script::script_num_decode` — Z3-verified (spec_locked)
 
+### SC-023
+- **Rule:** When SCRIPT_VERIFY_P2SH is set and the scriptPubKey is the 23-byte HASH160 pattern, a true hash match MUST be followed by EvalScript of the last scriptSig push. OP_RESERVED in that redeem fails. The redeem runs after scriptPubKey and before the witness.
+- **Specification:** [§5.2](PROTOCOL.md#52-script-execution) VerifyScript step 4
+- **Implementation:** `script::verify_script` (`apply_p2sh_redeem`)
+
+### SC-024
+- **Rule:** OP_ELSE without a matching OP_IF or OP_NOTIF MUST fail. Each OP_ELSE in an open conditional inverts whether that branch executes, including a second OP_ELSE.
+- **Specification:** [§5.2](PROTOCOL.md#52-script-execution) EvalScript
+- **Implementation:** `script::eval_script`
+
 ---
 
 ## 6. UTXO Rules
@@ -522,6 +532,11 @@ Height-dependent, time-dependent, and sequence-lock rules.
 - **Rule:** All monetary arithmetic MUST use checked add/sub to prevent overflow/underflow.
 - **Specification:** [§13.3.1](PROTOCOL.md#1331-integer-arithmetic-overflowunderflow), **F_FeeArithmeticNonNeg**, **F_FeeArithmeticBounded**
 - **Implementation:** `transaction::check_transaction`, `economic::calculate_fee` — Z3-verified (F_* formulas)
+
+### CTX-013
+- **Rule:** A relative-lock input whose prevout is missing MUST fail before that transaction's outputs are recorded.
+- **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) CalculateSequenceLocks
+- **Implementation:** `block::connect::enforce_relative_locks`
 
 ---
 
@@ -904,9 +919,9 @@ Reorg and chain-work rules (Orange Paper [§11.3](ARCHITECTURE.md#113-chain-reor
 - **Implementation:** `reorganization::calculate_chain_work` — Z3-verified (Tier 1)
 
 ### REORG-003
-- **Rule:** DisconnectBlock with undo log MUST perfectly invert ConnectBlock.
+- **Rule:** DisconnectBlock with undo log MUST perfectly invert ConnectBlock. The IBD undo log reads each spent coin from the view the block was checked against. A missing spent coin is an error. An output that replaces a coin already in that view records the replaced coin. An empty log is not a successful disconnect.
 - **Specification:** [§11.3.1](ARCHITECTURE.md#1131-undo-log-pattern) DisconnectBlock, [§8.2.1](PROTOCOL.md#821-integration-properties) Idempotency Property
-- **Implementation:** `reorganization::disconnect_block` — Z3-verified (spec_locked)
+- **Implementation:** `reorganization::disconnect_block`, `block::script_cache::undo_log_from_overlay` — disconnect predicate Z3-verified (spec_locked)
 
 ### REORG-004
 - **Rule:** ReorganizeChain MUST disconnect blocks back to common ancestor then connect new chain blocks in order.
@@ -1022,7 +1037,7 @@ No open gaps as of 2026-06-18.
 
 ### Closed (gap-closure pass)
 
-HDR-008 node wiring; UTX-005 `VerifyUtxoSupply`; BIP54 BLK-012–014; ConnectBlock [§5.3.3](PROTOCOL.md#533-connectblock-pipeline); overlay ≡ ApplyTransaction (`tests/overlay_apply_equivalence.rs`); script fast-path ≡ VerifyScript (`tests/script_fast_path_equivalence.rs`); Signet SIG-001 (`signet::check_signet_block_solution`).
+HDR-008 node wiring; UTX-005 `VerifyUtxoSupply`; BIP54 BLK-012–014; ConnectBlock [§5.3.3](PROTOCOL.md#533-connectblock-pipeline); overlay ≡ ApplyTransaction (`tests/overlay_apply_equivalence.rs`); script fast-path ≡ VerifyScript (`tests/script_fast_path_equivalence.rs`); Signet SIG-001 (`signet::check_signet_block_solution`). October 2026: HDR-007 on connect, SC-023 redeem execution, SC-024 second OP_ELSE, CTX-013 missing relative-lock prevout, REORG-003 IBD undo of a spent or replaced coin.
 
 ---
 
@@ -1030,8 +1045,8 @@ HDR-008 node wiring; UTX-005 `VerifyUtxoSupply`; BIP54 BLK-012–014; ConnectBlo
 
 | Metric | Count |
 |--------|------:|
-| **Total rules** | **160** |
-| **With Orange Paper backing** | **160** |
+| **Total rules** | **163** |
+| **With Orange Paper backing** | **163** |
 | **UNIMPLEMENTED gaps (all crates)** | **0** |
 | **UNSPECIFIED / partial** | **0** |
 | **Activation height tables** | **4** ([§8 of this register](#8-activation-height-tables)) |

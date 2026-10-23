@@ -581,6 +581,7 @@ sequenceDiagram
 - Execution order: $result$ executes $ss$ first, then $spk$, then $w$ if present
 - Stack initialization: $result$ starts with empty stack for $ss$ execution
 - Final stack condition: $result = \text{true} \implies$ final stack has exactly one non-zero element
+- $\text{OP\_ELSE}$ inverts the open conditional's execution flag, including a second $\text{OP\_ELSE}$ in that conditional. $\text{OP\_ELSE}$ with an empty control stack fails.
 
 **VerifyScript**: $\mathcal{SC} \times \mathcal{SC} \times \mathcal{W} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
 
@@ -596,8 +597,9 @@ For scriptSig $ss$, scriptPubKey $spk$, witness $w$, and flags $f$:
 1. **P2SH Push-Only Validation**: If $(f \land 0x01) \neq 0$ (SCRIPT_VERIFY_P2SH) and $\text{IsP2SH}(spk)$, then $\text{P2SHPushOnlyCheck}(ss)$ must be valid
 2. Execute $ss$ on empty stack
 3. Execute $spk$ on resulting stack
-4. If witness present: execute $w$ on stack
-5. Return final stack has exactly one true value
+4. **P2SH redeem**: If $(f \land 0x01) \neq 0$ and $\text{IsP2SH}(spk)$ and the stack top is true, pop that value and $\text{EvalScript}$ the last push of $ss$. A hash match alone is not success. $\text{OP\_RESERVED}$ in the redeem fails.
+5. If witness present: execute $w$ on stack
+6. Return final stack has exactly one true value
 
 #### 5.2.1 P2SH Push-Only Validation
 
@@ -2014,7 +2016,7 @@ The coinbase sequence is not `0xffffffff`. Witness `_verify_f_bip54_coinbase_seq
 
 ### 5.5 Sequence Locks (BIP68)
 
-Sequence locks enforce relative locktime constraints using transaction input sequence numbers. Unlike absolute locktime (nLockTime), sequence locks are relative to when the input was confirmed.
+Sequence locks enforce relative locktime constraints using transaction input sequence numbers. Unlike absolute locktime (nLockTime), sequence locks are relative to when the input was confirmed. An input whose prevout is not in the view fails before that transaction's outputs are recorded.
 
 **Sequence Number Encoding**: $nSequence \in \mathbb{N}_{32}$ (32-bit unsigned integer)
 
