@@ -1,0 +1,2 @@
+# Fully qualified names of Lean declarations that are not locked to a sentence.
+# A name on this list cannot appear in a spec_model or spec_model_conditional proof.

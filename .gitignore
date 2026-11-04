@@ -25,3 +25,6 @@ Thumbs.db
 # Logs
 *.log
 
+# Lean build
+lean/.lake/
+
