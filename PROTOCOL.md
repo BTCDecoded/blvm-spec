@@ -2353,8 +2353,8 @@ Non-negativity invariant: the total supply is always non-negative. Verified for 
 
 $$result \geq supply$$
 
-One-step monotonicity: $supply + subsidy \geq supply$ when $supply \geq 0$ and
-$subsidy \geq 0$. Witness `_verify_f_total_supply_mono_step`. The $\forall$ over
+One-step monotonicity: $supply + subsidy \geq supply$ when $supply \geq 0$,
+$subsidy \geq 0$, $supply \leq M_{max}$, and $subsidy \leq M_{max}$. Witness `_verify_f_total_supply_mono_step`. The $\forall$ over
 heights is this step plus **F_SubsidyPiecewise** ($subsidy \geq 0$).
 
 **Formula** (**F_TotalSupplyBound**):
@@ -2508,7 +2508,7 @@ The fee is the difference between total input value and total output value. Coin
 
 $$result \geq 0$$
 
-Non-negativity of transaction fees for valid transactions: total input value must be at least total output value, so the fee difference is always non-negative.
+Non-negativity of transaction fees for valid transactions when $total\_in \geq total\_out \geq 0$ and $total\_in \leq M_{max}$: total input value must be at least total output value, so the fee difference is always non-negative.
 
 $$\text{Fee}(tx, us) = \sum_{i \in tx.inputs} us(i.prevout).value - \sum_{o \in tx.outputs} o.value$$
 
@@ -3258,7 +3258,7 @@ bytes cost 4 weight units, witness bytes cost 1.
 **Formula** (**F_WeightEquiv**):
 $$result == 4 * base + wit$$
 
-Under $total = base + wit$, $3 \times base + total = 4 \times base + wit$.
+Under $total = base + wit$, when $0 \leq base \leq W_{max}$ and $0 \leq wit \leq W_{max}$, $3 \times base + total = 4 \times base + wit$.
 Witness `_verify_f_weight_equiv`. **F_WeightToVSizeFloor** / **F_WeightToVSizeCeiling**
 are a different claim.
 
@@ -3413,7 +3413,7 @@ When `op` is 0 (`OP_0`), 81 (`OP_1`), or 96 (`OP_16`), the opcode is a witness v
 **Formula** (**F_WitnessPayloadByte**):
 $$result == (byte * (byte - 128) != 0)$$
 
-A one-byte payload is a true program exactly when that byte is neither `0x00` nor `0x80`. Witness `_verify_f_witness_payload_byte`.
+A one-byte payload, $0 \leq byte < 2^{8}$, is a true program exactly when that byte is neither `0x00` nor `0x80`. Witness `_verify_f_witness_payload_byte`.
 
 **Formula** (**F_WitnessPayloadEmpty**):
 $$result = 0$$
@@ -4137,12 +4137,12 @@ block fees, not only per-transaction fee arithmetic.
 **Formula** (**F_FeeArithmeticNonNeg**):
 $$result \geq 0$$
 
-For valid transactions with $total\_in \geq total\_out \geq 0$: fee $= total\_in - total\_out \geq 0$.
+For valid transactions with $total\_in \geq total\_out \geq 0$ and $total\_in \leq M_{max}$: fee $= total\_in - total\_out \geq 0$.
 
 **Formula** (**F_FeeArithmeticBounded**):
 $$result \leq total\_in$$
 
-The computed fee is always bounded above by the total input value when $total\_in \geq total\_out \geq 0$.
+The computed fee is always bounded above by the total input value when $total\_in \geq total\_out \geq 0$ and $total\_in \leq M_{max}$.
 
 #### 13.3.2 Serialization/Deserialization Correctness
 
@@ -4190,7 +4190,7 @@ Headroom above the 2-byte minimum for a valid coinbase scriptSig: $result = len 
 **Formula** (**F_CoinbaseScriptSigMax**):
 $$result \geq 0$$
 
-Distance below the 100-byte maximum for a valid coinbase scriptSig: $result = 100 - len \geq 0$ when $len \leq 100$.
+Distance below the 100-byte maximum for a valid coinbase scriptSig: $result = 100 - len \geq 0$ when $2 \leq len \leq 100$.
 
 **Formula** (**F_StackSizeSafe**):
 $$result \geq 0$$
@@ -4201,14 +4201,14 @@ Stack headroom before the 1000-item limit: $result = 999 - depth \geq 0$ when $d
 $$result \geq 0$$
 
 Combined-stack headroom: $result = 1000 - (stack + alt) \geq 0$ when
-$stack \geq 0$, $alt \geq 0$, and $stack + alt \leq 1000$. Witness
+$0 \leq stack \leq L_{stack}$, $0 \leq alt \leq L_{stack}$, and $stack + alt \leq L_{stack}$. Witness
 `_verify_f_stack_combined_safe`. **F_StackSizeSafe** is one stack only.
 
 **Formula** (**F_StackCombinedFail**):
 $$result \geq 0$$
 
 Overflow past the combined limit: $result = (stack + alt) - 1001 \geq 0$ when
-$stack + alt \geq 1001$. Witness `_verify_f_stack_combined_fail`.
+$0 \leq stack \leq L_{stack}$, $0 \leq alt \leq L_{stack}$, and $stack + alt \geq 1001$. Witness `_verify_f_stack_combined_fail`.
 1000 combined items pass; 1001 fail.
 
 #### 13.3.4 Parser Determinism
@@ -4242,7 +4242,7 @@ Headroom below the block-height/timestamp boundary: $result = 500{,}000{,}000 - 
 **Formula** (**F_LocktimeTypeIsTimestamp**):
 $$result \geq 0$$
 
-Excess above the block-height/timestamp boundary: $result = lt - 500{,}000{,}000 \geq 0$ when $lt \geq 500{,}000{,}000$. Establishes that a locktime value in the timestamp range has non-negative distance above the threshold.
+Excess above the block-height/timestamp boundary: $result = lt - 500{,}000{,}000 \geq 0$ when $500{,}000{,}000 \leq lt < 2^{32}$. Establishes that a locktime value in the timestamp range has non-negative distance above the threshold.
 
 **Theorem 13.3.5.2** (Locktime/Script Integration): Locktime validation integrates correctly with script execution:
 
