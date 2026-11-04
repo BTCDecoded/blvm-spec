@@ -1,8 +1,8 @@
 {
-  "version": "0.0.0-dev+40209a8",
-  "git_describe": "40209a8",
-  "sha": "40209a8c3c23c46bae1dc50fbbd752d487bb5d06",
+  "version": "0.0.0-dev+2a8fcb2",
+  "git_describe": "2a8fcb2",
+  "sha": "2a8fcb2246332aca3b86501d7f327ad2366fb60b",
   "ref": "main",
   "content_sha256": "9c1eeec4d6022ea2039b182270f65cb389be6cde9080e4f440d59219aa49a153",
-  "generated_at": "2026-10-23T00:37:13.624Z"
+  "generated_at": "2026-11-04T15:40:42.572Z"
 }
