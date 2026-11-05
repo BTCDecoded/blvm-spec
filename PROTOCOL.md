@@ -1316,7 +1316,7 @@ $$\text{BIP34Check}(b, h) = \begin{cases}
 \end{cases}$$
 
 Where:
-- $H_{34}$ is the BIP34 activation height (mainnet: 227,931; testnet: 21,111; regtest: 0)
+- $H_{34}$ is the BIP34 activation height (mainnet: 227,931; testnet: 21,111; regtest: 1)
 - $result$ extracts the block height from coinbase scriptSig using CScriptNum encoding
 
 **Height Encoding**: After activation, the coinbase scriptSig must begin with the minimal script-number encoding of $h$. Height 0 is the single byte `OP_0`. Heights 1 through 16 are the single opcodes `OP_1` through `OP_16`. A taller height is one length byte followed by the little-endian magnitude. When the high bit of the last magnitude byte is set, one extra `0x00` byte follows so the number stays non-negative. Bytes after that prefix are ignored. `OP_PUSHDATA` and extra zero bytes are not that prefix, even when they decode to the same integer.
@@ -1368,7 +1368,7 @@ $$\text{BIP66Check}(sig, h) = \begin{cases}
 \end{cases}$$
 
 Where:
-- $H_{66}$ is the BIP66 activation height (mainnet: 363,725; testnet: 330,776; regtest: 0)
+- $H_{66}$ is the BIP66 activation height (mainnet: 363,725; testnet: 330,776; regtest: 1)
 - $\text{IsStrictDER}(sig)$ is the byte predicate below. [X.690](https://www.itu.int/rec/T-REC-X.690/) is background for DER, not this predicate.
 
 **IsStrictDER** (Bitcoin `IsValidSignatureEncoding`; the sighash byte sits outside the DER body):
@@ -2222,7 +2222,7 @@ Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is m
 
 *Proof*: $\text{EvaluateSequenceLocks}$ is the case analysis of disabled / height / time guards. This is proven by blvm-spec-lock formal verification of **F_EvalSeqLocksDisabled**, **F_EvalSeqLocksHeightNotMet**, **F_EvalSeqLocksHeightMet**, **F_EvalSeqLocksTimeNotMet**, **F_EvalSeqLocksTimeMet**, and **F_EvalSeqLocksBothMet**.
 
-**OP_CHECKSEQUENCEVERIFY** (opcode `0xb2`), when the CSV flag is set, reads the same 5-byte signed script number as CLTV. If bit 31 of that non-negative value is set, the opcode succeeds on every transaction version and does not compare input sequences. Otherwise the transaction version must be at least 2; a smaller version fails the opcode.
+**OP_CHECKSEQUENCEVERIFY** (opcode `0xb2`), when the CSV flag is set, reads the same 5-byte signed script number as CLTV. If bit 31 of that non-negative value is set, the opcode succeeds on every transaction version and does not compare input sequences. Otherwise the transaction version, compared as a signed 32-bit integer, must be at least 2. Wire `0xffffffff` is −1 and does not enable CSV. A smaller version fails the opcode.
 
 **Formula** (**F_CsvVersionBelowTwoFails**):
 $$result == false$$

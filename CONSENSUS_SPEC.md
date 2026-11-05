@@ -549,10 +549,10 @@ Canonical activation and deactivation heights for this register (**not** Orange 
 | Fork | BIP | Mainnet | Testnet | Regtest | Signet | Enforced by |
 |------|-----|---------|---------|---------|--------|-------------|
 | P2SH | 16 | 173,805 | 0 | 0 | 0 | `CalculateScriptFlags` / `ForkId::Bip16` |
-| Height in coinbase | 34 | 227,931 | 21,111 | 0 | 1 | `BIP34Check`, `BIP90Check` (min version 2) |
-| Strict DER | 66 | 363,725 | 330,776 | 0 | 1 | `BIP66Check`, `BIP90Check` (min version 3) |
-| CLTV | 65 | 388,381 | 581,885 | 0 | 1 | `BIP65Check`, `BIP90Check` (min version 4) |
-| CSV + sequence locks | 68/112 | 419,328 | 770,112 | 0 | 1 | `CalculateSequenceLocks`, `CalculateScriptFlags` |
+| Height in coinbase | 34 | 227,931 | 21,111 | 1 | 1 | `BIP34Check`, `BIP90Check` (min version 2) |
+| Strict DER | 66 | 363,725 | 330,776 | 1 | 1 | `BIP66Check`, `BIP90Check` (min version 3) |
+| CLTV | 65 | 388,381 | 581,885 | 1 | 1 | `BIP65Check`, `BIP90Check` (min version 4) |
+| CSV + sequence locks | 68/112 | 419,328 | 770,112 | 1 | 1 | `CalculateSequenceLocks`, `CalculateScriptFlags` |
 | Median time past | 113 | 419,328 | 770,112 | 0 | 1 | `GetMedianTimePast` (header timestamp floor) |
 | SegWit v0 | 141 | 481,824 | 834,624 | 0 | 1 | `ValidateSegWitBlock`, witness flags |
 | NULLDUMMY | 147 | 481,824 | 834,624 | 0 | 1 | `BIP147Check` |
@@ -565,7 +565,7 @@ Canonical activation and deactivation heights for this register (**not** Orange 
 - SegWit and BIP147 share mainnet height 481,824 (same deployment).
 - BIP68 and BIP112 share activation height; CSV script flag and sequence-lock enforcement activate together.
 - CTV/CSFS/BIP54 default to inactive on mainnet/testnet (`activation height = u64::MAX` or 0 = disabled per fork table builder).
-- Regtest: most forks active from height 0; BIP65 uses height 0 in `ForkActivationTable` (immediate).
+- Regtest: BIP34, BIP66, BIP65, and CSV start at height 1, matching Bitcoin Core, so the version-1 genesis is valid. SegWit, Taproot, and the other buried regtest forks stay at height 0.
 - Signet: most soft forks active from height 1 (`ForkActivationTable`); Taproot activation helper returns 1; BIP54/CTV/CSFS default inactive (`u64::MAX`).
 
 ### Table 2 — BIP90 minimum block version (HDR-002)
