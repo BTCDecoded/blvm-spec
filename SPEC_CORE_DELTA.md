@@ -18,7 +18,7 @@ explicitly documented extension / policy decision.
 | Bitcoin Core | `int64_t` for amounts, subsidies, fees (implicit non-negativity enforced by assertion) |
 | BLVM | `Integer` (alias for `i64`) with explicit `#[ensures(result >= 0)]` postconditions |
 | Files | `economic.rs`, `lib.rs` |
-| Status | Annotated / Z3-checked: `get_block_subsidy` (`#[spec_locked("6.1")]`) and `total_supply` (`#[spec_locked("6.2")]`) carry `ensures(result >= 0)`, checked by blvm-spec-lock / Z3. `total_supply` also declares its bounds as `#[axiom]`. Neither is mutation-validated; only 3 of 182 anchors are ([VERIFICATION.md](https://github.com/BTCDecoded/blvm-consensus/blob/main/docs/VERIFICATION.md)). |
+| Status | Annotated and Z3-checked. `get_block_subsidy` (`#[spec_locked("6.1")]`) and `total_supply` (`#[spec_locked("6.2")]`) carry `ensures(result >= 0)`. Both are on the older 93-of-224 list. The body-proof pass is 13 functions and does not include these two ([VERIFICATION.md](https://github.com/BTCDecoded/blvm-consensus/blob/main/docs/VERIFICATION.md)). |
 
 **Rationale:** The Orange Paper models economic quantities as integers
 ($\mathbb{Z}$) so that the type system does not silently hide underflow bugs.
@@ -113,7 +113,7 @@ for clarity and testability.
 | Bitcoin Core | Fee is computed inline; overflow aborts / returns error via exception or assert |
 | BLVM | `calculate_fee` returns `Result<Integer>` with `#[ensures(result >= 0)]` on the inner value |
 | Files | `economic.rs` |
-| Status | Annotated / Z3-checked: `calculate_fee` (`#[spec_locked("6.5")]`) carries `ensures(result >= 0)`, checked by blvm-spec-lock / Z3. Not mutation-validated; only 3 of 182 anchors are ([VERIFICATION.md](https://github.com/BTCDecoded/blvm-consensus/blob/main/docs/VERIFICATION.md)). |
+| Status | Annotated and Z3-checked. `calculate_fee` (`#[spec_locked("6.5")]`) carries `ensures(result >= 0)` and is on the older 93-of-224 list (6 / 6). It is not one of the 13 functions proved from the body ([VERIFICATION.md](https://github.com/BTCDecoded/blvm-consensus/blob/main/docs/VERIFICATION.md)). |
 
 **Rationale:** Explicit `Result` makes the overflow / invalid-input failure mode
 part of the function's API contract instead of a runtime panic.  The postcondition
