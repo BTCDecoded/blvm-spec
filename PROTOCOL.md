@@ -2173,7 +2173,7 @@ For transaction $tx$, flags $f$, previous heights $ph \in [\mathbb{N}]$, and rec
 $$\text{CalculateSequenceLocks}(tx, f, ph, rh) = (\text{min\_height}, \text{min\_time})$$
 
 Where:
-- BIP68 is only enforced if $tx.\text{version} \geq 2$ and $(f \land 0x01) \neq 0$
+- BIP68 is only enforced if the low 32 bits of $tx.\text{version}$, read as an unsigned integer, are at least 2 and $(f \land 0x01) \neq 0$. Wire `0xffffffff` is $2^{32}-1$ and enables the lock.
 - For each input $i \in tx.\text{inputs}$:
   - If $\text{IsSequenceDisabled}(i.\text{sequence})$: skip input
   - If $\text{ExtractSequenceTypeFlag}(i.\text{sequence})$ (time-based):
@@ -2222,12 +2222,17 @@ Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is m
 
 *Proof*: $\text{EvaluateSequenceLocks}$ is the case analysis of disabled / height / time guards. This is proven by blvm-spec-lock formal verification of **F_EvalSeqLocksDisabled**, **F_EvalSeqLocksHeightNotMet**, **F_EvalSeqLocksHeightMet**, **F_EvalSeqLocksTimeNotMet**, **F_EvalSeqLocksTimeMet**, and **F_EvalSeqLocksBothMet**.
 
-**OP_CHECKSEQUENCEVERIFY** (opcode `0xb2`), when the CSV flag is set, reads the same 5-byte signed script number as CLTV. If bit 31 of that non-negative value is set, the opcode succeeds on every transaction version and does not compare input sequences. Otherwise the transaction version, compared as a signed 32-bit integer, must be at least 2. Wire `0xffffffff` is −1 and does not enable CSV. A smaller version fails the opcode.
+**OP_CHECKSEQUENCEVERIFY** (opcode `0xb2`), when the CSV flag is set, reads the same 5-byte signed script number as CLTV. If bit 31 of that non-negative value is set, the opcode succeeds on every transaction version and does not compare input sequences. Otherwise the transaction version is the unsigned 32-bit wire word and must be at least 2. Wire `0xffffffff` enables CSV. A version below 2 fails the opcode.
 
 **Formula** (**F_CsvVersionBelowTwoFails**):
 $$result == false$$
 
 When the stack disable bit is clear and the transaction version is less than 2, CSV fails. Witness `_verify_f_csv_version_below_two_fails`.
+
+**Formula** (**F_RelativeLockUnsignedVersion**):
+$$result == (version \geq 2)$$
+
+For a version word in $0 \ldots 2^{32}-1$, BIP68 and CSV are enabled exactly when that unsigned word is at least 2. Wire `0xffffffff` enables both. Witness `_verify_f_relative_lock_unsigned_version`.
 
 **Formula** (**F_CsvDisableBitSkipsVersion**):
 $$result == true$$
