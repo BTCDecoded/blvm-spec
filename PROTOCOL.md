@@ -751,7 +751,7 @@ An opcode is an immediate success when it equals $0x50$ or $0x62$, or lies in $0
 | OP_NOP9 | 0xb8 | 0 | nop |
 | OP_NOP10 | 0xb9 | 0 | nop |
 | OP_CHECKSIGADD | 0xba | 3 | sigadd |
-| OP_CHECKSIGFROMSTACK | 0xcc | 0 | nop |
+| OP_CHECKSIGFROMSTACK | 0xcc | 0 | success until CSFS is active |
 
 **P2SH Detection**: $\text{IsP2SH}(spk) = (|spk| = 23) \land (spk[0] = 0xa9) \land (spk[1] = 0x14) \land (spk[22] = 0x87)$
 
@@ -1244,7 +1244,7 @@ Implementation contract for **ConnectBlock** (`connect_block_inner` in `blvm-con
 1. CheckFinalTx for every transaction (a non-final transaction is invalid before later checks)
 2. Validate block header (H01, H03–H06; H02/H07/H08 via callers)
 3. BIP checks (BIP30, BIP34, BIP54, …) gated by activation
-4. Transaction loop: CheckTransaction, CheckTxInputs, VerifyScript, sigop limit, and the consensus weight cap (weight above 4000000)
+4. Transaction loop: CheckTransaction, CheckTxInputs, VerifyScript, sigop limit, and the consensus weight cap (weight above 4000000). Under production, VerifyScript is skipped below the assume-valid height when an assume-valid hash is set and chainwork meets the minimum. Signature-operation cost is still counted.
 5. CheckCoinbaseSubsidy (coinbase output ≤ subsidy + fees) and the witness commitment when a witness is present
 6. ApplyTransaction to UTXO set; optional VerifyUtxoSupply invariant (debug)
 
@@ -3075,7 +3075,7 @@ A transaction is standard if:
 **ReplacementChecks**: $\mathcal{TX} \times \mathcal{TX} \rightarrow \{\text{true}, \text{false}\}$
 
 **Properties**:
-- RBF requirement: $result = \text{true} \implies \exists i \in tx_1.inputs : i.sequence < \text{SEQUENCE\_FINAL}$ (RBF signaling required)
+- Conservative RBF requirement: $result = \text{true} \implies \exists i \in tx_1.inputs : i.sequence < \text{SEQUENCE\_FINAL}$. Standard mode may replace an original that does not signal.
 - Fee bump requirement: $result = \text{true} \implies \text{FeeRate}(tx_2) > \text{FeeRate}(tx_1)$ (higher fee rate required)
 - Deterministic: $\text{ReplacementChecks}(tx_{1a}, tx_{2a}) = \text{ReplacementChecks}(tx_{1b}, tx_{2b}) \iff tx_{1a} = tx_{1b} \land tx_{2a} = tx_{2b}$
 **Note**: Replacement requires $tx_1$ and $tx_2$ to conflict (share at least one input).
@@ -3083,7 +3083,7 @@ A transaction is standard if:
 
 Transaction $tx_2$ can replace $tx_1$ if:
 
-1. **RBF Signaling**: $tx_1$ has any input with $nSequence < \text{SEQUENCE\_FINAL}$
+1. **RBF Signaling**: Conservative mode requires $tx_1$ to have an input with $nSequence < \text{SEQUENCE\_FINAL}$. Standard mode does not. `0xfffffffe` is below `SEQUENCE_FINAL`, so it is a signal.
 2. **Fee Bump**: $\text{FeeRate}(tx_2) > \text{FeeRate}(tx_1)$
 3. **Absolute Fee**: $\text{Fee}(tx_2) > \text{Fee}(tx_1) + \text{minRelayFee}$
 4. **Conflicts**: $tx_2$ spends at least one input from $tx_1$
@@ -3886,10 +3886,11 @@ When the output type is 3 and $input\_index \geq n\_outputs$, no tapscript signa
 
 **OP_CHECKSIGADD** (opcode 0xba): Tapscript-only opcode for signature aggregation.
 
-**Stack semantics**: Pops $(pk, n, sig)$ where $pk \in \mathbb{B}^{32}$, $n \in \mathbb{N}_{32}$, $sig \in \mathbb{B}^{64}$. Verifies BIP 340 Schnorr signature $(pk, sig)$ against the tapscript sighash. If valid: push $(n+1)$; else: fail.
+**Stack semantics**: Pops $(pk, n, sig)$ where $pk \in \mathbb{B}^{32}$, $n \in \mathbb{N}_{32}$, $sig \in \mathbb{B}^{64}$. An empty signature pushes $n$ and continues. A non-empty signature that fails verification aborts. A successful Schnorr check pushes $n+1$.
 
 $$\text{OP\_CHECKSIGADD}(pk, n, sig) = \begin{cases}
-n+1 & \text{if } \text{VerifySchnorr}(pk, sig, \text{ComputeTapscriptSignatureHash}(\ldots)) = \text{true} \\
+n+1 & \text{if } sig \neq \epsilon \land \text{VerifySchnorr}(pk, sig, \text{ComputeTapscriptSignatureHash}(\ldots)) = \text{true} \\
+n & \text{if } sig = \epsilon \\
 \text{fail} & \text{otherwise}
 \end{cases}$$
 

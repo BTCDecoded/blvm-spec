@@ -99,7 +99,7 @@ Rules governing block body composition and connection.
 - **Implementation:** `block::connect::connect_block_inner` → `transaction::check_tx_inputs` — Z3-verified (spec_locked)
 
 ### BLK-005
-- **Rule:** Every transaction in a block MUST pass script verification (VerifyScript) against the evolving UTXO set.
+- **Rule:** Every transaction in a block MUST pass script verification (VerifyScript) against the evolving UTXO set, except a production assume-valid skip: the block height is below the configured assume-valid height, an assume-valid hash is set, and chainwork meets the minimum. Signature-operation cost is still counted on that path.
 - **Specification:** [§5.3](PROTOCOL.md#53-block-validation) ConnectBlock, [§5.2](PROTOCOL.md#52-script-execution) VerifyScript
 - **Implementation:** `block::connect::connect_block_inner` → `script::verify_script` — Z3-verified (spec_locked)
 
@@ -1012,7 +1012,7 @@ Relay and mempool rules (Orange Paper [§9](PROTOCOL.md#9-mempool-protocol)). Th
 - **Implementation:** `mempool::accept_to_memory_pool` — Z3-verified (spec_locked)
 
 ### MEM-004
-- **Rule:** RBF replacement MUST require conflicting prevouts, higher fee rate, and RBF signaling (nSequence < SEQUENCE_FINAL).
+- **Rule:** RBF replacement MUST require conflicting prevouts and a higher fee rate. Conservative mode also requires a signal (`nSequence < SEQUENCE_FINAL`). Standard mode does not.
 - **Specification:** [§9.3](PROTOCOL.md#93-replace-by-fee-rbf) ReplacementChecks, [§8.2.1](PROTOCOL.md#821-integration-properties) RBF Conflict Requirement
 - **Implementation:** `mempool::replacement_checks` — Z3-verified (spec_locked)
 
