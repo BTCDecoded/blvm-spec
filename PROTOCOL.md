@@ -3066,7 +3066,7 @@ A transaction is standard if:
    - P2WPKH: `OP_0 <20-byte-hash>`
    - P2WSH: `OP_0 <32-byte-hash>`
    - P2TR: `OP_1 <32-byte-hash>`
-3. **Data Carrier**: OP_RETURN outputs $\leq$ 83 bytes
+3. **Data Carrier**: a standard OP_RETURN script may be MAX_STANDARD_TX_WEIGHT / 4 bytes, which is 100,000
 4. **Dust Threshold**: All outputs $\geq$ dust threshold
 5. **Multisig**: $\leq$ 3 keys for bare multisig
 
@@ -3152,7 +3152,7 @@ Parses raw bytes into a protocol message. Rejects messages that are too short, t
 
 **Properties**:
 - Size minimum: $|data| < 24 \implies \text{ParseMessage}(data) = \text{error}$
-- Size maximum: $|data| > L_{\max} \implies \text{ParseMessage}(data) = \text{error}$ where $L_{\max} = 32 \times 10^6$
+- Size maximum: a payload longer than 4,000,000 bytes is rejected (`MAX_PROTOCOL_PAYLOAD`)
 - Checksum rejection: Invalid checksum yields error
 
 **CalculateChecksum**: $\mathbb{S} \rightarrow [0,1]^{32}$ (first 4 bytes of double SHA256)
@@ -3160,13 +3160,13 @@ Parses raw bytes into a protocol message. Rejects messages that are too short, t
 **Properties**:
 - Checksum length: $|\text{CalculateChecksum}(payload)| = 4$
 
-**Theorem 10.1.1** (Message Size Bounds): Valid messages satisfy $24 \leq |data| \leq L_{\max}$.
+**Theorem 10.1.1** (Message Size Bounds): Valid messages satisfy $24 \leq |data|$ and a payload of at most 4,000,000 bytes.
 
 **Theorem 10.1.2** (Checksum Rejection): $\text{checksum} \neq \text{CalculateChecksum}(\text{payload}) \implies \text{ParseMessage}(data) = \text{error}$
 
 **Implementation Invariants**:
 1. **Checksum length**: $|\text{CalculateChecksum}(payload)| = 4$
-2. **Payload bounds**: $\text{payload\_length} \leq L_{\max} - 24$
+2. **Payload bounds**: $\text{payload\_length} \leq 4,000,000$
 
 ### 10.2 Connection Management
 
