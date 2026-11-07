@@ -516,7 +516,7 @@ Bitcoin uses a stack-based scripting language for transaction validation. Script
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-$\text{EvalScript}(script, S_0, f) = \text{true}$ iff execution terminates without failure and the final stack $S_f$ satisfies $|S_f| = 1 \land S_f[0] \neq 0$.
+$\text{EvalScript}(script, S_0, f) = \text{true}$ iff execution terminates without failure, $S_f$ is non-empty, and its top element is non-zero. When $f$ includes $\text{SCRIPT\_VERIFY\_CLEANSTACK}$, the final stack must also satisfy $|S_f| = 1$.
 
 Execution fails (yielding $\text{false}$) iff at any step:
 - $|stack| + |altstack| > L_{stack}$, or
@@ -1660,13 +1660,14 @@ $$(height >= 0) == result$$
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 - Type consistency: $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies \text{LocktimeType}(tx.\text{lockTime}) = \text{LocktimeType}(lt)$ (types must match)
 - Locktime ordering (BIP65): $\text{BIP65Check}(tx, i, lt, h) = \text{valid} \implies tx.\text{lockTime} \geq lt$ (transaction locktime must be **≥** stack locktime; stack value greater than `tx.lockTime` fails)
-- Zero locktime: $(tx.\text{lockTime}, lt) = (0, 0)$ with matching types **may** be valid (mainnet block 659901); BIP65 does **not** unconditionally reject `tx.lockTime = 0`
-- Two-argument form: $\text{LocktimeType}(a) = \text{LocktimeType}(b) \land a \geq b \implies \text{valid}$
-- Two-argument result: $result == ((tx_locktime < 500000000) == (stack_locktime < 500000000) && tx_locktime >= stack_locktime)$
+- Zero locktime: $(tx.\text{lockTime}, lt) = (0, 0)$ with matching types **may** be valid when the spending input's sequence is not `0xffffffff` (mainnet block 659901); BIP65 does **not** unconditionally reject `tx.lockTime = 0`
+- Two-argument form: $\text{LocktimeType}(a) = \text{LocktimeType}(b) \land a \geq b \implies \text{valid}$ for the locktime clause alone
+- Two-argument result: the locktime clause is $((tx_locktime < 500000000) == (stack_locktime < 500000000) && tx_locktime >= stack_locktime)$. The check is also invalid when input $i$'s sequence is `0xffffffff`
 
 For transaction $tx$, input index $i$, locktime value $lt$, and block header $h$:
 
 $$\text{BIP65Check}(tx, i, lt, h) = \begin{cases}
+\text{invalid} & \text{if } tx.\text{inputs}[i].\text{sequence} = \text{0xffffffff} \\
 \text{invalid} & \text{if } \text{LocktimeType}(tx.\text{lockTime}) \neq \text{LocktimeType}(lt) \\
 \text{invalid} & \text{if } tx.\text{lockTime} < lt \\
 \text{valid} & \text{otherwise}

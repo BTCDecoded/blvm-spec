@@ -553,7 +553,7 @@ Canonical activation and deactivation heights for this register (**not** Orange 
 | Strict DER | 66 | 363,725 | 330,776 | 1 | 1 | `BIP66Check`, `BIP90Check` (min version 3) |
 | CLTV | 65 | 388,381 | 581,885 | 1 | 1 | `BIP65Check`, `BIP90Check` (min version 4) |
 | CSV + sequence locks | 68/112 | 419,328 | 770,112 | 1 | 1 | `CalculateSequenceLocks`, `CalculateScriptFlags` |
-| Median time past | 113 | 419,328 | 770,112 | 0 | 1 | `GetMedianTimePast` (header timestamp floor) |
+| Median time past | 113 | 419,328 | 770,112 | 0 | 1 | H05 header floor whenever a time context is present. These heights are the BIP113 locktime cutoff in `enforce_tx_finality`, not a gate on the header check |
 | SegWit v0 | 141 | 481,824 | 834,624 | 0 | 1 | `ValidateSegWitBlock`, witness flags |
 | NULLDUMMY | 147 | 481,824 | 834,624 | 0 | 1 | `BIP147Check` |
 | Taproot | 341/342 | 709,632 | 2,011,968 | 0 | 1 | Taproot validation, `TaprootActivationHeight` |
