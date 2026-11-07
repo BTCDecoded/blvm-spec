@@ -230,7 +230,7 @@ Four invariants are universal across this specification and never restated per-f
 
 $C = 10^8$ (satoshis per BTC, see [Economic Model](#6-economic-model))  
 $M_{max} = 21 \times 10^6 \times C$ (overflow-guard cap on output values and value sums, see [§6.2](#62-total-supply) and [§6.3](#63-supply-limit-validation); not the issued supply)  
-$H = 210,000$ (halving interval, see [Block Subsidy](#61-block-subsidy))
+$H = 210,000$ (halving interval on mainnet, testnet, testnet4, and signet, see [Block Subsidy](#61-block-subsidy)). Regtest halves every 150 blocks.
 
 **Remark (Constant Dependency).** The three monetary constants in §4.1 have only
 two degrees of freedom. $M_{\max}$ is not independently chosen: it equals
@@ -261,9 +261,11 @@ $L_{element} = 520$ (maximum element size, see [Script Execution](#52-script-exe
 
 ### 4.4 Difficulty Constants
 
-$D_{interval} = 2016$ (blocks per difficulty adjustment period, see [Difficulty Adjustment](#71-difficulty-adjustment))  
+$D_{interval} = 2016$ (blocks per difficulty adjustment period on mainnet, testnet, testnet4, and signet, see [Difficulty Adjustment](#71-difficulty-adjustment)). Regtest does not retarget.  
 $T_{block} = 600$ (target block time in seconds, 10 minutes)  
 $T_{future} = 7200$ (maximum allowed block time in future, 2 hours, see [Block Validation](#53-block-validation))
+
+Testnet, testnet4, and regtest accept the proof-of-work limit as the required bits when the header timestamp is more than $2 \times T_{block}$ after the parent.
 
 ## 5. State Transition Functions
 
@@ -956,7 +958,7 @@ When the byte string has more than one byte ($|bytes| > 1$), IsMinimalIfConditio
 
 **Properties**:
 - Flag activation: $result = f \implies \forall flag \in f: h \geq H_{flag}(n)$
-- Per-transaction calculation: $\text{CalculateScriptFlags}(tx_1, w_1, h, n) \neq \text{CalculateScriptFlags}(tx_2, w_2, h, n)$ (may differ for different transactions)
+- Connect uses one mask per block. `CalculateScriptFlags` can still differ per transaction; that result is not the block mask.
 - Non-negative bitmask: $result \geq 0$ (flags are a $32$-bit unsigned mask; consensus uses only defined bits)
 
 **Note**: Flag sets are monotone in height — flags are never removed once activated: for $h_1 \leq h_2$, $\text{CalculateScriptFlags}(tx, w, h_1, n) \subseteq \text{CalculateScriptFlags}(tx, w, h_2, n)$. This is a set-containment property not directly modelable in Z3's integer arithmetic.
@@ -985,10 +987,8 @@ Where:
 - **SCRIPT_VERIFY_NULLDUMMY** ($f = 0x10$): $H_f(\text{mainnet}) = 481,824$ (BIP147), $\text{FlagCondition} = \text{true}$
 - **SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY** ($f = 0x200$): $H_f(\text{mainnet}) = 388,381$ (BIP65), $\text{FlagCondition} = \text{true}$
 - **SCRIPT_VERIFY_CHECKSEQUENCEVERIFY** ($f = 0x400$): $H_f(\text{mainnet}) = 419,328$ (BIP112 / BIP9 `csv` deployment on mainnet), $\text{FlagCondition} = \text{true}$
-- **SCRIPT_VERIFY_WITNESS** ($f = 0x800$): $H_f(\text{mainnet}) = 481,824$ (SegWit), $\text{FlagCondition} = (\text{HasNonEmptyInputWitness}(w) \lor \text{IsSegWitTransaction}(tx))$
-
-Where $\text{HasNonEmptyInputWitness}(w)$ is true iff witness data $w$ contains at least one input stack $w_i$ with $\neg\text{IsWitnessEmpty}(w_i)$. Witness-extended block serialization may attach empty stacks to legacy inputs; those empty stacks alone must not satisfy the witness flag condition.
-- **SCRIPT_VERIFY_WITNESS_PUBKEYTYPE** ($f = 0x8000$): $H_f(\text{mainnet}) = 709,632$ (Taproot), $\text{FlagCondition} = \exists o \in tx.\text{outputs} : \text{IsP2TR}(o.\text{scriptPubkey})$
+- **SCRIPT_VERIFY_WITNESS** ($f = 0x800$): part of the block script mask for every transaction. It is not gated on a non-empty witness or on `IsSegWitTransaction`.
+- **SCRIPT_VERIFY_WITNESS_PUBKEYTYPE** ($f = 0x8000$): **Relay / standardness**. The block script mask does not set this bit. An uncompressed witness public key is valid in a block.
 
 **P2TR Detection**: $\text{IsP2TR}(spk) = (|spk| = 34) \land (spk[0] = 0x51) \land (spk[1] = 0x20)$
 
@@ -996,21 +996,19 @@ Where:
 - $0x51$ is OP_1
 - $0x20$ is push 32 bytes
 
-**Mathematical Property**: Flags are calculated per-transaction, not per-block:
+**Block script mask.** `connect_block` uses one mask for every transaction in the block. The mask starts as `SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS | SCRIPT_VERIFY_TAPROOT`. A script-flag exception hash replaces that word. `DERSIG`, `CHECKLOCKTIMEVERIFY`, `CHECKSEQUENCEVERIFY`, and `NULLDUMMY` are then OR'd at their activation heights. `CalculateScriptFlags` still has a per-transaction witness gate; that function is not the connect mask.
 
-$$\forall tx_1, tx_2 \in \mathcal{TX}, tx_1 \neq tx_2 : \text{CalculateScriptFlags}(tx_1, w_1, h, n) \neq \text{CalculateScriptFlags}(tx_2, w_2, h, n) \text{ (may differ)}$$
+**Theorem 5.2.2** (Block script mask): Every transaction in a block is checked under the same consensus script flags, except when a script-flag exception hash replaces the mask for that block.
 
-**Theorem 5.2.2** (Per-Transaction Flag Calculation): Script verification flags must be calculated per-transaction based on transaction characteristics and block height.
-
-*Proof*: From the definition of $\text{CalculateScriptFlags}$, flags depend on both block height (activation) and transaction characteristics (witness presence, output types). Different transactions in the same block may have different flags, so flags must be computed per transaction.
+*Proof*: `get_block_script_verify_flags_core` takes the block hash, the height, and the network. It does not take the transaction. The two mainnet exception hashes and the one testnet exception hash are the only replacements.
 
 **Activation Heights** (Mainnet, consensus **block** flags):
-- P2SH: Block 173,805
+- P2SH, WITNESS, and TAPROOT: baseline mask, replaced only for a script-flag exception hash
 - BIP66 (consensus **DERSIG**): Block 363,725
 - BIP65 (CLTV): Block 388,381
 - BIP112 (CHECKSEQUENCEVERIFY): Block 419,328
-- SegWit (WITNESS, NULLDUMMY / BIP147): Block 481,824
-- Taproot (WITNESS_PUBKEYTYPE): Block 709,632
+- NULLDUMMY / BIP147: Block 481,824
+- `WITNESS_PUBKEYTYPE`: not a block flag
 
 #### 5.2.6 Script Flag Exceptions
 
@@ -1023,7 +1021,7 @@ Some blocks use different script verification flags than the default (historical
 
 **Note**: Override masks: if $f = \text{ScriptFlagExceptions}(n)(h_b)$ is defined, then $f \geq 0$ (consensus uses 32-bit unsigned script flag words).
 
-For each network $n$, $\text{ScriptFlagExceptions}(n)$ is a partial map from block hash to override flags. When validating transactions in block $b$, if $\text{hash}(b) \in \text{dom}(\text{ScriptFlagExceptions}(n))$, use the override; otherwise use $\text{CalculateScriptFlags}(tx, w, h, n)$.
+For each network $n$, $\text{ScriptFlagExceptions}(n)$ is a partial map from block hash to override flags. Connect replaces the block script mask when $\text{hash}(b)$ is in that map. The per-transaction `GetBlockScriptFlags` below is not the connect path.
 
 **GetBlockScriptFlags**: $\mathbb{H} \times \mathcal{TX} \times \mathcal{W}^? \times \mathbb{N} \times \text{Network} \rightarrow \mathbb{N}_{32}$
 
@@ -1054,7 +1052,7 @@ $$\text{sum}(\text{coinbase.outputs}) \leq \text{GetBlockSubsidy}(height) + \tex
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: Block structure: $result = \text{valid} \implies |b.transactions| > 0$. Coinbase requirement: $result = \text{valid} \implies \text{IsCoinbase}(b.transactions[0]) = \text{true}$. On success, $us'$ reflects all transactions in $b$; every transaction passes `CheckTransaction` and `CheckTxInputs`.
+**Note**: Block structure: $result = \text{valid} \implies |b.transactions| > 0$. Coinbase requirement: $result = \text{valid} \implies \text{IsCoinbase}(b.transactions[0]) = \text{true}$, and $\forall i > 0: \neg\text{IsCoinbase}(b.transactions[i])$. On success, $us'$ reflects all transactions in $b$; every transaction passes `CheckTransaction` and `CheckTxInputs`.
 
 For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
 
@@ -1066,13 +1064,13 @@ For block $b = (h, txs)$ with UTXO set $us$ at height $height$:
 
 | Rule | Condition | Implementation |
 |------|-----------|----------------|
-| H01 — Minimum version | $h.\text{version} \geq 1$ | `validate_block_header` (§5.3) |
+| H01 — Version before BIP34 | no minimum; version 0 is valid | `check_bip90` (§5.4.4) |
 | H02 — Height-dependent version (BIP90) | $h.\text{version} \geq \text{MinVersion}(height)$ | `check_bip90` (§5.4.4) |
 | H03 — Non-zero timestamp | $h.\text{timestamp} \neq 0$ | `validate_block_header` |
 | H04 — Timestamp within window | $h.\text{timestamp} \leq ctx.\text{network\_time} + \text{MAX\_FUTURE\_BLOCK\_TIME}$ | `validate_block_header` |
 | H05 — Timestamp after MTP | $h.\text{timestamp} > \text{MedianTimePast}(\text{recent headers})$ | `validate_block_header` |
 | H06 — Non-zero bits | $h.\text{bits} \neq 0$ | `validate_block_header` |
-| H07 — Proof of work | $\text{SHA256}(\text{SHA256}(\text{serialize}(h))) \leq \text{ExpandTarget}(h.\text{bits})$, and the compact target is not negative or zero | `check_proof_of_work` (§7.2) |
+| H07 — Proof of work | $h.\text{bits} = \text{NextRequiredBits}$, and $\text{SHA256}(\text{SHA256}(\text{serialize}(h))) \leq \text{ExpandTarget}(h.\text{bits})$. The compact target is not negative or zero | `next_required_bits`, `check_proof_of_work` (§7.1, §7.2) |
 | H08 — Parent hash | $h.\text{prev\_block\_hash} = \text{BlockHeaderHash}(\text{parent})$ | `ValidatePrevBlockHash` (§5.3.1); node calls before connect |
 
 **BlockHeaderHash**: $\mathcal{H} \rightarrow \mathbb{H}$
@@ -1085,22 +1083,22 @@ $$\text{ValidatePrevBlockHash}(child, parent) = (child.\text{prev\_block\_hash} 
 
 Pure predicate in `blvm-consensus`; the node layer supplies the parent header and rejects blocks that fail H08 before `connect_block`.
 
-$$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } height \\ 3 & \text{if BIP66 active at } height \\ 2 & \text{if BIP34 active at } height \\ 1 & \text{otherwise} \end{cases}$$
+$$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } height \\ 3 & \text{if BIP66 active at } height \\ 2 & \text{if BIP34 active at } height \\ \text{none} & \text{otherwise} \end{cases}$$
 
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: Version floor: $result = \text{true} \implies h.\text{version} \geq 1$. Non-zero timestamp: $result = \text{true} \implies h.\text{timestamp} \neq 0$. Non-zero bits: $result = \text{true} \implies h.\text{bits} \neq 0$. PoW necessary: $result = \text{true} \implies \text{CheckProofOfWork}(h) = \text{true}$.
+**Note**: Non-zero timestamp: $result = \text{true} \implies h.\text{timestamp} \neq 0$. Non-zero bits: $result = \text{true} \implies h.\text{bits} \neq 0$. PoW necessary: $result = \text{true} \implies \text{CheckProofOfWork}(h) = \text{true}$ and $h.\text{bits}$ equals the required work.
 
 **Notes:**
 
-H01 and H02 compose: H01 is the unconditional floor (version 0 is always rejected); H02 enforces tighter minimums after BIP activation heights. Version 1 is valid before BIP34, invalid after.
+H01 and H02 are the same check. Before BIP34 there is no version floor, so version 0 is valid. BIP34 requires version ≥ 2, BIP66 requires version ≥ 3, and BIP65 requires version ≥ 4.
 
 H08 (parent hash linkage) is enforced by **ValidatePrevBlockHash** in `blvm-consensus`; the node chain layer calls it when the parent header is available. Rules H01–H07 are the connect-local subset checked inside `connect_block` (H02 and H07 are also invoked from the node in some paths).
 
 Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field check (H06) rejects an all-zero `bits` as a structural sanity check; cryptographic verification of the merkle root against the block's transaction list happens inside `connect_block` itself after header validation passes.
 
-H04 and H05 run when a time context is supplied (network time, and the median of the previous headers). Connect supplies that context, including during initial block download. The median window is the headers before this block, at most 11, ending at the parent. A block at height 0 has no parents, so the median is 0. A missing header in that window above height 0 rejects the block. When the caller supplies no time context, H04 and H05 are not applied and only H01, H03, and H06 are enforced.
+H04 and H05 run when a time context is supplied (network time, and the median of the previous headers). Connect supplies that context, including during initial block download. The median window is the headers before this block, at most 11, ending at the parent. A block at height 0 has no parents, so the median is 0. A missing header in that window above height 0 rejects the block. When the caller supplies no time context, H04 and H05 are not applied and only H03 and H06 are enforced. Version is not checked in that function.
 
 **Remark (Timestamp Window Asymmetry).** The valid timestamp range for a block
 header is $(\text{MTP},\, \text{network\_time} + T_{\text{future}}]$. The upper
@@ -1118,9 +1116,9 @@ $$(timestamp > mtp) == result$$
 When a time context is present, H05 holds exactly when the header timestamp is strictly greater than the median time past. A timestamp equal to that median is invalid.
 
 **Formula** (**F_HeaderVersionFloor**):
-$$result = 0$$
+$$result = 1$$
 
-When block version is 0 (`block_version == 0`), header validation always returns false (H01 rejected). Version 0 has never been valid in Bitcoin: $\text{ValidBlockHeader}(h, \ldots) = \text{false}$ when $h.\text{version} = 0$.
+When BIP34 is inactive and `block_version` is 0, the version check passes. Witness `_verify_f_header_version_floor`.
 
 **Formula** (**F_HeaderBitsFloor**):
 $$result = 0$$
@@ -2644,7 +2642,7 @@ where $\min_{\mathbb{N}}$ is the usual total order on $\mathbb{N}$, applied to t
 
 **BIP94 Timestamp Rule** (when $\text{EnforceBIP94}(n)$): For the first block of a new difficulty period, $\text{block}.\text{time} \geq \text{prev}.\text{time} - 600$ (MAX_TIMEWARP). Violation yields invalid block.
 
-Off a difficulty boundary the required compact bits are the parent header's bits. A header passes that check exactly when its bits word equals the required word.
+Off a difficulty boundary the required compact bits are the parent header's bits, unless the network allows the proof-of-work limit. Testnet, testnet4, and regtest use that limit when the header timestamp is more than two target spacings after the parent, and otherwise walk back over minimum-difficulty headers to the last non-limit bits in the period. On a boundary the required bits are the clamped retarget, capped at the proof-of-work limit. Regtest does not run that retarget and keeps the parent bits, still subject to the minimum-difficulty exception. A header whose bits differ from this result is invalid even when its hash meets ExpandTarget of its own bits.
 
 **Formula** (**F_Bip94BitsFromFirst**):
 $$result == first_bits$$
@@ -3490,7 +3488,7 @@ Where $\text{ExtractCommitment}(spk)$ returns the 32-byte hash after the BIP141 
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: Output detection: $result = \text{true} \iff \exists o \in tx.\text{outputs} : \text{IsSegWitOutput}(o.\text{scriptPubkey})$. A transaction is a SegWit transaction if it has at least one SegWit-type output.
+**Note**: Output detection: $result = \text{true} \iff \exists o \in tx.\text{outputs} : \text{IsSegWitOutput}(o.\text{scriptPubkey})$. This predicate does not reject a transaction that spends a witness program and creates no v0 output, and it does not gate `SCRIPT_VERIFY_WITNESS`.
 
 For transaction $tx$:
 

@@ -96,6 +96,8 @@ Returns `true` iff the candidate chain has strictly more cumulative proof-of-wor
 
 **CalculateChainWork**: $\mathcal{B} \rightarrow \mathbb{N}$
 
+Sum of **GetBlockProof** over the segment. For compact bits, let $target = \text{ExpandTarget}(bits)$. The contribution is 0 when $target = 0$, and $(\lnot target / (target + 1)) + 1$ otherwise. Chain work is not the sum of the expanded targets.
+
 **Properties**:
 - Non-negative work: $result \geq 0$
 - Deterministic: $result(b_1) = result(b_2) \iff b_1 = b_2$

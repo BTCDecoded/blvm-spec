@@ -32,9 +32,9 @@ Use **UNIMPLEMENTED** only when no crate enforces the rule yet. Use **UNSPECIFIE
 Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 
 ### HDR-001
-- **Rule:** A block header version MUST be at least 1; version 0 MUST NOT be accepted.
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H01, **F_HeaderVersionFloor**. Unconditional; enforced even without `TimeContext` (§5.3.1 Notes).
-- **Implementation:** `block::header::validate_block_header` — Z3-verified (F_HeaderVersionFloor)
+- **Rule:** Before BIP34, header version 0 MUST be accepted. There is no unconditional version floor. From BIP34, BIP66, and BIP65, HDR-002 is the version rule.
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H01, **F_HeaderVersionFloor**. The floor is not applied when BIP34 is inactive.
+- **Implementation:** `bip_validation::check_bip90` — Z3-verified (F_HeaderVersionFloor)
 
 ### HDR-002
 - **Rule:** A block header version MUST be at least the height-dependent minimum enforced by BIP90 (≥ 2 after BIP34, ≥ 3 after BIP66, ≥ 4 after BIP65).
@@ -62,9 +62,9 @@ Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 - **Implementation:** `block::header::validate_block_header` — Z3-verified (F_HeaderBitsFloor)
 
 ### HDR-007
-- **Rule:** A block header MUST satisfy proof of work: double-SHA256(serialized header) MUST be less than or equal to ExpandTarget(bits). A bits field that matches the ancestor is not a substitute. `connect_block_inner` calls the check after the ancestor-bits comparison and the BIP94 timewarp check, and before BIP54.
-- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H07, [§7.2](PROTOCOL.md#72-block-validation) CheckProofOfWork
-- **Implementation:** `pow::check_proof_of_work`, called from `block::connect::connect_block_inner` — Z3-verified predicate (Tier 1)
+- **Rule:** A block header's compact bits MUST equal `next_required_bits` for that height, and double-SHA256(serialized header) MUST be less than or equal to ExpandTarget(those bits). Matching an ancestor's bits is not a substitute for the hash check. A header that meets an easier self-claimed target is invalid. Off a retarget boundary the required bits are the parent's, except where testnet, testnet4, or regtest allows the proof-of-work limit after a gap of more than two target spacings. On a boundary the required bits are the clamped retarget, capped at the proof-of-work limit. Regtest does not retarget. `connect_block_inner` compares bits when an ancestor callback is supplied, then checks the hash, and does both before BIP54.
+- **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H07, [§7.1](PROTOCOL.md#71-difficulty-adjustment) GetNextWorkRequired, [§7.2](PROTOCOL.md#72-block-validation) CheckProofOfWork
+- **Implementation:** `pow::next_required_bits`, `pow::check_proof_of_work`, called from `block::connect::connect_block_inner` — Z3-verified predicate (Tier 1)
 
 ### HDR-008
 - **Rule:** A block header prev_block_hash MUST equal the hash of the parent header (chain linkage).
@@ -84,7 +84,7 @@ Rules governing block body composition and connection.
 - **Implementation:** `block::connect::connect_block_inner` ([§5.3.3](PROTOCOL.md#533-connectblock-pipeline) pipeline) — documented orchestration
 
 ### BLK-002
-- **Rule:** The first transaction in a valid block MUST be a coinbase transaction.
+- **Rule:** The first transaction in a valid block MUST be a coinbase transaction, and no later transaction MAY be a coinbase.
 - **Specification:** [§5.3](PROTOCOL.md#53-block-validation) ConnectBlock, **Theorem 6.4.1**
 - **Implementation:** `block::connect::connect_block_inner` — Z3-verified via `transaction::is_coinbase`
 
@@ -387,9 +387,9 @@ Script execution, flags, and signature-operation counting.
 - **Implementation:** `block::script_cache::get_block_script_flags` — Z3-verified (spec_locked)
 
 ### SC-017
-- **Rule:** SCRIPT_VERIFY_WITNESS MUST activate only when the transaction has non-empty input witness or IsSegWitTransaction.
-- **Specification:** [§5.2.5](PROTOCOL.md#525-script-verification-flags) CalculateScriptFlags
-- **Implementation:** `block::script_cache::tx_has_nonempty_input_witness` — Z3-verified (spec_locked)
+- **Rule:** The block script mask MUST start as `P2SH | WITNESS | TAPROOT` for every transaction in the block. A script-flag exception hash replaces that mask. `SCRIPT_VERIFY_WITNESS` MUST NOT depend on a non-empty witness or on `IsSegWitTransaction`.
+- **Specification:** [§5.2.5](PROTOCOL.md#525-script-verification-flags) block script mask, [§5.2.6](PROTOCOL.md#526-script-flag-exceptions) ScriptFlagExceptions
+- **Implementation:** `block::script_cache::get_block_script_verify_flags_core` — the connect mask. `get_block_script_flags` is not the connect path.
 
 ### SC-018
 - **Rule:** OP_CHECKLOCKTIMEVERIFY (BIP65) MUST reject when locktime types mismatch; MUST require tx.lockTime ≥ stack value when types match.
@@ -600,11 +600,12 @@ Enforced by `bip_validation::check_bip30`. `ForkId::Bip30` is active at every he
 | SCRIPT_VERIFY_DERSIG | 0x04 | 363,725 | Yes (consensus block validation) |
 | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | 0x200 | 388,381 | Yes |
 | SCRIPT_VERIFY_CHECKSEQUENCEVERIFY | 0x400 | 419,328 | Yes |
-| SCRIPT_VERIFY_WITNESS | 0x800 | 481,824 | Per-tx (witness present or SegWit output) |
+| SCRIPT_VERIFY_WITNESS | 0x800 | baseline mask | Yes (every tx; exception hashes replace the mask) |
 | SCRIPT_VERIFY_NULLDUMMY | 0x10 | 481,824 | Yes |
-| SCRIPT_VERIFY_WITNESS_PUBKEYTYPE | 0x8000 | 709,632 | Per-tx (P2TR output in tx) |
 
-Source: [§5.2.5](PROTOCOL.md#525-script-verification-flags) `CalculateScriptFlags`; implemented in `block::script_cache`.
+`SCRIPT_VERIFY_WITNESS_PUBKEYTYPE` (0x8000) is standardness. The block mask does not set it.
+
+Source: [§5.2.5](PROTOCOL.md#525-script-verification-flags) block script mask; implemented in `block::script_cache::get_block_script_verify_flags_core`.
 
 ---
 
@@ -668,7 +669,7 @@ BIP activation rule entries (refer to **[§8 of this register](#8-activation-hei
 - **Implementation:** `bip_validation::check_bip66`, `is_strict_der`
 
 ### SF-012
-- **Rule:** Before BIP90 activation, version check MUST pass for any version ≥ 1.
+- **Rule:** Before BIP34, the version check MUST pass for every header version, including 0.
 - **Specification:** [§5.4.4](PROTOCOL.md#544-bip90-block-version-enforcement) **F_BIP90PreActivationPass**
 - **Implementation:** `bip_validation::check_bip90` — Z3-verified (F_BIP90PreActivationPass)
 
@@ -704,9 +705,9 @@ Numeric limits referenced by consensus rules (Orange Paper [§4](PROTOCOL.md#4-c
 - **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### CONST-003
-- **Rule:** Block subsidy MUST halve every H = 210,000 blocks.
+- **Rule:** Block subsidy MUST halve every 210,000 blocks on mainnet, testnet, testnet4, and signet. Regtest MUST halve every 150 blocks.
 - **Specification:** [§4.1](PROTOCOL.md#41-monetary-constants) H
-- **Implementation:** `economic::get_block_subsidy` — Z3-verified (Tier 1)
+- **Implementation:** `economic::get_block_subsidy`, `economic::subsidy_halving_interval` — Z3-verified (Tier 1)
 
 ### CONST-004
 - **Rule:** Block total weight MUST NOT exceed W_max = 4,000,000.
@@ -729,9 +730,9 @@ Numeric limits referenced by consensus rules (Orange Paper [§4](PROTOCOL.md#4-c
 - **Implementation:** `script::eval_script`, `witness::validate_segwit_witness_structure` — Z3-verified (spec_locked)
 
 ### CONST-008
-- **Rule:** Difficulty MUST adjust every D_interval = 2,016 blocks with target inter-block time T_block = 600 seconds.
-- **Specification:** [§4.4](PROTOCOL.md#44-difficulty-constants)
-- **Implementation:** `pow::get_next_work_required` — Z3-verified (Tier 1)
+- **Rule:** On mainnet, testnet, testnet4, and signet, difficulty MUST adjust every 2,016 blocks with target spacing 600 seconds. Regtest MUST NOT retarget. Testnet, testnet4, and regtest MUST allow the proof-of-work limit when the header timestamp is more than two target spacings after the parent.
+- **Specification:** [§4.4](PROTOCOL.md#44-difficulty-constants), [§7.1](PROTOCOL.md#71-difficulty-adjustment) GetNextWorkRequired
+- **Implementation:** `pow::next_required_bits` — Z3-verified (Tier 1)
 
 ---
 
@@ -827,7 +828,7 @@ Segregated witness rules (Orange Paper [§11.1](PROTOCOL.md#111-segregated-witne
 - **Implementation:** `witness::validate_witness_program_length` — Z3-verified (F_* formulas)
 
 ### SEG-004
-- **Rule:** A SegWit transaction MUST have at least one v0 output (22 or 34 bytes, OP_0 PUSH20/PUSH32).
+- **Rule:** `IsSegWitTransaction` is true when the transaction creates a v0 output (22 or 34 bytes, OP_0 PUSH20 or PUSH32). That predicate MUST NOT reject a transaction that spends a witness program and creates none, and it MUST NOT gate `SCRIPT_VERIFY_WITNESS`.
 - **Specification:** [§11.1.6](PROTOCOL.md#1116-segwit-transaction-detection) IsSegWitTransaction
 - **Implementation:** `segwit::is_segwit_transaction` — Z3-verified (spec_locked)
 
@@ -914,9 +915,9 @@ Reorg and chain-work rules (Orange Paper [§11.3](ARCHITECTURE.md#113-chain-reor
 - **Implementation:** `reorganization::should_reorganize` — Z3-verified (Tier 1)
 
 ### REORG-002
-- **Rule:** CalculateChainWork MUST sum ExpandTarget(header.bits) over the chain segment.
+- **Rule:** CalculateChainWork MUST sum GetBlockProof(header.bits). GetBlockProof is `(~target / (target + 1)) + 1`, where target is ExpandTarget(bits), and 0 when that target is 0. The sum of the targets is not chain work.
 - **Specification:** [§11.3](ARCHITECTURE.md#113-chain-reorganization) CalculateChainWork
-- **Implementation:** `reorganization::calculate_chain_work` — Z3-verified (Tier 1)
+- **Implementation:** `reorganization::calculate_chain_work`, `pow::get_block_proof` — Z3-verified (Tier 1)
 
 ### REORG-003
 - **Rule:** DisconnectBlock with undo log MUST perfectly invert ConnectBlock. The IBD undo log reads each spent coin from the view the block was checked against. A missing spent coin is an error. An output that replaces a coin already in that view records the replaced coin. An empty log is not a successful disconnect.
@@ -955,7 +956,7 @@ Cross-cutting security invariants (Orange Paper [§8](PROTOCOL.md#8-security-pro
 - **Implementation:** `block::apply::apply_transaction` — Z3-verified (spec_locked)
 
 ### SEC-004
-- **Rule:** Total supply MUST converge to exactly 21 million BTC.
+- **Rule:** For every height at or above `33 × 210,000`, total supply MUST equal 2,099,999,997,690,000 satoshis. The integer schedule does not reach 21 million BTC.
 - **Specification:** [§8.1](PROTOCOL.md#81-economic-security) **Theorem 8.2**, [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.3**
 - **Implementation:** `economic::total_supply` — Z3-verified (spec_locked)
 
@@ -1037,7 +1038,7 @@ No open gaps as of 2026-06-18.
 
 ### Closed (gap-closure pass)
 
-HDR-008 node wiring; UTX-005 `VerifyUtxoSupply`; BIP54 BLK-012–014; ConnectBlock [§5.3.3](PROTOCOL.md#533-connectblock-pipeline); overlay ≡ ApplyTransaction (`tests/overlay_apply_equivalence.rs`); script fast-path ≡ VerifyScript (`tests/script_fast_path_equivalence.rs`); Signet SIG-001 (`signet::check_signet_block_solution`). October 2026: HDR-007 on connect, SC-023 redeem execution, SC-024 second OP_ELSE, CTX-013 missing relative-lock prevout, REORG-003 IBD undo of a spent or replaced coin.
+HDR-008 node wiring; UTX-005 `VerifyUtxoSupply`; BIP54 BLK-012–014; ConnectBlock [§5.3.3](PROTOCOL.md#533-connectblock-pipeline); overlay ≡ ApplyTransaction (`tests/overlay_apply_equivalence.rs`); script fast-path ≡ VerifyScript (`tests/script_fast_path_equivalence.rs`); Signet SIG-001 (`signet::check_signet_block_solution`). October 2026: HDR-007 on connect, SC-023 redeem execution, SC-024 second OP_ELSE, CTX-013 missing relative-lock prevout, REORG-003 IBD undo of a spent or replaced coin. November 2026: HDR-001 version 0 before BIP34, block script mask, chain work as GetBlockProof, second coinbase, regtest intervals, integer supply.
 
 ---
 
