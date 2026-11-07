@@ -3294,7 +3294,9 @@ Implemented as: $\text{WeightToVSize}(weight) = (weight + 3) / 4$ (integer ceili
 
 For block $b$ and witnesses $w_1, \ldots, w_n$:
 
-$$\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) = \sum_{i=1}^{|b.\text{transactions}|} \text{CalculateTransactionWeight}(b.\text{transactions}[i], w_i)$$
+$$\text{CalculateBlockWeight}(b, w_1, \ldots, w_n) = 4 \times \bigl(80 + |\text{CompactSize}(|b.\text{transactions}|)|\bigr) + \sum_{i=1}^{|b.\text{transactions}|} \text{CalculateTransactionWeight}(b.\text{transactions}[i], w_i)$$
+
+The header is 80 bytes. The transaction count is a CompactSize. Both are non-witness bytes, so each contributes four times its length. $|\text{CompactSize}(n)|$ is 1 when $n < 253$, 3 when $n \le 65{,}535$, 5 when $n \le 2^{32}-1$, and 9 otherwise. One transaction adds $4 \times (80 + 1) = 324$ before its own weight.
 
 **Block Weight Limit**: For block $b$:
 
@@ -3350,25 +3352,24 @@ A witness stack is absent exactly when it has no items. One empty item is still 
 
 **ExtractWitnessVersion**: $\mathbb{S} \rightarrow \{\text{None}, \text{SegWitV0}, \text{TaprootV1}\}$
 
-**Note**: Version range: $result \neq \text{None} \implies |s| \geq 2 \land (s[0] = 0x00 \lor s[0] = 0x51)$. SegWitV0: $s[0] = 0x00$. TaprootV1: $s[0] = 0x51$.
+**Note**: A canonical program has $|s| \ge 4$, a direct push $s[1] \in \{0x02,\ldots,0x28\}$ (length 2 through 40), and $|s| = 2 + s[1]$. `00 14` is not canonical. SegWitV0: $s[0] = 0x00$. TaprootV1: $s[0] = 0x51$. Any other version byte is None.
 
 For script $s$:
 
 $$\text{ExtractWitnessVersion}(s) = \begin{cases}
-\text{SegWitV0} & \text{if } |s| \geq 2 \land s[0] = 0x00 \\
-\text{TaprootV1} & \text{if } |s| \geq 2 \land s[0] = 0x51 \\
+\text{SegWitV0} & \text{if } s \text{ is canonical} \land s[0] = 0x00 \\
+\text{TaprootV1} & \text{if } s \text{ is canonical} \land s[0] = 0x51 \\
 \text{None} & \text{otherwise}
 \end{cases}$$
 
 **ExtractWitnessProgram**: $\mathbb{S} \times \{\text{SegWitV0}, \text{TaprootV1}\} \rightarrow \mathbb{S}^?$
 
-**Note**: Program extraction: $result = \text{Some}(p) \implies |s| \geq 3$. SegWit program: $s[1] \in \{0x14, 0x20\}$. Taproot program: $s[1] = 0x20 \land |s| \geq 3$.
+**Note**: $result = \text{Some}(p)$ exactly when $s$ is a canonical program, and then $p = s[2..|s|]$ with $2 \le |p| \le 40$. The version argument does not select the bytes. A 20-byte or 32-byte push is one case of that range. Defined-program lengths are `ValidateWitnessProgramLength`.
 
 For script $s$ and version $v$:
 
 $$\text{ExtractWitnessProgram}(s, v) = \begin{cases}
-s[2..|s|] & \text{if } v = \text{SegWitV0} \land s[1] \in \{0x14, 0x20\} \\
-s[2..|s|] & \text{if } v = \text{TaprootV1} \land s[1] = 0x20 \\
+s[2..|s|] & \text{if } s \text{ is canonical} \\
 \text{None} & \text{otherwise}
 \end{cases}$$
 
