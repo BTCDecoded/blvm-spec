@@ -2105,12 +2105,12 @@ When a minimum timestamp constraint is active ($\text{min\_time} \geq 0$) and th
 **Formula** (**F_EvalSeqLocksBothMet**):
 $$result == true$$
 
-When both a height constraint and a timestamp constraint are active and both are satisfied ($\text{block\_height} > \text{min\_height}$ and $\text{time} > \text{min\_time}$), EvaluateSequenceLocks returns true. Both guard clauses evaluate to true, so their conjunction holds.
+When both a height constraint and a timestamp constraint are active and both are satisfied ($\text{block\_height} > \text{min\_height}$ and $\text{time} > \text{min\_time}$, with $min\_height \geq 0$ and $min\_time \geq 0$), EvaluateSequenceLocks returns true. Both guard clauses evaluate to true, so their conjunction holds.
 
 **Formula** (**F_SequenceTimeEncoding**):
 $$result \leq 33553920$$
 
-The time-based sequence locktime value (in seconds) is bounded by $65535 \times 512 = 33{,}553{,}920$ seconds. Under $value \leq 65535$ (from the 16-bit mask), $result = value \times 512 \leq 33{,}553{,}920$.
+The time-based sequence locktime value (in seconds) is bounded by $65535 \times 512 = 33{,}553{,}920$ seconds. Under $0 \leq value \leq 65535$ (from the 16-bit mask), $result = value \times 512 \leq 33{,}553{,}920$.
 
 **Formula** (**F_SequenceLockHeightAdd**):
 $$result \geq -1$$
@@ -3847,7 +3847,7 @@ SIGHASH_SINGLE (output type $type \mathbin{\&} \mathtt{0x03} = \mathtt{0x03}$, i
 **Formula** (**F_TaprootSighashSingleMissingOutput**):
 $$result == false$$
 
-When the output type is 3 and $input\_index \geq n\_outputs$, no Taproot signature hash is produced. Witness `_verify_f_taproot_sighash_single_missing_output`.
+When $output\_type = 3$, $n\_outputs \geq 0$ and $input\_index \geq n\_outputs$, no Taproot signature hash is produced. Witness `_verify_f_taproot_sighash_single_missing_output`.
 
 #### 11.2.7 Tapscript Signature Hash (BIP 342)
 
@@ -3885,7 +3885,7 @@ where $ext = \text{TapLeafHash}(v, s) \parallel 0x00 \parallel \text{LE}_{32}(\t
 **Formula** (**F_TapscriptSighashSingleMissingOutput**):
 $$result == false$$
 
-When the output type is 3 and $input\_index \geq n\_outputs$, no tapscript signature hash is produced. Witness `_verify_f_tapscript_sighash_single_missing_output`.
+When $output\_type = 3$, $n\_outputs \geq 0$ and $input\_index \geq n\_outputs$, no tapscript signature hash is produced. Witness `_verify_f_tapscript_sighash_single_missing_output`.
 
 #### 11.2.8 Tapscript Opcodes and SigOp Counting (BIP 342)
 
@@ -4201,7 +4201,7 @@ Distance below the 100-byte maximum for a valid coinbase scriptSig: $result = 10
 **Formula** (**F_StackSizeSafe**):
 $$result \geq 0$$
 
-Stack headroom before the 1000-item limit: $result = 999 - depth \geq 0$ when $depth < 1000$.
+Stack headroom before the 1000-item limit: $result = 999 - depth \geq 0$ when $0 \leq depth < 1000$.
 
 **Formula** (**F_StackCombinedSafe**):
 $$result \geq 0$$
@@ -4243,7 +4243,7 @@ $$\text{LocktimeType}(lt) \text{ is consistent for CLTV and CSV}$$
 **Formula** (**F_LocktimeTypeIsHeight**):
 $$result \geq 0$$
 
-Headroom below the block-height/timestamp boundary: $result = 500{,}000{,}000 - lt \geq 0$ when $lt < 500{,}000{,}000$. Establishes that a locktime value in the block-height range has non-negative distance from the threshold.
+Headroom below the block-height/timestamp boundary: $result = 500{,}000{,}000 - lt \geq 0$ when $0 \leq lt < 500{,}000{,}000$. Establishes that a locktime value in the block-height range has non-negative distance from the threshold.
 
 **Formula** (**F_LocktimeTypeIsTimestamp**):
 $$result \geq 0$$
