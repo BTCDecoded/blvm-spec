@@ -1719,7 +1719,7 @@ $$\forall tx \in \mathcal{TX}, lt \in \mathbb{N}_{32}: \text{BIP65Check}(tx, i, 
 **Formula** (**F_BIP65Passes**):
 $$result == true$$
 
-When locktime types match and transaction locktime meets the script minimum ($tx\_locktime \geq stack\_locktime$), CLTV validation passes. $(tx\_locktime, stack\_locktime) = (0, 0)$ with matching types is valid on mainnet (block 659901).
+When both locktimes are block heights ($tx\_locktime < 500{,}000{,}000$ and $stack\_locktime < 500{,}000{,}000$), so their types match, and transaction locktime meets the script minimum ($tx\_locktime \geq stack\_locktime$), CLTV validation passes. $(tx\_locktime, stack\_locktime) = (0, 0)$ with matching types is valid on mainnet (block 659901).
 
 **Formula** (**F_BIP65PassesTimestamp**):
 $$result == true$$
@@ -1746,7 +1746,7 @@ When the transaction uses a timestamp-type locktime ($tx\_locktime \geq 500{,}00
 **Formula** (**F_BIP65RejectsValueTooLow**):
 $$result == false$$
 
-When both locktimes are the same type (both block-heights) but the transaction locktime does not meet the script minimum ($tx\_locktime < stack\_locktime$), CLTV validation rejects. The value-comparison term `tx_locktime >= stack_locktime` is false under this precondition.
+When both locktimes are block heights ($tx\_locktime < 500{,}000{,}000$ and $stack\_locktime < 500{,}000{,}000$) but the transaction locktime does not meet the script minimum ($tx\_locktime < stack\_locktime$), CLTV validation rejects. The value-comparison term `tx_locktime >= stack_locktime` is false under this precondition.
 
 **Formula** (**F_BIP65RejectsTimestampValueTooLow**):
 $$result == false$$
