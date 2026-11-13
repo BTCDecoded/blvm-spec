@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   update-spec-meta:
@@ -35,8 +36,8 @@ jobs:
         with:
           # Fetch all tags so git describe resolves correctly
           fetch-depth: 0
-          # Use a PAT when available so the bot commit re-triggers downstream workflows.
-          # Falls back to GITHUB_TOKEN (bot commit will carry [skip ci] to prevent loops).
+          # Credentials for the release-branch push. The generated file is a pull
+          # request, not a commit on main. Falls back to GITHUB_TOKEN.
           token: ${{ secrets.REPO_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Set up Node.js
@@ -58,12 +59,32 @@ jobs:
 
       - name: Commit updated SPEC_META.json
         if: steps.diff.outputs.changed == 'true'
+        env:
+          PR_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add SPEC_META.json
           git commit -m "chore: update SPEC_META.json [skip ci]"
-          git push
+          BRANCH="release/spec-meta-${GITHUB_SHA}"
+          case "${GITHUB_REF}" in
+            refs/heads/*) BASE="${GITHUB_REF_NAME}" ;;
+            *) BASE=main ;;
+          esac
+          git push origin "HEAD:${BRANCH}"
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          PAYLOAD=$(printf '{"title":"chore: update SPEC_META.json [skip ci]","head":"%s","base":"%s","body":"SPEC_META.json was regenerated from the spec sources. This pull request records that file on main. The pull request job only checks it."}' "${BRANCH}" "${BASE}")
+          CODE=$(curl -sS -o /tmp/spec-meta-pr.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${PR_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
+            -d "${PAYLOAD}")
+          if [ "${CODE}" != "201" ]; then
+            echo "::error::SPEC_META.json is on ${BRANCH} but the pull request was not opened (HTTP ${CODE})"
+            exit 1
+          fi
+          echo "Opened pull request for ${BRANCH}"
 
       - name: No changes
         if: steps.diff.outputs.changed == 'false'
