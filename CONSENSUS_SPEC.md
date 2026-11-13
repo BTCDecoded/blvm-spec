@@ -18,7 +18,7 @@ This document is the BLVM Bitcoin Consensus Specification: a structured, numbere
 | **ID** | Stable identifier: category prefix + sequence number (e.g. `HDR-001`) |
 | **Rule** | Single-sentence invariant in MUST/MUST NOT language |
 | **Specification** | Orange Paper section and theorem/formula reference |
-| **Implementation** | Function path and crate; `spec-locked` means the function is annotated. That mark is not a body proof. |
+| **Implementation** | Function path and crate; `Z3-verified` means Z3 checked that `#[spec_locked]` function. That mark is not a body proof. |
 | **Enforcement** | `consensus` (`blvm-consensus`), `chain` (`blvm-node` / chain index), or `both` |
 
 A body proof is a passing check that fails after two edits of the function body. That list is the blvm-spec-lock README. This register does not copy it.
@@ -36,37 +36,37 @@ Rules H01–H08 from Orange Paper [§5.3.1](PROTOCOL.md#531-header-validation).
 ### HDR-001
 - **Rule:** Before BIP34, header version 0 MUST be accepted. There is no unconditional version floor. From BIP34, BIP66, and BIP65, HDR-002 is the version rule.
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H01, **F_HeaderVersionFloor**. The floor is not applied when BIP34 is inactive.
-- **Implementation:** `bip_validation::check_bip90` — spec-locked (F_HeaderVersionFloor)
+- **Implementation:** `bip_validation::check_bip90` — Z3-verified (F_HeaderVersionFloor)
 
 ### HDR-002
 - **Rule:** A block header version MUST be at least the height-dependent minimum enforced by BIP90 (≥ 2 after BIP34, ≥ 3 after BIP66, ≥ 4 after BIP65).
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H02, [§5.4.4](PROTOCOL.md#544-bip90-block-version-enforcement) BIP90Check, **Theorem 5.4.4**
-- **Implementation:** `bip_validation::check_bip90` — spec-locked (spec_locked)
+- **Implementation:** `bip_validation::check_bip90` — Z3-verified (spec_locked)
 
 ### HDR-003
 - **Rule:** A block header timestamp MUST NOT be zero.
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H03. Unconditional; enforced even without `TimeContext` (§5.3.1 Notes).
-- **Implementation:** `block::header::validate_block_header` — spec-locked (spec_locked)
+- **Implementation:** `block::header::validate_block_header` — Z3-verified (spec_locked)
 
 ### HDR-004
 - **Rule:** A block header timestamp MUST NOT exceed network time plus 7,200 seconds (T_future).
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H04, [§4.4](PROTOCOL.md#44-difficulty-constants) T_future. Requires `TimeContext`. Connect supplies that context, including during initial block download. A missing parent header above height 0 rejects the block (§5.3.1 Notes).
-- **Implementation:** `block::header::validate_block_header` — spec-locked (spec_locked)
+- **Implementation:** `block::header::validate_block_header` — Z3-verified (spec_locked)
 
 ### HDR-005
 - **Rule:** A block header timestamp must be strictly later than the median time past of recent headers when a time context is available. Equality is invalid.
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H05, **F_HeaderTimestampAfterMtp**, [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast. Requires `TimeContext`. Connect supplies that context, including during initial block download. A missing parent header above height 0 rejects the block (§5.3.1 Notes).
-- **Implementation:** `block::header::validate_block_header`, `bip113::get_median_time_past` — spec-locked (F_HeaderTimestampAfterMtp)
+- **Implementation:** `block::header::validate_block_header`, `bip113::get_median_time_past` — Z3-verified (F_HeaderTimestampAfterMtp)
 
 ### HDR-006
 - **Rule:** A block header compact difficulty field (bits) MUST NOT be zero.
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H06, **F_HeaderBitsFloor**. Unconditional; enforced even without `TimeContext` (§5.3.1 Notes).
-- **Implementation:** `block::header::validate_block_header` — spec-locked (F_HeaderBitsFloor)
+- **Implementation:** `block::header::validate_block_header` — Z3-verified (F_HeaderBitsFloor)
 
 ### HDR-007
 - **Rule:** A block header's compact bits MUST equal `next_required_bits` for that height, and double-SHA256(serialized header) MUST be less than or equal to ExpandTarget(those bits). Matching an ancestor's bits is not a substitute for the hash check. A header that meets an easier self-claimed target is invalid. Off a retarget boundary the required bits are the parent's, except where testnet, testnet4, or regtest allows the proof-of-work limit after a gap of more than two target spacings. On a boundary the required bits are the clamped retarget, capped at the proof-of-work limit. Regtest does not retarget. `connect_block_inner` compares bits when an ancestor callback is supplied, then checks the hash, and does both before BIP54.
 - **Specification:** [§5.3.1](PROTOCOL.md#531-header-validation) H07, [§7.1](PROTOCOL.md#71-difficulty-adjustment) GetNextWorkRequired, [§7.2](PROTOCOL.md#72-block-validation) CheckProofOfWork
-- **Implementation:** `pow::next_required_bits`, `pow::check_proof_of_work`, called from `block::connect::connect_block_inner` — spec-locked predicate (Tier 1)
+- **Implementation:** `pow::next_required_bits`, `pow::check_proof_of_work`, called from `block::connect::connect_block_inner` — Z3-verified predicate (Tier 1)
 
 ### HDR-008
 - **Rule:** A block header prev_block_hash MUST equal the hash of the parent header (chain linkage).
@@ -88,22 +88,22 @@ Rules governing block body composition and connection.
 ### BLK-002
 - **Rule:** The first transaction in a valid block MUST be a coinbase transaction, and no later transaction MAY be a coinbase.
 - **Specification:** [§5.3](PROTOCOL.md#53-block-validation) ConnectBlock, **Theorem 6.4.1**
-- **Implementation:** `block::connect::connect_block_inner` — spec-locked via `transaction::is_coinbase`
+- **Implementation:** `block::connect::connect_block_inner` — Z3-verified via `transaction::is_coinbase`
 
 ### BLK-003
 - **Rule:** Every transaction in a block MUST pass CheckTransaction before the block is accepted.
 - **Specification:** [§5.3](PROTOCOL.md#53-block-validation) ConnectBlock
-- **Implementation:** `block::connect::connect_block_inner` → `transaction::check_transaction` — spec-locked (spec_locked)
+- **Implementation:** `block::connect::connect_block_inner` → `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### BLK-004
 - **Rule:** Every transaction in a block MUST pass CheckTxInputs against the evolving UTXO set at the connecting height.
 - **Specification:** [§5.3](PROTOCOL.md#53-block-validation) ConnectBlock
-- **Implementation:** `block::connect::connect_block_inner` → `transaction::check_tx_inputs` — spec-locked (spec_locked)
+- **Implementation:** `block::connect::connect_block_inner` → `transaction::check_tx_inputs` — Z3-verified (spec_locked)
 
 ### BLK-005
 - **Rule:** Every transaction in a block MUST pass script verification (VerifyScript) against the evolving UTXO set, except a production assume-valid skip: the block height is below the configured assume-valid height, an assume-valid hash is set, and chainwork meets the minimum. Signature-operation cost is still counted on that path.
 - **Specification:** [§5.3](PROTOCOL.md#53-block-validation) ConnectBlock, [§5.2](PROTOCOL.md#52-script-execution) VerifyScript
-- **Implementation:** `block::connect::connect_block_inner` → `script::verify_script` — spec-locked (spec_locked)
+- **Implementation:** `block::connect::connect_block_inner` → `script::verify_script` — Z3-verified (spec_locked)
 
 ### BLK-006
 - **Rule:** The coinbase output value MUST NOT exceed block subsidy plus the sum of non-coinbase transaction fees.
@@ -113,27 +113,27 @@ Rules governing block body composition and connection.
 ### BLK-007
 - **Rule:** Total block weight MUST NOT exceed W_max (4,000,000 weight units).
 - **Specification:** [§11.1.1](PROTOCOL.md#1111-weight-and-size-calculations) CalculateBlockWeight, [§4.2](PROTOCOL.md#42-block-constants) W_max
-- **Implementation:** `segwit::calculate_block_weight` — spec-locked (spec_locked)
+- **Implementation:** `segwit::calculate_block_weight` — Z3-verified (spec_locked)
 
 ### BLK-008
 - **Rule:** Total block signature-operation cost MUST NOT exceed S_max (80,000).
 - **Specification:** [§5.2.2](PROTOCOL.md#522-signature-operation-counting) GetTransactionSigOpCost, [§4.2](PROTOCOL.md#42-block-constants) S_max
-- **Implementation:** `sigop::get_transaction_sigop_cost` — spec-locked (spec_locked)
+- **Implementation:** `sigop::get_transaction_sigop_cost` — Z3-verified (spec_locked)
 
 ### BLK-009
 - **Rule:** The block transaction merkle root MUST match ComputeMerkleRoot over transaction txids.
 - **Specification:** [§8.4.1](PROTOCOL.md#841-computemerkleroot) ComputeMerkleRoot, **Theorem 8.5**
-- **Implementation:** `block::compute_block_tx_ids_spec`, `mining::calculate_merkle_root` — spec-locked (Tier 1 for tx-id spec)
+- **Implementation:** `block::compute_block_tx_ids_spec`, `mining::calculate_merkle_root` — Z3-verified (Tier 1 for tx-id spec)
 
 ### BLK-010
 - **Rule:** The merkle tree MUST reject blocks where identical adjacent hashes appear at any level (CVE-2012-2459).
 - **Specification:** [§8.4.1](PROTOCOL.md#841-computemerkleroot) ComputeMerkleRoot, **Theorem 8.6**, **Corollary 8.1**
-- **Implementation:** `mining::calculate_merkle_root` — spec-locked (spec_locked)
+- **Implementation:** `mining::calculate_merkle_root` — Z3-verified (spec_locked)
 
 ### BLK-011
 - **Rule:** SegWit blocks MUST validate witness commitment and weight limits when SegWit rules apply.
 - **Specification:** [§11.1.7](PROTOCOL.md#1117-block-validation) ValidateSegWitBlock
-- **Implementation:** `segwit::validate_segwit_block`, `segwit::validate_witness_commitment` — spec-locked (spec_locked)
+- **Implementation:** `segwit::validate_segwit_block`, `segwit::validate_witness_commitment` — Z3-verified (spec_locked)
 
 ### BLK-012
 - **Rule:** After BIP54 activation, each non-coinbase transaction MUST have total sigops ≤ 2,500.
@@ -159,92 +159,92 @@ Structural and local validation rules for transactions.
 ### TX-001
 - **Rule:** A transaction MUST have at least one input and at least one output.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction
-- **Implementation:** `transaction::check_transaction` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### TX-002
 - **Rule:** Each output value MUST satisfy 0 ≤ value ≤ M_max.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction, [§4.1](PROTOCOL.md#41-monetary-constants) M_max
-- **Implementation:** `transaction::check_transaction` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### TX-003
 - **Rule:** The sum of output values MUST NOT exceed M_max.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction
-- **Implementation:** `transaction::check_transaction` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### TX-004
 - **Rule:** No two inputs in a transaction MUST share the same prevout (intra-transaction duplicate spends forbidden).
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction
-- **Implementation:** `transaction::check_transaction` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### TX-005
 - **Rule:** Non-coinbase transactions MUST have non-null prevouts on all inputs.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction
-- **Implementation:** `transaction::check_transaction` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### TX-006
 - **Rule:** CheckTransaction MUST NOT impose a maximum input or output count. The per-transaction consensus bound is stripped size × 4 ≤ W_max (TX-007).
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction (no $M_{max\_inputs}$ / $M_{max\_outputs}$)
-- **Implementation:** `transaction::check_transaction` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### TX-007
 - **Rule:** Transaction stripped size × 4 MUST NOT exceed W_max (per-transaction weight bound).
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction, CalculateTransactionSize
-- **Implementation:** `transaction::check_transaction`, `transaction::calculate_transaction_size` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_transaction`, `transaction::calculate_transaction_size` — Z3-verified (spec_locked)
 
 ### TX-008
 - **Rule:** Transaction ID MUST be a 32-byte double-SHA256 hash of the legacy serialization.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CalculateTxId
-- **Implementation:** `block::apply::calculate_tx_id`, `mempool::calculate_tx_id` — spec-locked (spec_locked)
+- **Implementation:** `block::apply::calculate_tx_id`, `mempool::calculate_tx_id` — Z3-verified (spec_locked)
 
 ### TX-009
 - **Rule:** Valid non-coinbase transactions MUST have input sum ≥ output sum; fee MUST be non-negative.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTxInputs, **Theorem 6.5** (Fee Non-Negativity)
-- **Implementation:** `transaction::check_tx_inputs` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_tx_inputs` — Z3-verified (spec_locked)
 
 ### TX-010
 - **Rule:** Coinbase transactions MUST return fee zero from CheckTxInputs.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTxInputs
-- **Implementation:** `transaction::check_tx_inputs` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_tx_inputs` — Z3-verified (spec_locked)
 
 ### TX-011
 - **Rule:** Legacy (SigVersion::Base) sighash MUST apply FindAndDelete for signature pushes before hashing.
 - **Specification:** [§5.1.1](PROTOCOL.md#511-transaction-sighash-calculation) CalculateSighash, **Theorem 5.1.3**, **F_FindAndDelete**
-- **Implementation:** `script::find_and_delete`, `transaction_hash::compute_legacy_sighash_*` — spec-locked (spec_locked)
+- **Implementation:** `script::find_and_delete`, `transaction_hash::compute_legacy_sighash_*` — Z3-verified (spec_locked)
 
 ### TX-012
 - **Rule:** WitnessV0 and Tapscript sighash MUST NOT apply FindAndDelete.
 - **Specification:** [§5.1.1](PROTOCOL.md#511-transaction-sighash-calculation) SigVersion
-- **Implementation:** `transaction_hash::calculate_bip143_sighash`, `taproot::compute_taproot_signature_hash` — spec-locked (spec_locked)
+- **Implementation:** `transaction_hash::calculate_bip143_sighash`, `taproot::compute_taproot_signature_hash` — Z3-verified (spec_locked)
 
 ### TX-013
 - **Rule:** Legacy scriptCode MUST strip OP_CODESEPARATOR (0xab) at opcode positions only.
 - **Specification:** [§5.1.1](PROTOCOL.md#511-transaction-sighash-calculation) SerializeScriptCode
-- **Implementation:** `transaction_hash::serialize_script_code_for_legacy_sighash` — spec-locked (spec_locked)
+- **Implementation:** `transaction_hash::serialize_script_code_for_legacy_sighash` — Z3-verified (spec_locked)
 
 ### TX-014
 - **Rule:** Post-BIP66, sighash byte 0x00 MUST be treated as Invalid; pre-BIP66 it MUST map to SIGHASH_ALL.
 - **Specification:** [§5.1.1](PROTOCOL.md#511-transaction-sighash-calculation) SighashType, **Theorem 5.1.2**
-- **Implementation:** `transaction_hash::calculate_transaction_sighash` — spec-locked (spec_locked)
+- **Implementation:** `transaction_hash::calculate_transaction_sighash` — Z3-verified (spec_locked)
 
 ### TX-015
 - **Rule:** P2SH sighash MUST use the redeem script, not the scriptPubKey.
 - **Specification:** [§5.1.1](PROTOCOL.md#511-transaction-sighash-calculation) SighashScriptCode, **Theorem 5.1.1**
-- **Implementation:** `transaction_hash::calculate_transaction_sighash` — spec-locked (spec_locked)
+- **Implementation:** `transaction_hash::calculate_transaction_sighash` — Z3-verified (spec_locked)
 
 ### TX-016
 - **Rule:** BIP143 witness sighash MUST bind prevouts, sequences, outpoint, scriptCode, amount, outputs, locktime, and sighash type.
 - **Specification:** [§11.1.9](PROTOCOL.md#1119-bip143-witness-sighash-computewitnesssignaturehash) ComputeWitnessSignatureHash, **Theorem 11.1.4**
-- **Implementation:** `transaction_hash::calculate_bip143_sighash` — spec-locked (spec_locked)
+- **Implementation:** `transaction_hash::calculate_bip143_sighash` — Z3-verified (spec_locked)
 
 ### TX-017
 - **Rule:** P2WPKH BIP143 scriptCode MUST be the 25-byte P2PKH expansion, NOT the raw 22-byte witness program.
 - **Specification:** [§11.1.9.1](PROTOCOL.md#11191-derivewitnessscriptcode-bip143-scriptcode) DeriveWitnessScriptCode, **Theorem 11.1.3**
-- **Implementation:** `transaction_hash::derive_bip143_script_code_p2wpkh` — spec-locked (spec_locked)
+- **Implementation:** `transaction_hash::derive_bip143_script_code_p2wpkh` — Z3-verified (spec_locked)
 
 ### TX-018
 - **Rule:** P2WSH BIP143 scriptCode MUST be the witness script (last witness stack element).
 - **Specification:** [§11.1.9.1](PROTOCOL.md#11191-derivewitnessscriptcode-bip143-scriptcode) DeriveWitnessScriptCode
-- **Implementation:** `transaction_hash::derive_bip143_script_code` — spec-locked (spec_locked)
+- **Implementation:** `transaction_hash::derive_bip143_script_code` — Z3-verified (spec_locked)
 
 ---
 
@@ -255,37 +255,37 @@ Rules specific to coinbase transaction structure and validation.
 ### CB-001
 - **Rule:** A coinbase transaction MUST have exactly one input with null hash (0³²) and index 0xFFFFFFFF.
 - **Specification:** [§6.4](PROTOCOL.md#64-coinbase-detection) IsCoinbase, **Theorem 6.4.1**
-- **Implementation:** `transaction::is_coinbase` — spec-locked (spec_locked)
+- **Implementation:** `transaction::is_coinbase` — Z3-verified (spec_locked)
 
 ### CB-002
 - **Rule:** Coinbase scriptSig length MUST be between 2 and 100 bytes inclusive.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTransaction, [§13.3.3](PROTOCOL.md#1333-resource-limit-enforcement) **F_CoinbaseScriptSigMin**, **F_CoinbaseScriptSigMax**
-- **Implementation:** `transaction::check_transaction` — spec-locked (F_* formulas)
+- **Implementation:** `transaction::check_transaction` — Z3-verified (F_* formulas)
 
 ### CB-003
 - **Rule:** After BIP34 activation, the coinbase scriptSig must begin with the minimal script-number push of the block height. A non-minimal push of the same integer is invalid.
 - **Specification:** [§5.4.2](PROTOCOL.md#542-bip34-block-height-in-coinbase) BIP34Check, **Theorem 5.4.2**
-- **Implementation:** `bip_validation::check_bip34` — spec-locked (spec_locked)
+- **Implementation:** `bip_validation::check_bip34` — Z3-verified (spec_locked)
 
 ### CB-004
 - **Rule:** Before BIP34 activation, height-in-coinbase check MUST pass regardless of scriptSig content.
 - **Specification:** [§5.4.2](PROTOCOL.md#542-bip34-block-height-in-coinbase) **F_BIP34PreActivationPass**
-- **Implementation:** `bip_validation::check_bip34` — spec-locked (F_BIP34PreActivationPass)
+- **Implementation:** `bip_validation::check_bip34` — Z3-verified (F_BIP34PreActivationPass)
 
 ### CB-005
 - **Rule:** A coinbase txid that already has an unspent output is invalid at every height, except the two mainnet blocks in Table 3.
 - **Specification:** [§5.4.1](PROTOCOL.md#541-bip30-duplicate-coinbase-prevention) BIP30Check, **Theorem 5.4.1**
-- **Implementation:** `bip_validation::check_bip30` — spec-locked (spec_locked)
+- **Implementation:** `bip_validation::check_bip30` — Z3-verified (spec_locked)
 
 ### CB-006
 - **Rule:** A duplicate coinbase that is not one of those two blocks MUST be rejected.
 - **Specification:** [§5.4.1](PROTOCOL.md#541-bip30-duplicate-coinbase-prevention) **F_BIP30DuplicateRejected**
-- **Implementation:** `bip_validation::check_bip30` — spec-locked (F_BIP30DuplicateRejected)
+- **Implementation:** `bip_validation::check_bip30` — Z3-verified (F_BIP30DuplicateRejected)
 
 ### CB-007
 - **Rule:** After BIP54 activation, coinbase lockTime MUST equal height − 1 and first input sequence MUST NOT be 0xFFFFFFFF.
 - **Specification:** [§5.4.9](PROTOCOL.md#549-bip54-consensus-cleanup) CheckBip54Coinbase
-- **Implementation:** `bip_validation::check_bip54_coinbase` — spec-locked (spec_locked)
+- **Implementation:** `bip_validation::check_bip54_coinbase` — Z3-verified (spec_locked)
 
 ### CB-008
 - **Rule:** Coinbase outputs MUST NOT be spendable until COINBASE_MATURITY (100) blocks after creation.
@@ -295,12 +295,12 @@ Rules specific to coinbase transaction structure and validation.
 ### CB-009
 - **Rule:** SegWit coinbase MUST include a valid witness commitment output when witness data is present.
 - **Specification:** [§11.1.5](PROTOCOL.md#1115-witness-commitment-validation) ValidateWitnessCommitment
-- **Implementation:** `segwit::validate_witness_commitment` — spec-locked (spec_locked)
+- **Implementation:** `segwit::validate_witness_commitment` — Z3-verified (spec_locked)
 
 ### CB-010
 - **Rule:** Coinbase witness merkle leaf MUST be fixed to 0³².
 - **Specification:** [§11.1.4](PROTOCOL.md#1114-witness-merkle-root) ComputeWitnessMerkleRoot
-- **Implementation:** `segwit::compute_witness_merkle_root` — spec-locked (spec_locked)
+- **Implementation:** `segwit::compute_witness_merkle_root` — Z3-verified (spec_locked)
 
 ---
 
@@ -311,82 +311,82 @@ Script execution, flags, and signature-operation counting.
 ### SC-001
 - **Rule:** Script execution MUST succeed only when it terminates with exactly one stack item that evaluates to true.
 - **Specification:** [§5.2](PROTOCOL.md#52-script-execution) EvalScript
-- **Implementation:** `script::eval_script` — spec-locked (spec_locked)
+- **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
 
 ### SC-002
 - **Rule:** Script execution MUST fail if combined main and alt stack size exceeds L_stack (1,000). 1,000 combined items MUST pass; 1,001 MUST fail. The check is the combined size, not the main stack alone.
 - **Specification:** [§5.2](PROTOCOL.md#52-script-execution) EvalScript, [§4.3](PROTOCOL.md#43-script-constants) L_stack, [§13.3.3](PROTOCOL.md#1333-resource-limit-enforcement) **F_StackSizeSafe**, **F_StackCombinedSafe**, **F_StackCombinedFail**
-- **Implementation:** `script::eval_script` — spec-locked (F_* formulas)
+- **Implementation:** `script::eval_script` — Z3-verified (F_* formulas)
 
 ### SC-003
 - **Rule:** Base and WitnessV0 scripts MUST NOT exceed L_script (10,000) bytes or L_ops (201) non-push opcodes.
 - **Specification:** [§5.2](PROTOCOL.md#52-script-execution) EvalScript, [§8.3](PROTOCOL.md#83-cryptographic-security) ScriptSecure, **Theorem 8.4**
-- **Implementation:** `script::eval_script` — spec-locked (spec_locked)
+- **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
 
 ### SC-004
 - **Rule:** Individual stack and witness elements MUST NOT exceed L_element (520) bytes.
 - **Specification:** [§4.3](PROTOCOL.md#43-script-constants) L_element, [§11.1.2](PROTOCOL.md#1112-witness-structure-validation) ValidateSegWitWitnessStructure
-- **Implementation:** `witness::validate_segwit_witness_structure` — spec-locked (spec_locked)
+- **Implementation:** `witness::validate_segwit_witness_structure` — Z3-verified (spec_locked)
 
 ### SC-005
 - **Rule:** When SCRIPT_VERIFY_P2SH is active and scriptPubKey is P2SH, scriptSig MUST pass push-only validation before execution.
 - **Specification:** [§5.2](PROTOCOL.md#52-script-execution) VerifyScript, [§5.2.1](PROTOCOL.md#521-p2sh-push-only-validation) P2SHPushOnlyCheck, **Theorem 5.2.1**
-- **Implementation:** `script::verify_script`, `script::p2sh_push_only_check` — spec-locked (spec_locked)
+- **Implementation:** `script::verify_script`, `script::p2sh_push_only_check` — Z3-verified (spec_locked)
 
 ### SC-006
 - **Rule:** P2SH scriptPubKey MUST be exactly 23 bytes: OP_HASH160 PUSH20 … OP_EQUAL.
 - **Specification:** [§5.2.1](PROTOCOL.md#521-p2sh-push-only-validation) IsP2SH
-- **Implementation:** `sigop::is_pay_to_script_hash` — spec-locked (spec_locked)
+- **Implementation:** `sigop::is_pay_to_script_hash` — Z3-verified (spec_locked)
 
 ### SC-007
 - **Rule:** OP_CHECKSIG/CHECKSIGVERIFY MUST count as 1 sigop; CHECKMULTISIG counts n (accurate) or 20 (legacy inaccurate).
 - **Specification:** [§5.2.2](PROTOCOL.md#522-signature-operation-counting) CountSigOpsInScript
-- **Implementation:** `sigop::count_sigops_in_script` — spec-locked (spec_locked)
+- **Implementation:** `sigop::count_sigops_in_script` — Z3-verified (spec_locked)
 
 ### SC-008
 - **Rule:** Coinbase transactions MUST contribute zero P2SH sigops.
 - **Specification:** [§5.2.2](PROTOCOL.md#522-signature-operation-counting) GetP2SHSigOpCount
-- **Implementation:** `sigop::get_p2sh_sigop_count` — spec-locked (spec_locked)
+- **Implementation:** `sigop::get_p2sh_sigop_count` — Z3-verified (spec_locked)
 
 ### SC-009
 - **Rule:** Witness v0 sigops MUST be counted; Taproot (v1) MUST contribute zero to CountWitnessSigOps.
 - **Specification:** [§5.2.2](PROTOCOL.md#522-signature-operation-counting) CountWitnessSigOps, [§11.2.8](PROTOCOL.md#1128-tapscript-opcodes-and-sigop-counting-bip-342)
-- **Implementation:** `sigop::count_witness_sigops`, `sigop::count_tapscript_sigops` — spec-locked (spec_locked)
+- **Implementation:** `sigop::count_witness_sigops`, `sigop::count_tapscript_sigops` — Z3-verified (spec_locked)
 
 ### SC-010
 - **Rule:** Tapscript sigop budget MUST count opcodes 0xac, 0xad, 0xba only at opcode positions (not inside pushes).
 - **Specification:** [§11.2.8](PROTOCOL.md#1128-tapscript-opcodes-and-sigop-counting-bip-342) CountTapscriptSigOps
-- **Implementation:** `sigop::count_tapscript_sigops` — spec-locked (spec_locked)
+- **Implementation:** `sigop::count_tapscript_sigops` — Z3-verified (spec_locked)
 
 ### SC-011
 - **Rule:** OP_CHECKMULTISIG dummy stack element MUST be empty (OP_0) after BIP147 activation.
 - **Specification:** [§5.4.5](PROTOCOL.md#545-bip147-nulldummy-enforcement) BIP147Check, **Theorem 5.4.5**
-- **Implementation:** `bip_validation::check_bip147` — spec-locked (spec_locked)
+- **Implementation:** `bip_validation::check_bip147` — Z3-verified (spec_locked)
 
 ### SC-012
 - **Rule:** After BIP66 activation, ECDSA signatures MUST be strictly DER-encoded.
 - **Specification:** [§5.4.3](PROTOCOL.md#543-bip66-strict-der-signature-validation) BIP66Check, **Theorem 5.4.3**
-- **Implementation:** `bip_validation::check_bip66` — spec-locked (spec_locked)
+- **Implementation:** `bip_validation::check_bip66` — Z3-verified (spec_locked)
 
 ### SC-013
 - **Rule:** OP_VER MUST fail only when fExec=true; in false conditional branches it MUST be skipped without failure.
 - **Specification:** [§5.2.4](PROTOCOL.md#524-conditional-opcode-execution) **Theorem 5.2.3**
-- **Implementation:** `script::eval_script` — spec-locked (spec_locked)
+- **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
 
 ### SC-014
 - **Rule:** Under SCRIPT_VERIFY_MINIMALIF, IF/NOTIF condition bytes MUST be minimal: empty is valid; length > 1 is invalid.
 - **Specification:** [§5.2.4](PROTOCOL.md#524-conditional-opcode-execution) IsMinimalIfCondition, **F_MinimalIfEmptyTrue**, **F_MinimalIfLongFalse**
-- **Implementation:** `script::control_flow::is_minimal_if_condition` — spec-locked (F_* formulas)
+- **Implementation:** `script::control_flow::is_minimal_if_condition` — Z3-verified (F_* formulas)
 
 ### SC-015
 - **Rule:** Script verification flags MUST be monotone in height (never removed once activated).
 - **Specification:** [§5.2.5](PROTOCOL.md#525-script-verification-flags) CalculateScriptFlags
-- **Implementation:** `block::script_cache::calculate_script_flags_for_block` — spec-locked (spec_locked)
+- **Implementation:** `block::script_cache::calculate_script_flags_for_block` — Z3-verified (spec_locked)
 
 ### SC-016
 - **Rule:** When a block hash is in ScriptFlagExceptions, override flags MUST be used instead of CalculateScriptFlags.
 - **Specification:** [§5.2.6](PROTOCOL.md#526-script-flag-exceptions) ScriptFlagExceptions, GetBlockScriptFlags
-- **Implementation:** `block::script_cache::get_block_script_flags` — spec-locked (spec_locked)
+- **Implementation:** `block::script_cache::get_block_script_flags` — Z3-verified (spec_locked)
 
 ### SC-017
 - **Rule:** The block script mask MUST start as `P2SH | WITNESS | TAPROOT` for every transaction in the block. A script-flag exception hash replaces that mask. `SCRIPT_VERIFY_WITNESS` MUST NOT depend on a non-empty witness or on `IsSegWitTransaction`.
@@ -396,27 +396,27 @@ Script execution, flags, and signature-operation counting.
 ### SC-018
 - **Rule:** OP_CHECKLOCKTIMEVERIFY (BIP65) MUST reject when locktime types mismatch; MUST require tx.lockTime ≥ stack value when types match.
 - **Specification:** [§5.4.7](PROTOCOL.md#547-bip65-op_checklocktimeverify-cltv) BIP65Check, **Theorem 5.4.7.3–5.4.7.4**, **F_BIP65Passes**, **F_BIP65PassesZeroZero**, **F_BIP65Rejects***
-- **Implementation:** `locktime::check_bip65` — spec-locked (F_* formulas)
+- **Implementation:** `locktime::check_bip65` — Z3-verified (F_* formulas)
 
 ### SC-019
 - **Rule:** Locktime values below 500,000,000 MUST be block-height type; values ≥ 500,000,000 MUST be timestamp type.
 - **Specification:** [§5.4.7](PROTOCOL.md#547-bip65-op_checklocktimeverify-cltv) GetLocktimeType, [§13.3.5](PROTOCOL.md#1335-integration-proofs) **F_LocktimeTypeIsHeight**, **F_LocktimeTypeIsTimestamp**
-- **Implementation:** `locktime::get_locktime_type` — spec-locked (F_* formulas)
+- **Implementation:** `locktime::get_locktime_type` — Z3-verified (F_* formulas)
 
 ### SC-020
 - **Rule:** OP_CHECKSIGFROMSTACK (BIP348) MUST execute only in Tapscript; zero-length pubkey MUST fail; empty sig MUST succeed.
 - **Specification:** [§5.4.8](PROTOCOL.md#548-bip348-op_checksigfromstack-csfs) BIP348Check, **Theorem 5.4.8.2–5.4.8.5**, **F_CSFS***
-- **Implementation:** `bip348::verify_signature_from_stack` — spec-locked (F_* formulas)
+- **Implementation:** `bip348::verify_signature_from_stack` — Z3-verified (F_* formulas)
 
 ### SC-021
 - **Rule:** OP_CHECKTEMPLATEVERIFY (BIP119) MUST succeed iff TemplateHash(tx,i) equals the stack hash (when deployed).
 - **Specification:** [§5.4.6](PROTOCOL.md#546-bip119-op_checktemplateverify-ctv) BIP119Check, **Theorem 5.4.6.1–5.4.6.4**
-- **Implementation:** `bip119::validate_template_hash` — spec-locked (spec_locked; feature-gated)
+- **Implementation:** `bip119::validate_template_hash` — Z3-verified (spec_locked; feature-gated)
 
 ### SC-022
 - **Rule:** CScriptNum decoding for OP_CHECKMULTISIG m and n MUST treat empty bytes as zero.
 - **Specification:** [§5.4.5.1](PROTOCOL.md#545-bip147-nulldummy-enforcement) **Theorem 5.4.5.1**, DecodeCScriptNum
-- **Implementation:** `script::script_num_decode` — spec-locked (spec_locked)
+- **Implementation:** `script::script_num_decode` — Z3-verified (spec_locked)
 
 ### SC-023
 - **Rule:** When SCRIPT_VERIFY_P2SH is set and the scriptPubKey is the 23-byte HASH160 pattern, a true hash match MUST be followed by EvalScript of the last scriptSig push. OP_RESERVED in that redeem fails. The redeem runs after scriptPubKey and before the witness.
@@ -437,22 +437,22 @@ UTXO set transitions and invariants.
 ### UTX-001
 - **Rule:** Non-coinbase ApplyTransaction MUST remove all spent prevouts and add all new outputs.
 - **Specification:** [§5.3.2](PROTOCOL.md#532-transaction-application-equivalence) ApplyTransaction
-- **Implementation:** `block::apply::apply_transaction` — spec-locked (spec_locked)
+- **Implementation:** `block::apply::apply_transaction` — Z3-verified (spec_locked)
 
 ### UTX-002
 - **Rule:** Coinbase ApplyTransaction MUST only add outputs (no inputs removed).
 - **Specification:** [§5.3.2](PROTOCOL.md#532-transaction-application-equivalence) ApplyTransaction
-- **Implementation:** `block::apply::apply_transaction` — spec-locked (spec_locked)
+- **Implementation:** `block::apply::apply_transaction` — Z3-verified (spec_locked)
 
 ### UTX-003
 - **Rule:** ApplyTransaction and ApplyTransactionWithId MUST produce identical UTXO results.
 - **Specification:** [§5.3.2](PROTOCOL.md#532-transaction-application-equivalence) **Theorem 5.3.2**
-- **Implementation:** `block::apply::apply_transaction`, `block::apply::apply_transaction_with_id` — spec-locked (spec_locked)
+- **Implementation:** `block::apply::apply_transaction`, `block::apply::apply_transaction_with_id` — Z3-verified (spec_locked)
 
 ### UTX-004
 - **Rule:** ApplyUndo after ConnectBlock MUST restore the prior UTXO set (disconnect idempotency).
 - **Specification:** [§5.3.2](PROTOCOL.md#532-transaction-application-equivalence), [§8.2.1](PROTOCOL.md#821-integration-properties) ConnectBlock-DisconnectBlock Idempotency
-- **Implementation:** `reorganization::disconnect_block` — spec-locked (spec_locked)
+- **Implementation:** `reorganization::disconnect_block` — Z3-verified (spec_locked)
 
 ### UTX-005
 - **Rule:** The sum of all UTXO values MUST equal total money supply at every height.
@@ -462,12 +462,12 @@ UTXO set transitions and invariants.
 ### UTX-006
 - **Rule:** Valid non-coinbase transactions MUST conserve value: input sum ≥ output sum.
 - **Specification:** [§8.1](PROTOCOL.md#81-economic-security) Conservation of Value
-- **Implementation:** `transaction::check_tx_inputs` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_tx_inputs` — Z3-verified (spec_locked)
 
 ### UTX-007
 - **Rule:** Spent prevouts MUST exist in the UTXO set before a non-coinbase transaction is accepted.
 - **Specification:** [§5.1](PROTOCOL.md#51-transaction-validation) CheckTxInputs
-- **Implementation:** `transaction::check_tx_inputs` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_tx_inputs` — Z3-verified (spec_locked)
 
 ---
 
@@ -478,62 +478,62 @@ Height-dependent, time-dependent, and sequence-lock rules.
 ### CTX-001
 - **Rule:** Sequence lock bit 31 set (0x80000000) MUST disable relative locktime for that input.
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) IsSequenceDisabled, **F_SequenceDisabledWhenBit31Set**
-- **Implementation:** `locktime::is_sequence_disabled` — spec-locked (F_* formulas)
+- **Implementation:** `locktime::is_sequence_disabled` — Z3-verified (F_* formulas)
 
 ### CTX-002
 - **Rule:** Sequence lock bit 22 set (0x00400000) MUST mean time-based lock; clear MUST mean height-based.
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) ExtractSequenceTypeFlag, **F_SequenceTypeTimeWhenBit22Set**, **F_SequenceTypeHeightWhenBit22Clear**
-- **Implementation:** `locktime::extract_sequence_type_flag` — spec-locked (F_* formulas)
+- **Implementation:** `locktime::extract_sequence_type_flag` — Z3-verified (F_* formulas)
 
 ### CTX-003
 - **Rule:** Extracted sequence locktime value MUST be in [0, 65535] (lower 16 bits).
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) **F_SequenceLockTimeMask**
-- **Implementation:** `locktime::extract_sequence_locktime_value` — spec-locked (F_* formulas)
+- **Implementation:** `locktime::extract_sequence_locktime_value` — Z3-verified (F_* formulas)
 
 ### CTX-004
 - **Rule:** Sequence locks MUST only be enforced when tx.version ≥ 2 and CSV script flag (0x400) is active.
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) CalculateSequenceLocks
-- **Implementation:** `sequence_locks::calculate_sequence_locks` — spec-locked (spec_locked)
+- **Implementation:** `sequence_locks::calculate_sequence_locks` — Z3-verified (spec_locked)
 
 ### CTX-005
 - **Rule:** Time-based sequence locks MUST use value × 512 seconds added to coin MTP − 1.
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) CalculateSequenceLocks, **F_SequenceTimeEncoding**
-- **Implementation:** `sequence_locks::calculate_sequence_locks` — spec-locked (F_* formulas)
+- **Implementation:** `sequence_locks::calculate_sequence_locks` — Z3-verified (F_* formulas)
 
 ### CTX-006
 - **Rule:** Height-based sequence locks MUST use coin height + value − 1.
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) CalculateSequenceLocks, **F_SequenceLockHeightAdd**
-- **Implementation:** `sequence_locks::calculate_sequence_locks` — spec-locked (F_* formulas)
+- **Implementation:** `sequence_locks::calculate_sequence_locks` — Z3-verified (F_* formulas)
 
 ### CTX-007
 - **Rule:** EvaluateSequenceLocks MUST return true iff block height > min_height (when set) AND block time > min_time (when set).
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) EvaluateSequenceLocks, **F_EvalSeqLocks***, **Theorem 5.5.2**
-- **Implementation:** `sequence_locks::evaluate_sequence_locks` — spec-locked (F_* formulas)
+- **Implementation:** `sequence_locks::evaluate_sequence_locks` — Z3-verified (F_* formulas)
 
 ### CTX-008
 - **Rule:** Median time past MUST be T[⌊|T|/2⌋] after sorting the last up-to-11 timestamps (BIP113). When |T| is even this is the upper middle element, not the mean of the two central values.
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68) GetMedianTimePast, **F_MtpIndex**, **F_MtpIndexN4**, **F_MtpIndexN11**
-- **Implementation:** `bip113::get_median_time_past` — spec-locked (spec_locked + F_* formulas)
+- **Implementation:** `bip113::get_median_time_past` — Z3-verified (spec_locked + F_* formulas)
 
 ### CTX-009
 - **Rule:** Mempool admission MUST require absolute and relative locktimes satisfied at chain tip.
 - **Specification:** [§9.1.1](PROTOCOL.md#911-transaction-finality) CheckFinalTxAtTip
-- **Implementation:** `mempool::is_final_tx` — spec-locked (spec_locked)
+- **Implementation:** `mempool::is_final_tx` — Z3-verified (spec_locked)
 
 ### CTX-010
 - **Rule:** Difficulty retarget timespan MUST be last−first over the completed D-block period (D−1 = 2015 intervals) and MUST be clamped to [T_expected/4, 4×T_expected] (factor-of-4 bound).
 - **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) GetNextWorkRequired, **Theorem 7.1**, **F_RetargetIntervalCount**
-- **Implementation:** `pow::get_next_work_required` — spec-locked (Tier 1 + F_* formulas)
+- **Implementation:** `pow::get_next_work_required` — Z3-verified (Tier 1 + F_* formulas)
 
 ### CTX-011
 - **Rule:** When EnforceBIP94(n), first block of new difficulty period MUST have time ≥ prev.time − 600.
 - **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) BIP94 Timestamp Rule
-- **Implementation:** `pow::get_next_work_required` — spec-locked (spec_locked)
+- **Implementation:** `pow::get_next_work_required` — Z3-verified (spec_locked)
 
 ### CTX-012
 - **Rule:** All monetary arithmetic MUST use checked add/sub to prevent overflow/underflow.
 - **Specification:** [§13.3.1](PROTOCOL.md#1331-integer-arithmetic-overflowunderflow), **F_FeeArithmeticNonNeg**, **F_FeeArithmeticBounded**
-- **Implementation:** `transaction::check_transaction`, `economic::calculate_fee` — spec-locked (F_* formulas)
+- **Implementation:** `transaction::check_transaction`, `economic::calculate_fee` — Z3-verified (F_* formulas)
 
 ### CTX-013
 - **Rule:** A relative-lock input whose prevout is missing MUST fail before that transaction's outputs are recorded.
@@ -618,52 +618,52 @@ BIP activation rule entries (refer to **[§8 of this register](#8-activation-hei
 ### SF-001
 - **Rule:** SCRIPT_VERIFY_P2SH MUST activate at mainnet height 173,805.
 - **Specification:** [§5.2.5](PROTOCOL.md#525-script-verification-flags) CalculateScriptFlags (BIP16)
-- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — spec-locked (spec_locked)
+- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — Z3-verified (spec_locked)
 
 ### SF-002
 - **Rule:** BIP34 (height in coinbase) MUST activate at mainnet height 227,931.
 - **Specification:** [§5.4.2](PROTOCOL.md#542-bip34-block-height-in-coinbase) BIP34Check
-- **Implementation:** `bip_validation::check_bip34` — spec-locked (spec_locked)
+- **Implementation:** `bip_validation::check_bip34` — Z3-verified (spec_locked)
 
 ### SF-003
 - **Rule:** BIP66 (strict DER) MUST activate at mainnet height 363,725.
 - **Specification:** [§5.4.3](PROTOCOL.md#543-bip66-strict-der-signature-validation) BIP66Check
-- **Implementation:** `bip_validation::check_bip66` — spec-locked (spec_locked)
+- **Implementation:** `bip_validation::check_bip66` — Z3-verified (spec_locked)
 
 ### SF-004
 - **Rule:** BIP65 (CLTV) MUST activate at mainnet height 388,381.
 - **Specification:** [§5.4.7](PROTOCOL.md#547-bip65-op_checklocktimeverify-cltv) BIP65Check, [§5.2.5](PROTOCOL.md#525-script-verification-flags)
-- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — spec-locked (spec_locked)
+- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — Z3-verified (spec_locked)
 
 ### SF-005
 - **Rule:** BIP68/112 (CSV) MUST activate at mainnet height 419,328.
 - **Specification:** [§5.5](PROTOCOL.md#55-sequence-locks-bip68), [§5.2.5](PROTOCOL.md#525-script-verification-flags)
-- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — spec-locked (spec_locked)
+- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — Z3-verified (spec_locked)
 
 ### SF-006
 - **Rule:** SegWit (BIP141/143/147) MUST activate at mainnet height 481,824.
 - **Specification:** [§11.1](PROTOCOL.md#111-segregated-witness-segwit), [§5.4.5](PROTOCOL.md#545-bip147-nulldummy-enforcement) BIP147Check
-- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — spec-locked (spec_locked)
+- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — Z3-verified (spec_locked)
 
 ### SF-007
 - **Rule:** Taproot (BIP341/342) MUST activate at mainnet height 709,632.
 - **Specification:** [§11.2](PROTOCOL.md#112-taproot) **F_TaprootActivationMainnet**
-- **Implementation:** `activation::taproot_activation_height` — spec-locked (F_TaprootActivationMainnet)
+- **Implementation:** `activation::taproot_activation_height` — Z3-verified (F_TaprootActivationMainnet)
 
 ### SF-008
 - **Rule:** Taproot MUST activate at testnet height 2,011,968, regtest height 0, and signet height 1.
 - **Specification:** [§11.2](PROTOCOL.md#112-taproot) **F_TaprootActivationTestnet**, **F_TaprootActivationRegtest**; signet uses height 1 per `ForkActivationTable`
-- **Implementation:** `activation::taproot_activation_height` — spec-locked (F_* formulas)
+- **Implementation:** `activation::taproot_activation_height` — Z3-verified (F_* formulas)
 
 ### SF-009
 - **Rule:** BIP54 version-bits signal MUST use bit 15 with start time 0.
 - **Specification:** [§5.4.9](PROTOCOL.md#549-bip54-consensus-cleanup) **F_Bip54SignalBit**, **F_Bip54StartTimeZero**
-- **Implementation:** `version_bits::bip54_deployment_for_network` — spec-locked (F_* formulas)
+- **Implementation:** `version_bits::bip54_deployment_for_network` — Z3-verified (F_* formulas)
 
 ### SF-010
 - **Rule:** IsBip54ActiveAt MUST return true at and after the configured activation threshold height.
 - **Specification:** [§5.4.9](PROTOCOL.md#549-bip54-consensus-cleanup) **F_BIP54ActivationThreshold**, IsBip54ActiveAt
-- **Implementation:** `bip_validation::is_bip54_active_at` — spec-locked (F_* formulas)
+- **Implementation:** `bip_validation::is_bip54_active_at` — Z3-verified (F_* formulas)
 
 ### SF-011
 - **Rule:** Before BIP66 activation, DER check MUST pass for any signature.
@@ -673,12 +673,12 @@ BIP activation rule entries (refer to **[§8 of this register](#8-activation-hei
 ### SF-012
 - **Rule:** Before BIP34, the version check MUST pass for every header version, including 0.
 - **Specification:** [§5.4.4](PROTOCOL.md#544-bip90-block-version-enforcement) **F_BIP90PreActivationPass**
-- **Implementation:** `bip_validation::check_bip90` — spec-locked (F_BIP90PreActivationPass)
+- **Implementation:** `bip_validation::check_bip90` — Z3-verified (F_BIP90PreActivationPass)
 
 ### SF-013
 - **Rule:** Before BIP147 activation, null-dummy check MUST pass regardless.
 - **Specification:** [§5.4.5](PROTOCOL.md#545-bip147-nulldummy-enforcement) **F_BIP147PreActivationPass**
-- **Implementation:** `bip_validation::check_bip147` — spec-locked (F_BIP147PreActivationPass)
+- **Implementation:** `bip_validation::check_bip147` — Z3-verified (F_BIP147PreActivationPass)
 
 ### SF-014
 - **Rule:** All BIP rules MUST be enforced consistently after their activation heights.
@@ -699,27 +699,27 @@ Numeric limits referenced by consensus rules (Orange Paper [§4](PROTOCOL.md#4-c
 ### CONST-001
 - **Rule:** All monetary amounts MUST be denominated in satoshis; C = 10⁸ satoshis per BTC.
 - **Specification:** [§4.1](PROTOCOL.md#41-monetary-constants) C
-- **Implementation:** `blvm_primitives::constants::C` — spec-locked (via economic functions)
+- **Implementation:** `blvm_primitives::constants::C` — Z3-verified (via economic functions)
 
 ### CONST-002
 - **Rule:** No output or total output sum MUST exceed M_max = 21×10⁶×C.
 - **Specification:** [§4.1](PROTOCOL.md#41-monetary-constants) M_max
-- **Implementation:** `transaction::check_transaction` — spec-locked (spec_locked)
+- **Implementation:** `transaction::check_transaction` — Z3-verified (spec_locked)
 
 ### CONST-003
 - **Rule:** Block subsidy MUST halve every 210,000 blocks on mainnet, testnet, testnet4, and signet. Regtest MUST halve every 150 blocks.
 - **Specification:** [§4.1](PROTOCOL.md#41-monetary-constants) H
-- **Implementation:** `economic::get_block_subsidy`, `economic::subsidy_halving_interval` — spec-locked (Tier 1)
+- **Implementation:** `economic::get_block_subsidy`, `economic::subsidy_halving_interval` — Z3-verified (Tier 1)
 
 ### CONST-004
 - **Rule:** Block total weight MUST NOT exceed W_max = 4,000,000.
 - **Specification:** [§4.2](PROTOCOL.md#42-block-constants) W_max
-- **Implementation:** `segwit::calculate_block_weight` — spec-locked (spec_locked)
+- **Implementation:** `segwit::calculate_block_weight` — Z3-verified (spec_locked)
 
 ### CONST-005
 - **Rule:** Block total sigop cost MUST NOT exceed S_max = 80,000.
 - **Specification:** [§4.2](PROTOCOL.md#42-block-constants) S_max
-- **Implementation:** `sigop::get_transaction_sigop_cost` — spec-locked (spec_locked)
+- **Implementation:** `sigop::get_transaction_sigop_cost` — Z3-verified (spec_locked)
 
 ### CONST-006
 - **Rule:** Coinbase outputs MUST NOT be spendable until R = 100 blocks after creation.
@@ -729,12 +729,12 @@ Numeric limits referenced by consensus rules (Orange Paper [§4](PROTOCOL.md#4-c
 ### CONST-007
 - **Rule:** Scripts MUST respect L_script = 10,000, L_stack = 1,000, L_ops = 201, L_element = 520.
 - **Specification:** [§4.3](PROTOCOL.md#43-script-constants)
-- **Implementation:** `script::eval_script`, `witness::validate_segwit_witness_structure` — spec-locked (spec_locked)
+- **Implementation:** `script::eval_script`, `witness::validate_segwit_witness_structure` — Z3-verified (spec_locked)
 
 ### CONST-008
 - **Rule:** On mainnet, testnet, testnet4, and signet, difficulty MUST adjust every 2,016 blocks with target spacing 600 seconds. Regtest MUST NOT retarget. Testnet, testnet4, and regtest MUST allow the proof-of-work limit when the header timestamp is more than two target spacings after the parent.
 - **Specification:** [§4.4](PROTOCOL.md#44-difficulty-constants), [§7.1](PROTOCOL.md#71-difficulty-adjustment) GetNextWorkRequired
-- **Implementation:** `pow::next_required_bits` — spec-locked (Tier 1)
+- **Implementation:** `pow::next_required_bits` — Z3-verified (Tier 1)
 
 ---
 
@@ -745,37 +745,37 @@ Subsidy, supply, and fee rules (Orange Paper [§6](PROTOCOL.md#6-economic-model)
 ### ECO-001
 - **Rule:** Block subsidy MUST equal INITIAL_SUBSIDY right-shifted by k = ⌊h/H⌋ (integer `>>`, not the real-valued form 50×C×2^(−k)). The result MUST be 0 for every height h ≥ 33×H. The k ≥ 64 arm MUST return 0 because a 64-bit right-shift is undefined.
 - **Specification:** [§6.1](PROTOCOL.md#61-block-subsidy) GetBlockSubsidy, **Theorem 6.1.1**, **Theorem 6.1.2**, **F_SubsidyZeroAfter33**, **F_SubsidyZeroAfter64**, **F_SubsidyPiecewise**, **F_SubsidyFloorHalf**
-- **Implementation:** `economic::get_block_subsidy` — spec-locked (Tier 1 + F_* formulas)
+- **Implementation:** `economic::get_block_subsidy` — Z3-verified (Tier 1 + F_* formulas)
 
 ### ECO-002
 - **Rule:** TotalSupply(h) MUST equal the sum of GetBlockSubsidy(i) for i = 0..h.
 - **Specification:** [§6.2](PROTOCOL.md#62-total-supply) TotalSupply
-- **Implementation:** `economic::total_supply` — spec-locked (spec_locked)
+- **Implementation:** `economic::total_supply` — Z3-verified (spec_locked)
 
 ### ECO-003
 - **Rule:** TotalSupply MUST NOT exceed MAX_MONEY at any height. MAX_MONEY is the overflow-guard cap, not the issued supply.
 - **Specification:** [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.2**, **F_TotalSupplyBound**, **F_IssuedSupplyBelowCap**
-- **Implementation:** `economic::total_supply`, `economic::validate_supply_limit` — spec-locked (F_* formulas)
+- **Implementation:** `economic::total_supply`, `economic::validate_supply_limit` — Z3-verified (F_* formulas)
 
 ### ECO-004
 - **Rule:** TotalSupply MUST be monotonically non-decreasing in height.
 - **Specification:** [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.1**, **F_TotalSupplyNonNeg**, **F_TotalSupplyMonoStep**
-- **Implementation:** `economic::total_supply` — spec-locked (F_* formulas)
+- **Implementation:** `economic::total_supply` — Z3-verified (F_* formulas)
 
 ### ECO-005
 - **Rule:** ValidateSupplyLimit(h) MUST pass iff TotalSupply(h) ≤ MAX_MONEY.
 - **Specification:** [§6.3](PROTOCOL.md#63-supply-limit-validation) **Theorem 6.3.1**, **F_TotalSupplyBound**, **F_TotalSupplyExact**, **F_IssuedSupplyBelowCap**
-- **Implementation:** `economic::validate_supply_limit` — spec-locked (spec_locked)
+- **Implementation:** `economic::validate_supply_limit` — Z3-verified (spec_locked)
 
 ### ECO-006
 - **Rule:** Valid transaction fees MUST be ≥ 0 (inputs ≥ outputs).
 - **Specification:** [§6.5](PROTOCOL.md#65-fee-market) CalculateFee, **F_FeeNonNeg**, **Theorem 6.5**
-- **Implementation:** `economic::calculate_fee` — spec-locked (F_* formulas)
+- **Implementation:** `economic::calculate_fee` — Z3-verified (F_* formulas)
 
 ### ECO-007
 - **Rule:** For every height h ≥ 33×H, TotalSupply(h) MUST equal 2,099,999,997,690,000 satoshis.
 - **Specification:** [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.3**, **F_TotalSupplyExact**
-- **Implementation:** `economic::total_supply` — spec-locked (F_TotalSupplyExact); production 64-epoch loop is body-locked
+- **Implementation:** `economic::total_supply` — Z3-verified (F_TotalSupplyExact); production 64-epoch loop is body-locked
 
 ---
 
@@ -786,27 +786,27 @@ Difficulty encoding and validation (Orange Paper [§7](PROTOCOL.md#7-proof-of-wo
 ### POW-001
 - **Rule:** Compact difficulty bits MUST be > 0 for valid target expansion.
 - **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) **F_ExpandTargetDomain**
-- **Implementation:** `pow::expand_target` — spec-locked (Tier 1)
+- **Implementation:** `pow::expand_target` — Z3-verified (Tier 1)
 
 ### POW-002
 - **Rule:** Valid compact exponent MUST be in {3,…,32}; zero mantissa MUST expand to zero target.
 - **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) **F_ExpandTargetZeroMantissa**, **F_ExpandTargetNonZeroMantissa**, **Theorem 7.1.1**
-- **Implementation:** `pow::expand_target` — spec-locked (F_* formulas)
+- **Implementation:** `pow::expand_target` — Z3-verified (F_* formulas)
 
 ### POW-003
 - **Rule:** GetNextWorkRequired result MUST be > 0 and ≤ MAX_TARGET.
 - **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) **Theorem 7.1.2**, **F_NextWorkClamped**
-- **Implementation:** `pow::get_next_work_required` — spec-locked (F_* formulas)
+- **Implementation:** `pow::get_next_work_required` — Z3-verified (F_* formulas)
 
 ### POW-004
 - **Rule:** CompressTarget MUST be the inverse of ExpandTarget for valid compact encodings.
 - **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) GetNextWorkRequired (Compress step)
-- **Implementation:** `pow::compress_target` — spec-locked (Tier 1 + spec_locked)
+- **Implementation:** `pow::compress_target` — Z3-verified (Tier 1 + spec_locked)
 
 ### POW-005
 - **Rule:** CheckProofOfWork MUST be deterministic for fixed header input.
 - **Specification:** [§8.5](PROTOCOL.md#85-deterministic-properties) **Theorem 8.5.1**
-- **Implementation:** `pow::check_proof_of_work` — spec-locked (Tier 1)
+- **Implementation:** `pow::check_proof_of_work` — Z3-verified (Tier 1)
 
 ---
 
@@ -817,42 +817,42 @@ Segregated witness rules (Orange Paper [§11.1](PROTOCOL.md#111-segregated-witne
 ### SEG-001
 - **Rule:** Transaction weight MUST equal 3 × baseSize + totalSize (BIP141), which MUST equal 4 × baseSize + witnessSize when totalSize = baseSize + witnessSize. The stripped size MUST include every script byte.
 - **Specification:** [§11.1.1](PROTOCOL.md#1111-weight-and-size-calculations) CalculateTransactionWeight, **Theorem 11.1.1**, **F_WeightEquiv**, **F_StrippedSizeCountsScripts**
-- **Implementation:** `segwit::calculate_transaction_weight`, `witness::calculate_transaction_weight_segwit` — spec-locked (spec_locked + F_* formulas)
+- **Implementation:** `segwit::calculate_transaction_weight`, `witness::calculate_transaction_weight_segwit` — Z3-verified (spec_locked + F_* formulas)
 
 ### SEG-002
 - **Rule:** Virtual size MUST satisfy weight/4 ≤ vsize ≤ weight/4 + 1.
 - **Specification:** [§11.1.1](PROTOCOL.md#1111-weight-and-size-calculations) **F_WeightToVSizeFloor**, **F_WeightToVSizeCeiling**
-- **Implementation:** `witness::weight_to_vsize` — spec-locked (F_* formulas)
+- **Implementation:** `witness::weight_to_vsize` — Z3-verified (F_* formulas)
 
 ### SEG-003
 - **Rule:** SegWit v0 witness programs MUST be 20 or 32 bytes; invalid lengths MUST be rejected.
 - **Specification:** [§11.1.3](PROTOCOL.md#1113-witness-program-extraction) **F_WitnessProgramLength20Valid**, **F_WitnessProgramLength32Valid**, **F_WitnessProgramLengthInvalid**
-- **Implementation:** `witness::validate_witness_program_length` — spec-locked (F_* formulas)
+- **Implementation:** `witness::validate_witness_program_length` — Z3-verified (F_* formulas)
 
 ### SEG-004
 - **Rule:** `IsSegWitTransaction` is true when the transaction creates a v0 output (22 or 34 bytes, OP_0 PUSH20 or PUSH32). That predicate MUST NOT reject a transaction that spends a witness program and creates none, and it MUST NOT gate `SCRIPT_VERIFY_WITNESS`.
 - **Specification:** [§11.1.6](PROTOCOL.md#1116-segwit-transaction-detection) IsSegWitTransaction
-- **Implementation:** `segwit::is_segwit_transaction` — spec-locked (spec_locked)
+- **Implementation:** `segwit::is_segwit_transaction` — Z3-verified (spec_locked)
 
 ### SEG-005
 - **Rule:** Witness commitment MUST be SHA256d(WitnessRoot ∥ witness_reserved_value), not root alone.
 - **Specification:** [§11.1.5](PROTOCOL.md#1115-witness-commitment-validation) ValidateWitnessCommitment
-- **Implementation:** `segwit::validate_witness_commitment` — spec-locked (spec_locked)
+- **Implementation:** `segwit::validate_witness_commitment` — Z3-verified (spec_locked)
 
 ### SEG-006
 - **Rule:** Nested P2WPKH/P2WSH-in-P2SH MUST use SigVersion WitnessV0 and BIP143 sighash.
 - **Specification:** [§11.1.8](PROTOCOL.md#1118-nested-segwit-p2wsh-in-p2sh-p2wpkh-in-p2sh) **Theorem 11.1.2**
-- **Implementation:** `script::verify_script` — spec-locked (spec_locked)
+- **Implementation:** `script::verify_script` — Z3-verified (spec_locked)
 
 ### SEG-007
 - **Rule:** Empty witness stack (|w| = 0) MUST be considered empty by IsWitnessEmpty.
 - **Specification:** [§11.1.2](PROTOCOL.md#1112-witness-structure-validation) **F_WitnessEmptyByLength**
-- **Implementation:** `witness::is_witness_empty` — spec-locked (F_* formulas)
+- **Implementation:** `witness::is_witness_empty` — Z3-verified (F_* formulas)
 
 ### SEG-008
 - **Rule:** A witness version byte MUST be OP_0 or OP_1 through OP_16. OP_1NEGATE and OP_RESERVED are not witness versions.
 - **Specification:** [§11.1.3](PROTOCOL.md#1113-witness-program-extraction) **F_WitnessVersionRejected**, **F_WitnessVersionAccepted**
-- **Implementation:** `witness::is_upgradable_witness_program` — spec-locked (F_WitnessVersionRejected, F_WitnessVersionAccepted)
+- **Implementation:** `witness::is_upgradable_witness_program` — Z3-verified (F_WitnessVersionRejected, F_WitnessVersionAccepted)
 
 ---
 
@@ -863,47 +863,47 @@ Taproot spending rules (Orange Paper [§11.2](PROTOCOL.md#112-taproot)).
 ### TAP-001
 - **Rule:** P2TR scriptPubKey MUST be 34 bytes: OP_1 (0x51) PUSH32 (0x20) + 32-byte x-only key.
 - **Specification:** [§11.2.1](PROTOCOL.md#1121-taproot-script-validation) ValidateTaprootScript, **F_TaprootOutputScriptLengthInvalid**
-- **Implementation:** `taproot::validate_taproot_script`, `taproot::is_taproot_output` — spec-locked (F_* formulas)
+- **Implementation:** `taproot::validate_taproot_script`, `taproot::is_taproot_output` — Z3-verified (F_* formulas)
 
 ### TAP-002
 - **Rule:** Inputs spending P2TR outputs MUST have empty scriptSig.
 - **Specification:** [§11.2](PROTOCOL.md#112-taproot) **Theorem 11.2.1**
-- **Implementation:** `taproot::validate_taproot_transaction` — spec-locked (spec_locked)
+- **Implementation:** `taproot::validate_taproot_transaction` — Z3-verified (spec_locked)
 
 ### TAP-003
 - **Rule:** Output key MUST equal internal_key + TapTweak(merkle_root) × G.
 - **Specification:** [§11.2.2](PROTOCOL.md#1122-taproot-key-operations) ValidateTaprootKeyAggregation
-- **Implementation:** `taproot::validate_taproot_key_aggregation` — spec-locked (spec_locked)
+- **Implementation:** `taproot::validate_taproot_key_aggregation` — Z3-verified (spec_locked)
 
 ### TAP-004
 - **Rule:** Script-path spend MUST prove the script is in the Taproot merkle tree via TapLeaf/TapBranch hashes.
 - **Specification:** [§11.2.3](PROTOCOL.md#1123-taproot-script-path) ValidateTaprootScriptPath, **Theorem 11.2.2**
-- **Implementation:** `taproot::validate_taproot_script_path`, `taproot::parse_taproot_script_path_witness`, `taproot::compute_script_merkle_root` — spec-locked (spec_locked)
+- **Implementation:** `taproot::validate_taproot_script_path`, `taproot::parse_taproot_script_path_witness`, `taproot::compute_script_merkle_root` — Z3-verified (spec_locked)
 
 ### TAP-005
 - **Rule:** Key-path witness MUST have 1 element of 64 or 65 bytes; 65-byte form MUST NOT end with explicit 0x00 sighash byte.
 - **Specification:** [§11.2.4](PROTOCOL.md#1124-taproot-witness-structure) ValidateTaprootWitnessStructure
-- **Implementation:** `witness::validate_taproot_witness_structure` — spec-locked (spec_locked)
+- **Implementation:** `witness::validate_taproot_witness_structure` — Z3-verified (spec_locked)
 
 ### TAP-006
 - **Rule:** Optional annex (last element starting with 0x50) MUST be stripped before path validation and sighash.
 - **Specification:** [§11.2.4](PROTOCOL.md#1124-taproot-witness-structure) StripTaprootAnnex
-- **Implementation:** `taproot::strip_taproot_annex` — spec-locked (spec_locked)
+- **Implementation:** `taproot::strip_taproot_annex` — Z3-verified (spec_locked)
 
 ### TAP-007
 - **Rule:** Key-path sighash MUST use TaggedHash("TapSighash", SigMsg) with optional annex hash.
 - **Specification:** [§11.2.6](PROTOCOL.md#1126-taproot-signature-hash) ComputeTaprootSignatureHash
-- **Implementation:** `taproot::compute_taproot_signature_hash` — spec-locked (spec_locked)
+- **Implementation:** `taproot::compute_taproot_signature_hash` — Z3-verified (spec_locked)
 
 ### TAP-008
 - **Rule:** Script-path sighash MUST bind tapleaf hash, codeseparator position, and key version.
 - **Specification:** [§11.2.7](PROTOCOL.md#1127-tapscript-signature-hash-bip-342) ComputeTapscriptSignatureHash, **Theorem 11.2.3**
-- **Implementation:** `taproot::compute_tapscript_signature_hash` — spec-locked (spec_locked)
+- **Implementation:** `taproot::compute_tapscript_signature_hash` — Z3-verified (spec_locked)
 
 ### TAP-009
 - **Rule:** OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY MUST be disabled in tapscript.
 - **Specification:** [§11.2.8](PROTOCOL.md#1128-tapscript-opcodes-and-sigop-counting-bip-342) Tapscript Opcodes
-- **Implementation:** `script::eval_script` — spec-locked (spec_locked)
+- **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
 
 ---
 
@@ -914,22 +914,22 @@ Reorg and chain-work rules (Orange Paper [§11.3](ARCHITECTURE.md#113-chain-reor
 ### REORG-001
 - **Rule:** ShouldReorganize MUST return true only when the candidate chain has strictly greater cumulative work.
 - **Specification:** [§11.3](ARCHITECTURE.md#113-chain-reorganization) ShouldReorganize
-- **Implementation:** `reorganization::should_reorganize` — spec-locked (Tier 1)
+- **Implementation:** `reorganization::should_reorganize` — Z3-verified (Tier 1)
 
 ### REORG-002
 - **Rule:** CalculateChainWork MUST sum GetBlockProof(header.bits). GetBlockProof is `(~target / (target + 1)) + 1`, where target is ExpandTarget(bits), and 0 when that target is 0. The sum of the targets is not chain work.
 - **Specification:** [§11.3](ARCHITECTURE.md#113-chain-reorganization) CalculateChainWork
-- **Implementation:** `reorganization::calculate_chain_work`, `pow::get_block_proof` — spec-locked (Tier 1)
+- **Implementation:** `reorganization::calculate_chain_work`, `pow::get_block_proof` — Z3-verified (Tier 1)
 
 ### REORG-003
 - **Rule:** DisconnectBlock with undo log MUST perfectly invert ConnectBlock. The IBD undo log reads each spent coin from the view the block was checked against. A missing spent coin is an error. An output that replaces a coin already in that view records the replaced coin. An empty log is not a successful disconnect.
 - **Specification:** [§11.3.1](ARCHITECTURE.md#1131-undo-log-pattern) DisconnectBlock, [§8.2.1](PROTOCOL.md#821-integration-properties) Idempotency Property
-- **Implementation:** `reorganization::disconnect_block`, `block::script_cache::undo_log_from_overlay` — disconnect predicate spec-locked (spec_locked)
+- **Implementation:** `reorganization::disconnect_block`, `block::script_cache::undo_log_from_overlay` — disconnect predicate Z3-verified (spec_locked)
 
 ### REORG-004
 - **Rule:** ReorganizeChain MUST disconnect blocks back to common ancestor then connect new chain blocks in order.
 - **Specification:** [§11.3](ARCHITECTURE.md#113-chain-reorganization) ReorganizeChain
-- **Implementation:** `reorganization::reorganize_chain` — spec-locked (spec_locked)
+- **Implementation:** `reorganization::reorganize_chain` — Z3-verified (spec_locked)
 
 ### SIG-001
 - **Rule:** On signet, the coinbase witness commitment MUST satisfy the network challenge script (BIP325).
@@ -945,27 +945,27 @@ Cross-cutting security invariants (Orange Paper [§8](PROTOCOL.md#8-security-pro
 ### SEC-001
 - **Rule:** ComputeMerkleRoot MUST be deterministic for fixed input hash list.
 - **Specification:** [§8.4.1](PROTOCOL.md#841-computemerkleroot) **F_MerkleMutationRejected**, **Theorem 8.4.1**
-- **Implementation:** `mining::calculate_merkle_root` — spec-locked (spec_locked)
+- **Implementation:** `mining::calculate_merkle_root` — Z3-verified (spec_locked)
 
 ### SEC-002
 - **Rule:** ConnectBlock MUST be deterministic for fixed block, UTXO set, and height.
 - **Specification:** [§8.5](PROTOCOL.md#85-deterministic-properties) **Theorem 8.5.3**
-- **Implementation:** `block::connect_block` — spec-locked (spec_locked)
+- **Implementation:** `block::connect_block` — Z3-verified (spec_locked)
 
 ### SEC-003
 - **Rule:** ApplyTransaction MUST be deterministic and side-effect-free.
 - **Specification:** [§8.5](PROTOCOL.md#85-deterministic-properties) **Theorem 8.5.2**, [§5.3.2](PROTOCOL.md#532-transaction-application-equivalence) **Corollary 5.3.2.1**
-- **Implementation:** `block::apply::apply_transaction` — spec-locked (spec_locked)
+- **Implementation:** `block::apply::apply_transaction` — Z3-verified (spec_locked)
 
 ### SEC-004
 - **Rule:** For every height at or above `33 × 210,000`, total supply MUST equal 2,099,999,997,690,000 satoshis. The integer schedule does not reach 21 million BTC.
 - **Specification:** [§8.1](PROTOCOL.md#81-economic-security) **Theorem 8.2**, [§6.2](PROTOCOL.md#62-total-supply) **Theorem 6.2.3**
-- **Implementation:** `economic::total_supply` — spec-locked (spec_locked)
+- **Implementation:** `economic::total_supply` — Z3-verified (spec_locked)
 
 ### SEC-005
 - **Rule:** Script execution MUST be bounded in time and space O(L_ops).
 - **Specification:** [§8.3](PROTOCOL.md#83-cryptographic-security) **Theorem 8.4**
-- **Implementation:** `script::eval_script` — spec-locked (spec_locked)
+- **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
 
 ---
 
@@ -976,17 +976,17 @@ Implementation safety properties (Orange Paper [§13.3](PROTOCOL.md#133-engineer
 ### ENG-001
 - **Rule:** Serialize/deserialize MUST be inverse operations for transactions, SegWit transactions, and headers.
 - **Specification:** [§13.3.2](PROTOCOL.md#1332-serializationdeserialization-correctness) **Theorem 13.3.2.1–13.3.2.2**, [§8.2.2](PROTOCOL.md#822-round-trip-properties) Round-Trip Properties
-- **Implementation:** `blvm_primitives::serialization::*` — spec-locked (property tests; blvm-primitives)
+- **Implementation:** `blvm_primitives::serialization::*` — Z3-verified (property tests; blvm-primitives)
 
 ### ENG-002
 - **Rule:** Malformed or truncated wire data MUST be rejected deterministically.
 - **Specification:** [§13.3.4](PROTOCOL.md#1334-parser-determinism) Parser Determinism
-- **Implementation:** `blvm_primitives::serialization::*` — spec-locked (property tests)
+- **Implementation:** `blvm_primitives::serialization::*` — Z3-verified (property tests)
 
 ### ENG-003
 - **Rule:** Locktime type boundary at 500,000,000 MUST be consistent for CLTV and CSV.
 - **Specification:** [§13.3.5](PROTOCOL.md#1335-integration-proofs) **Theorem 13.3.5.1**
-- **Implementation:** `locktime::get_locktime_type` — spec-locked (F_* formulas)
+- **Implementation:** `locktime::get_locktime_type` — Z3-verified (F_* formulas)
 
 ### ENG-004
 - **Rule:** ConnectBlock MUST enforce subsidy, fees, and supply-limit economic invariants together.
@@ -1002,22 +1002,22 @@ Relay and mempool rules (Orange Paper [§9](PROTOCOL.md#9-mempool-protocol)). Th
 ### MEM-001
 - **Rule:** Coinbase transactions MUST NOT be accepted to the mempool.
 - **Specification:** [§9.1](PROTOCOL.md#91-mempool-validation) AcceptToMemoryPool
-- **Implementation:** `mempool::accept_to_memory_pool` — spec-locked (spec_locked)
+- **Implementation:** `mempool::accept_to_memory_pool` — Z3-verified (spec_locked)
 
 ### MEM-002
 - **Rule:** Mempool transactions MUST pass CheckTransaction and IsStandardTx.
 - **Specification:** [§9.1](PROTOCOL.md#91-mempool-validation), [§9.2](PROTOCOL.md#92-standard-transaction-rules) IsStandardTx
-- **Implementation:** `mempool::accept_to_memory_pool`, `mempool::is_standard_tx` — spec-locked (spec_locked)
+- **Implementation:** `mempool::accept_to_memory_pool`, `mempool::is_standard_tx` — Z3-verified (spec_locked)
 
 ### MEM-003
 - **Rule:** Non-witness serialized size MUST be ≥ 65 bytes for mempool acceptance.
 - **Specification:** [§9.1](PROTOCOL.md#91-mempool-validation) AcceptToMemoryPool
-- **Implementation:** `mempool::accept_to_memory_pool` — spec-locked (spec_locked)
+- **Implementation:** `mempool::accept_to_memory_pool` — Z3-verified (spec_locked)
 
 ### MEM-004
 - **Rule:** RBF replacement MUST require conflicting prevouts and a higher fee rate. Conservative mode also requires a signal (`nSequence < SEQUENCE_FINAL`). Standard mode does not.
 - **Specification:** [§9.3](PROTOCOL.md#93-replace-by-fee-rbf) ReplacementChecks, [§8.2.1](PROTOCOL.md#821-integration-properties) RBF Conflict Requirement
-- **Implementation:** `mempool::replacement_checks` — spec-locked (spec_locked)
+- **Implementation:** `mempool::replacement_checks` — Z3-verified (spec_locked)
 
 ---
 
