@@ -18,7 +18,7 @@ This document is the BLVM Bitcoin Consensus Specification: a structured, numbere
 | **ID** | Stable identifier: category prefix + sequence number (e.g. `HDR-001`) |
 | **Rule** | Single-sentence invariant in MUST/MUST NOT language |
 | **Specification** | Orange Paper section and theorem/formula reference |
-| **Implementation** | Function path and crate; `Z3-verified` means Z3 checked that `#[spec_locked]` function. That mark is not a body proof. |
+| **Implementation** | Function path and crate; `Z3-verified` means Z3 checked that `#[spec_locked]` function. A passing check means the spec-lock prover and Z3 accepted that function's contract. |
 | **Enforcement** | `consensus` (`blvm-consensus`), `chain` (`blvm-node` / chain index), or `both` |
 
 A body proof is a passing check that fails after two edits of the function body. That list is the blvm-spec-lock README. This register does not copy it.
