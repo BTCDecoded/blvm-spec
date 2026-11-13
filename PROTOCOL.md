@@ -458,7 +458,7 @@ Where:
 
 **Formula** (**F_SighashBase**):
 
-$$\forall byte: \text{SighashBase}(byte) = byte \bmod 32$$
+$$\forall byte: \text{SighashBase}(byte) = byte \% 32$$
 
 The base type is the low five bits. For a byte, $byte \bmod 32 = byte \mathbin{\&} 31$. Lean definition `sighashBase`. The consensus-set row `sighash_base` reads `SighashType::base_type`, `SighashType::is_all`, and the BIP143 preimage trailer.
 
