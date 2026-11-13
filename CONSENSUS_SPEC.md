@@ -220,9 +220,9 @@ Structural and local validation rules for transactions.
 - **Implementation:** `transaction_hash::serialize_script_code_for_legacy_sighash` — Z3-verified (spec_locked)
 
 ### TX-014
-- **Rule:** Post-BIP66, sighash byte 0x00 MUST be treated as Invalid; pre-BIP66 it MUST map to SIGHASH_ALL.
-- **Specification:** [§5.1.1](PROTOCOL.md#511-transaction-sighash-calculation) SighashType, **Theorem 5.1.2**
-- **Implementation:** `transaction_hash::calculate_transaction_sighash` — Z3-verified (spec_locked)
+- **Rule:** A block MUST accept every sighash byte. The base type MUST be the low 5 bits (`byte` mod 32): 2 is NONE, 3 is SINGLE, and every other base has ALL behavior. ANYONECANPAY MUST be bit 7. The preimage MUST store the raw byte, including `0x00` at every height.
+- **Specification:** [§5.1.1](PROTOCOL.md#511-transaction-sighash-calculation) SighashType, **F_SighashBase**, **Theorem 5.1.2**
+- **Implementation:** `SighashType::base_type`, `SighashType::is_all`, `transaction_hash::build_bip143_preimage` — Z3 consensus-set `sighash_base`. Lean `sighashBase` locks **F_SighashBase**
 
 ### TX-015
 - **Rule:** P2SH sighash MUST use the redeem script, not the scriptPubKey.
@@ -230,9 +230,9 @@ Structural and local validation rules for transactions.
 - **Implementation:** `transaction_hash::calculate_transaction_sighash` — Z3-verified (spec_locked)
 
 ### TX-016
-- **Rule:** BIP143 witness sighash MUST bind prevouts, sequences, outpoint, scriptCode, amount, outputs, locktime, and sighash type.
+- **Rule:** BIP143 witness sighash MUST bind prevouts, sequences, outpoint, scriptCode, amount, outputs, locktime, and sighash type. hashSequence MUST be zero when ANYONECANPAY is set or the base type is NONE or SINGLE. hashOutputs MUST be zero for NONE, and for SINGLE when the input index has no output.
 - **Specification:** [§11.1.9](PROTOCOL.md#1119-bip143-witness-sighash-computewitnesssignaturehash) ComputeWitnessSignatureHash, **Theorem 11.1.4**
-- **Implementation:** `transaction_hash::calculate_bip143_sighash` — Z3-verified (spec_locked)
+- **Implementation:** `transaction_hash::build_bip143_preimage` — Z3 consensus-set `hash_sequence`
 
 ### TX-017
 - **Rule:** P2WPKH BIP143 scriptCode MUST be the 25-byte P2PKH expansion, NOT the raw 22-byte witness program.
@@ -240,9 +240,9 @@ Structural and local validation rules for transactions.
 - **Implementation:** `transaction_hash::derive_bip143_script_code_p2wpkh` — Z3-verified (spec_locked)
 
 ### TX-018
-- **Rule:** P2WSH BIP143 scriptCode MUST be the witness script (last witness stack element).
+- **Rule:** P2WSH BIP143 scriptCode MUST start as the witness script. After an executed OP_CODESEPARATOR it MUST be the suffix that begins at the next byte. An OP_CODESEPARATOR in an unexecuted branch MUST NOT move that suffix.
 - **Specification:** [§11.1.9.1](PROTOCOL.md#11191-derivewitnessscriptcode-bip143-scriptcode) DeriveWitnessScriptCode
-- **Implementation:** `transaction_hash::derive_bip143_script_code` — Z3-verified (spec_locked)
+- **Implementation:** `script::eval_script_with_context_full_inner` — Z3 consensus-set `script_code_suffix`. `transaction_hash::derive_bip143_script_code` returns the whole witness script, which is the suffix before any separator has executed.
 
 ---
 
@@ -307,9 +307,9 @@ Rules specific to coinbase transaction structure and validation.
 Script execution, flags, and signature-operation counting.
 
 ### SC-001
-- **Rule:** Script execution MUST succeed only when it terminates with exactly one stack item that evaluates to true.
+- **Rule:** Script execution MUST succeed when it terminates with a non-empty stack whose top item is true. A legacy script MAY leave more than one item. Witness v0 and tapscript MUST leave exactly one true item. CLEANSTACK is that one-item requirement for other scripts, and the block script mask MUST NOT set it.
 - **Specification:** [§5.2](PROTOCOL.md#52-script-execution) EvalScript
-- **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
+- **Implementation:** `script::verify_script_with_context_full`, `script::eval_script_with_context_full_inner` — Z3 consensus-set `script_success`
 
 ### SC-002
 - **Rule:** Script execution MUST fail if combined main and alt stack size exceeds L_stack (1,000). 1,000 combined items MUST pass; 1,001 MUST fail. The check is the combined size, not the main stack alone.
@@ -322,9 +322,9 @@ Script execution, flags, and signature-operation counting.
 - **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
 
 ### SC-004
-- **Rule:** Individual stack and witness elements MUST NOT exceed L_element (520) bytes.
-- **Specification:** [§4.3](PROTOCOL.md#43-script-constants) L_element, [§11.1.2](PROTOCOL.md#1112-witness-structure-validation) ValidateSegWitWitnessStructure
-- **Implementation:** `witness::validate_segwit_witness_structure` — Z3-verified (spec_locked)
+- **Rule:** A stack item MUST NOT exceed L_element (520) bytes. A P2WSH spend MUST apply that limit to every witness element except the last. The last element is the witness script and MUST NOT exceed L_script (10,000) bytes. A P2WPKH spend MUST apply 520 bytes to both witness elements.
+- **Specification:** [§4.3](PROTOCOL.md#43-script-constants) L_element, [§11.1.2](PROTOCOL.md#1112-witness-structure-validation)
+- **Implementation:** `script::verify_script_with_context_full` — Z3 consensus-set `witness_element_bound`. `witness::validate_segwit_witness_structure` checks every element, including the witness script, and is not the connect path.
 
 ### SC-005
 - **Rule:** When SCRIPT_VERIFY_P2SH is active and scriptPubKey is P2SH, scriptSig MUST pass push-only validation before execution.
@@ -337,9 +337,9 @@ Script execution, flags, and signature-operation counting.
 - **Implementation:** `sigop::is_pay_to_script_hash` — Z3-verified (spec_locked)
 
 ### SC-007
-- **Rule:** OP_CHECKSIG/CHECKSIGVERIFY MUST count as 1 sigop; CHECKMULTISIG counts n (accurate) or 20 (legacy inaccurate).
+- **Rule:** OP_CHECKSIG/CHECKSIGVERIFY MUST count as 1 sigop; CHECKMULTISIG counts n (accurate) or 20 (legacy inaccurate). The count MUST walk opcodes, skip bytes inside a push, and read the previous opcode for an accurate multisig.
 - **Specification:** [§5.2.2](PROTOCOL.md#522-signature-operation-counting) CountSigOpsInScript
-- **Implementation:** `sigop::count_sigops_in_script` — Z3-verified (spec_locked)
+- **Implementation:** `sigop::count_sigops_in_script` — Z3 consensus-set `sigop_walk`
 
 ### SC-008
 - **Rule:** Coinbase transactions MUST contribute zero P2SH sigops.
@@ -614,9 +614,9 @@ Source: [§5.2.5](PROTOCOL.md#525-script-verification-flags) block script mask; 
 BIP activation rule entries (refer to **[§8 of this register](#8-activation-height-tables)** for activation height tables). Individual SF-* rules state the MUST invariant; Table 1 is the canonical height register.
 
 ### SF-001
-- **Rule:** SCRIPT_VERIFY_P2SH MUST activate at mainnet height 173,805.
-- **Specification:** [§5.2.5](PROTOCOL.md#525-script-verification-flags) CalculateScriptFlags (BIP16)
-- **Implementation:** `block::script_cache::calculate_base_script_flags_for_block` — Z3-verified (spec_locked)
+- **Rule:** The block script mask MUST include SCRIPT_VERIFY_P2SH at every height, except when a script-flag exception replaces the mask. Height 173,805 is the BIP16 gate inside CalculateScriptFlags, and that function is not the connect mask.
+- **Specification:** [§5.2.5](PROTOCOL.md#525-script-verification-flags) block script mask
+- **Implementation:** `block::script_cache::get_block_script_verify_flags_core` — Z3 consensus-set `block_script_mask`
 
 ### SF-002
 - **Rule:** BIP34 (height in coinbase) MUST activate at mainnet height 227,931.

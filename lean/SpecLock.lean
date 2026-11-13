@@ -2,6 +2,7 @@ import SpecLock.Attr
 import SpecLock.Subsidy
 import SpecLock.Supply
 import SpecLock.Tx
+import SpecLock.Sighash
 import SpecLock.Chain
 import SpecLock.Locktime
 import SpecLock.Assumptions

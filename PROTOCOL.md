@@ -448,39 +448,27 @@ Where:
 - $result$ is the serialized push operation for signature $sig$
 - $result \iff op \in \{0x\text{ac}, 0x\text{ad}, 0x\text{ae}, 0x\text{af}\}$ (OP_CHECKSIG, OP_CHECKSIGVERIFY, OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY)
 
-**SighashType**: $\mathbb{N}_{8} \times \mathbb{N} \rightarrow \text{SighashType}$
+**SighashType**: $\mathbb{N}_{8} \rightarrow \text{SighashType}$
 
 **Properties**:
-- BIP66 legacy handling: $result = \text{AllLegacy} \iff h < H_{66}$ (legacy 0x00 only before BIP66)
-- Standard types: $result \in \{\text{All}, \text{None}, \text{Single}\} \iff byte \in \{0x01, 0x02, 0x03\}$ (standard types)
-- AnyoneCanPay flag: $result \text{ has AnyoneCanPay flag } \iff byte \in \{0x81, 0x82, 0x83\}$ (AnyoneCanPay types)
-- Invalid handling: $result = \text{Invalid} \iff byte \notin \{0x00, 0x01, 0x02, 0x03, 0x81, 0x82, 0x83\} \lor (byte = 0x00 \land h \geq H_{66})$ (invalid bytes or post-BIP66 0x00)
-- Result type: $result \in \{\text{AllLegacy}, \text{All}, \text{None}, \text{Single}, \text{All} \mid \text{AnyoneCanPay}, \text{None} \mid \text{AnyoneCanPay}, \text{Single} \mid \text{AnyoneCanPay}, \text{Invalid}\}$
+- Base type: $\text{base}(byte) = byte \bmod 32$, the low 5 bits. $2$ is NONE, $3$ is SINGLE, and every other base has ALL behavior.
+- ANYONECANPAY: bit 7, $byte \mathbin{\&} 128 \neq 0$.
+- Raw byte: the preimage stores $byte$. That includes $0x00$ and every byte outside $\{0x00, 0x01, 0x02, 0x03, 0x81, 0x82, 0x83\}$.
+- STRICTENC ($0x02$) rejects an undefined type at relay. The block script mask does not set it. BIP66 adds DERSIG, not STRICTENC.
 
-For sighash byte $byte$ and height $h$:
+**Formula** (**F_SighashBase**):
 
-$$\text{SighashType}(byte, h) = \begin{cases}
-\text{AllLegacy} & \text{if } byte = 0x00 \land h < H_{66} \\
-\text{All} & \text{if } byte = 0x01 \\
-\text{None} & \text{if } byte = 0x02 \\
-\text{Single} & \text{if } byte = 0x03 \\
-\text{All} \mid \text{AnyoneCanPay} & \text{if } byte = 0x81 \\
-\text{None} \mid \text{AnyoneCanPay} & \text{if } byte = 0x82 \\
-\text{Single} \mid \text{AnyoneCanPay} & \text{if } byte = 0x83 \\
-\text{Invalid} & \text{otherwise}
-\end{cases}$$
+$$\forall byte: \text{SighashBase}(byte) = byte \% 32$$
 
-Where $H_{66}$ is the BIP66 activation height (mainnet: 363,725).
-
-**Early Bitcoin Legacy**: In early Bitcoin (pre-BIP66), sighash type $0x00$ was accepted and treated as SIGHASH_ALL. This is represented as $\text{AllLegacy}$ to preserve the correct byte value for sighash computation.
+The base type is the low five bits. For a byte, $byte \bmod 32 = byte \mathbin{\&} 31$. Lean definition `sighashBase`. The consensus-set row `sighash_base` reads `SighashType::base_type`, `SighashType::is_all`, and the BIP143 preimage trailer.
 
 **Theorem 5.1.1** (P2SH Redeem Script Sighash): For P2SH transactions, the sighash must use the redeem script instead of the scriptPubKey.
 
 *Proof*: By construction, P2SH scriptPubKeys contain only a hash of the redeem script. The actual script logic is in the redeem script, which must be used for sighash calculation to ensure signatures validate correctly. This is proven by the requirement that $\text{SighashScriptCode}$ returns the redeem script for P2SH transactions.
 
-**Theorem 5.1.2** (Sighash Type AllLegacy): Early Bitcoin (pre-BIP66) accepted sighash type 0x00 as SIGHASH_ALL.
+**Theorem 5.1.2** (Sighash byte 0x00): Sighash byte $0x00$ has ALL behavior at every height, and the preimage stores $0x00$.
 
-*Proof*: Historical Bitcoin blocks at heights $< H_{66}$ (on mainnet, heights up to 363,724) contain transactions with sighash type 0x00. These transactions are valid and must be accepted. The $\text{SighashType}$ function maps $0x00$ to $\text{AllLegacy}$ for heights $< H_{66}$ to preserve compatibility with these historical transactions.
+*Proof*: The base type of $0x00$ is $0$, which is neither NONE ($2$) nor SINGLE ($3$), so the byte has ALL behavior. BIP66 requires a strict DER encoding. It does not reject this sighash byte. Blocks before height 363,725 contain spends that use $0x00$.
 
 **Theorem 5.1.3** (FindAndDelete Sighash Requirement): For legacy scripts, FindAndDelete must be applied to scriptCode before sighash computation.
 
@@ -569,20 +557,20 @@ sequenceDiagram
     
     VM->>ST: Check Final State
     alt Valid Result
-        ST-->>VM: |S| = 1 ∧ S[0] ≠ 0
+        ST-->>VM: S ≠ ∅ ∧ top ≠ 0
         VM-->>S: ✅ Return true
     else Invalid Result
-        ST-->>VM: |S| ≠ 1 ∨ S[0] = 0
+        ST-->>VM: S = ∅ ∨ top = 0
         VM-->>S: ❌ Return false
     end
 ```
 
 **Properties**:
-- Script verification correctness: $result = \text{true} \iff$ script execution succeeds with final stack having exactly one true value
+- Script verification correctness: $result = \text{true} \iff$ execution succeeds, the stack is non-empty, and its top item is true. Witness v0 and tapscript also require exactly one item. CLEANSTACK is that one-item requirement when the flag is set. The block script mask does not set it.
 - P2SH validation: $(f \land 0x01) \neq 0 \land \text{IsP2SH}(spk) \implies \text{P2SHPushOnlyCheck}(ss) = \text{valid}$
 - Execution order: $result$ executes $ss$ first, then $spk$, then $w$ if present
 - Stack initialization: $result$ starts with empty stack for $ss$ execution
-- Final stack condition: $result = \text{true} \implies$ final stack has exactly one non-zero element
+- Final stack condition: $result = \text{true} \implies$ the stack is non-empty and its top item is non-zero. Exactly one item is required for witness v0, tapscript, and CLEANSTACK.
 - $\text{OP\_ELSE}$ inverts the open conditional's execution flag, including a second $\text{OP\_ELSE}$ in that conditional. $\text{OP\_ELSE}$ with an empty control stack fails.
 
 **VerifyScript**: $\mathcal{SC} \times \mathcal{SC} \times \mathcal{W} \times \mathbb{N} \rightarrow \{\text{true}, \text{false}\}$
@@ -601,7 +589,7 @@ For scriptSig $ss$, scriptPubKey $spk$, witness $w$, and flags $f$:
 3. Execute $spk$ on resulting stack
 4. **P2SH redeem**: If $(f \land 0x01) \neq 0$ and $\text{IsP2SH}(spk)$ and the stack top is true, pop that value and $\text{EvalScript}$ the last push of $ss$. A hash match alone is not success. $\text{OP\_RESERVED}$ in the redeem fails.
 5. If witness present: execute $w$ on stack
-6. Return final stack has exactly one true value
+6. Return success when the stack is non-empty and its top item is true. Witness v0, tapscript, and CLEANSTACK also require exactly one item. The block script mask does not set CLEANSTACK.
 
 #### 5.2.1 P2SH Push-Only Validation
 
@@ -770,7 +758,7 @@ $$\forall ss, spk \in \mathbb{S}, f \in \mathbb{N}_{32} : (f \land 0x01) \neq 0 
 
 *Proof*: By construction, if a P2SH scriptSig $ss$ contains any non-push opcode, then $\text{P2SHPushOnlyCheck}(ss) = \text{invalid}$, causing $\text{VerifyScript}(ss, spk, w, f) = \text{false}$ before script execution. This prevents malicious opcodes from being executed, ensuring that only data (the redeem script) is pushed onto the stack.
 
-**Activation**: Block 173,805 (mainnet) - Same as P2SH activation (BIP16)
+**Activation**: Block 173,805 (mainnet) is the BIP16 deployment height used by `CalculateScriptFlags`. The connect mask includes P2SH at every height except a script-flag exception.
 
 ---
 
@@ -785,16 +773,16 @@ Signature operations (sigops) are counted to enforce the `MAX_BLOCK_SIGOPS_COST`
 
 **Note**: Sigop count is bounded by script length ($result \leq |s|$) and is zero for empty scripts ($|s| = 0 \implies result = 0$).
 
-For script $s$ and accurate flag $a$:
+For script $s$ and accurate flag $a$, walk opcodes. A push is one opcode: the bytes of its payload are skipped and are not counted. The previous opcode, not the previous byte, decides an accurate multisig count.
 
-$$\text{CountSigOpsInScript}(s, a) = \sum_{i=0}^{|s|-1} \text{SigOpCount}(s[i], s, i, a)$$
-
-Where $\text{SigOpCount}(op, s, i, a)$ returns:
+$\text{SigOpCount}(op, prev, a)$ returns:
 - $1$ if $op \in \{0xac, 0xad\}$ (OP_CHECKSIG, OP_CHECKSIGVERIFY)
 - $n$ if $op \in \{0xae, 0xaf\}$ (OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY) where:
-  - If $a = \text{true}$ and $i > 0$ and $s[i-1] \in [0x51, 0x60]$ (OP_1 to OP_16), then $n = s[i-1] - 0x50$
+  - If $a = \text{true}$ and $prev \in [0x51, 0x60]$ (OP_1 to OP_16), then $n = prev - 0x50$
   - Otherwise, $n = 20$ (MAX_PUBKEYS_PER_MULTISIG)
 - $0$ otherwise
+
+A sum over every byte is not this count. For `01 52 ae`, that sum treats `0x52` as the previous byte and yields 2. The opcode walk sees a 1-byte push and then CHECKMULTISIG with no previous opcode, and yields 20.
 
 **GetLegacySigOpCount**: $\mathcal{TX} \rightarrow \mathbb{N}$
 
@@ -980,7 +968,7 @@ Where:
 **Consensus vs relay**: Many nodes apply **SCRIPT_VERIFY_STRICTENC** and **SCRIPT_VERIFY_LOW_S** only as **mempool / relay (standardness)** rules. For **block connection**, the consensus script flags OR in **SCRIPT_VERIFY_DERSIG** at BIP66 height, not `STRICTENC` or `LOW_S`. Mainnet may therefore contain **post-BIP66** confirmed transactions whose ECDSA signatures are strictly DER (required by **DERSIG**) but are not low-$S$; consensus still accepts them. This specification states **consensus** behavior; **relay** policy remains implementation-defined (including $\text{AcceptToMemoryPool}$-class admission rules).
 
 **Flag Definitions**:
-- **SCRIPT_VERIFY_P2SH** ($f = 0x01$): $H_f(\text{mainnet}) = 173,805$, $\text{FlagCondition} = \text{true}$ (always active after activation)
+- **SCRIPT_VERIFY_P2SH** ($f = 0x01$): BIP16 deployment height $H_f(\text{mainnet}) = 173{,}805$ gates `CalculateScriptFlags`. The connect mask includes this bit at every height except a script-flag exception.
 - **SCRIPT_VERIFY_STRICTENC** ($f = 0x02$): **Relay / standardness** (not added by consensus block script-flag height gating at BIP66). $\text{FlagCondition}$ and activation for blocks: **not applicable** to $\text{ConnectBlock}$ parity.
 - **SCRIPT_VERIFY_DERSIG** ($f = 0x04$): $H_f(\text{mainnet}) = 363,725$ (BIP66), $\text{FlagCondition} = \text{true}$. **Consensus** base flag after activation (strict DER encodings for ECDSA signatures in executed scripts).
 - **SCRIPT_VERIFY_LOW_S** ($f = 0x08$): **Relay / standardness** (not added by consensus block script-flag height gating at BIP66). $\text{FlagCondition}$ for blocks: **not applicable** to $\text{ConnectBlock}$ parity.
@@ -3218,7 +3206,7 @@ Further P2P lifecycle and dispatch details appear with [§10.3](./ARCHITECTURE.m
 
 $$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{wtxid}(tx_i) : i \in [0, |block.transactions|)\})$$
 
-**Witness commitment output (BIP141)**: The 32-byte value in the coinbase OP_RETURN is $\text{SHA256d}(\text{WitnessRoot} \,\parallel\, \text{WitnessReservedValue})$, where $\text{WitnessReservedValue}$ is the 32-byte item in the coinbase input’s witness stack (default $0^{32}$ if absent), not the raw $\text{WitnessRoot}$ alone.
+**Witness commitment output (BIP141)**: The 32-byte value in the coinbase OP_RETURN is $\text{SHA256d}(\text{WitnessRoot} \,\parallel\, \text{WitnessReservedValue})$, where $\text{WitnessReservedValue}$ is the 32-byte item in the coinbase input’s witness stack, not the raw $\text{WitnessRoot}$ alone. A commitment whose coinbase witness does not contain that one 32-byte item is invalid. The missing item is not replaced by $0^{32}$.
 
 **Weight Calculation** (BIP141):  
 $$\text{Weight}(tx) = 3 \times |\text{Serialize}(tx \setminus witness)| + |\text{Serialize}(tx)|$$
@@ -3321,7 +3309,7 @@ The virtual size is at most one more than the floor of weight divided by 4: $\lc
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: Element size bounds: $result = \text{true} \iff \forall e \in w : |e| \leq 520$. Empty witness: $|w| = 0 \implies result = \text{true}$.
+**Note**: Element size bounds: $result = \text{true} \iff \forall e \in w : |e| \leq 520$. Empty witness: $|w| = 0 \implies result = \text{true}$. This predicate is not the P2WSH spend rule. It rejects a witness script longer than 520 bytes. Connect does not call it. A P2WSH spend applies 520 bytes to every witness element except the last. The last element is the witness script and is limited by the 10,000-byte script size. P2WPKH applies 520 bytes to both elements.
 
 For witness $w$:
 
@@ -3542,7 +3530,7 @@ For P2WSH-in-P2SH:
 
 **Nested SegWit Detection**: $\text{IsNestedSegWit}(redeem) = (redeem[0] = 0x00) \land ((redeem[1] = 0x14) \lor (redeem[1] = 0x20))$
 
-**Theorem 11.1.2** (Nested SegWit SigVersion): P2WSH-in-P2SH and P2WPKH-in-P2SH witness validation uses $\text{SigVersion} = \text{WitnessV0}$ and BIP143 sighash. $\text{SCRIPT\_VERIFY\_WITNESS\_PUBKEYTYPE}$ ($0x8000$) is a Schnorr pubkey-type strictness flag when Taproot outputs exist in the transaction; it does **not** select Tapscript semantics for nested SegWit v0 spends.
+**Theorem 11.1.2** (Nested SegWit SigVersion): P2WSH-in-P2SH and P2WPKH-in-P2SH witness validation uses $\text{SigVersion} = \text{WitnessV0}$ and BIP143 sighash. $\text{SCRIPT\_VERIFY\_WITNESS\_PUBKEYTYPE}$ ($0x8000$) is the policy rule that a v0 witness public key be compressed. It is not a block flag, and it does **not** select Tapscript semantics for nested SegWit v0 spends.
 
 *Proof*: Witness program validation dispatches v0 programs to WitnessV0 regardless of WITNESS_PUBKEYTYPE; Tapscript applies only to v1 P2TR witness programs (BIP341).
 
@@ -3569,14 +3557,14 @@ $$\text{Preimage} = \text{nVersion}\_{32} \parallel \text{hashPrevouts}\_{256} \
 
 **Precomputed hashes**:
 - $\text{hashPrevouts} = \text{SHA256d}(\text{concat}(\text{prevout}_i : i \in \text{inputs}))$ (or $0^{256}$ if ANYONECANPAY)
-- $\text{hashSequence} = \text{SHA256d}(\text{concat}(\text{sequence}_i : i \in \text{inputs}))$ (or $0^{256}$ if ANYONECANPAY)
-- $\text{hashOutputs} = \text{SHA256d}(\text{concat}(\text{output}_j : j \in \text{included outputs}))$ (depends on sighash type)
+- $\text{hashSequence} = \text{SHA256d}(\text{concat}(\text{sequence}_i : i \in \text{inputs}))$, or $0^{256}$ if ANYONECANPAY is set or the base type is NONE or SINGLE
+- $\text{hashOutputs} = \text{SHA256d}(\text{concat}(\text{output}_j : j \in \text{included outputs}))$. NONE uses $0^{256}$. SINGLE uses the output at the input index, or $0^{256}$ when that output does not exist.
 
 **Sighash type handling**:
 - SIGHASH_ALL (0x01): all outputs included
-- SIGHASH_NONE (0x02): no outputs; hashOutputs = $0^{256}$
-- SIGHASH_SINGLE (0x03): output at input index only; hashOutputs = SHA256d of that output
-- ANYONECANPAY (0x80): only signing input; hashPrevouts, hashSequence = $0^{256}$
+- SIGHASH_NONE (0x02): no outputs; hashOutputs = $0^{256}$; hashSequence = $0^{256}$
+- SIGHASH_SINGLE (0x03): output at the input index, or $0^{256}$ when that output does not exist; hashSequence = $0^{256}$
+- ANYONECANPAY (0x80): only the signing input; hashPrevouts and hashSequence are $0^{256}$
 
 **Definition**:
 $$\text{ComputeWitnessSignatureHash}(tx, i, scriptCode, amount, type) = \text{SHA256d}(\text{Preimage})$$
@@ -3602,7 +3590,7 @@ $$\text{DeriveWitnessScriptCode}(program, \_) = \texttt{OP\_DUP OP\_HASH160} \pa
 
 (25 bytes total; $h_{20}$ is the 20-byte pubkey hash from the program.)
 
-**P2WSH** (native or nested in P2SH): witness program is `OP_0 PUSH_32 <32-byte-hash>` (34 bytes). The scriptCode is the **witness script** (last element of the input witness stack):
+**P2WSH** (native or nested in P2SH): witness program is `OP_0 PUSH_32 <32-byte-hash>` (34 bytes). The derived script is the **witness script** (last element of the input witness stack). While that script executes, the preimage scriptCode is the suffix that starts after the last executed OP_CODESEPARATOR. If none has executed, the suffix is the whole witness script. An OP_CODESEPARATOR in an unexecuted branch does not move the suffix.
 
 $$\text{DeriveWitnessScriptCode}(program, witnessScript) = witnessScript$$
 
