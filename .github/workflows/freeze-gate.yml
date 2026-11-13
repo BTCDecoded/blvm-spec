@@ -1,0 +1,23 @@
+name: Freeze gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  freeze:
+    name: Frozen paths
+    runs-on: [self-hosted, Linux, X64, builds]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Require a freeze marker when frozen paths change
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python3 .github/scripts/freeze_gate.py

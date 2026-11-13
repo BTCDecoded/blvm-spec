@@ -1,0 +1,21 @@
+name: Commit convention
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    name: Conventional Commits
+    runs-on: [self-hosted, Linux, X64, builds]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check commit subjects and the consensus marker
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python3 .github/scripts/commit_convention.py

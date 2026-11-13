@@ -1,0 +1,10 @@
+# Normative spec. A metadata stamp of SPEC_META.json is included.
+THE_ORANGE_PAPER.md
+CONSENSUS_SPEC.md
+PROTOCOL.md
+ARCHITECTURE.md
+VERIFIED_FORMULAS.md
+SPEC_CORE_DELTA.md
+SPEC_META.json
+PROPERTY_BINDINGS.toml
+lean/
