@@ -18,8 +18,10 @@ This document is the BLVM Bitcoin Consensus Specification: a structured, numbere
 | **ID** | Stable identifier: category prefix + sequence number (e.g. `HDR-001`) |
 | **Rule** | Single-sentence invariant in MUST/MUST NOT language |
 | **Specification** | Orange Paper section and theorem/formula reference |
-| **Implementation** | Function path and crate; `Z3-verified` if a spec-lock proof exists |
+| **Implementation** | Function path and crate; `Z3-verified` means Z3 checked that `#[spec_locked]` function. That mark is not a body proof. |
 | **Enforcement** | `consensus` (`blvm-consensus`), `chain` (`blvm-node` / chain index), or `both` |
+
+A body proof is a passing check that fails after two edits of the function body. That list is the blvm-spec-lock README. This register does not copy it.
 
 Use **UNIMPLEMENTED** only when no crate enforces the rule yet. Use **UNSPECIFIED** when code exists but Orange Paper lacks a named function. Rules enforced outside `blvm-consensus` by design (e.g. parent hash linkage) are **not** UNIMPLEMENTED — cite the chain-layer function and set **Enforcement: chain**.
 
