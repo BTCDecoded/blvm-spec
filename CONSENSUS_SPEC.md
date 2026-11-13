@@ -359,9 +359,9 @@ Script execution, flags, and signature-operation counting.
 - **Implementation:** `sigop::count_tapscript_sigops` — Z3-verified (spec_locked)
 
 ### SC-011
-- **Rule:** OP_CHECKMULTISIG dummy stack element MUST be empty (OP_0) after BIP147 activation.
-- **Specification:** [§5.4.5](PROTOCOL.md#545-bip147-nulldummy-enforcement) BIP147Check, **Theorem 5.4.5**
-- **Implementation:** `bip_validation::check_bip147` — Z3-verified (spec_locked)
+- **Rule:** When SCRIPT_VERIFY_NULLDUMMY is set, the extra stack element under the OP_CHECKMULTISIG signatures MUST be zero-length. OP_0 pushes that element. A one-byte 0x00 MUST fail. The check runs in the script being executed. `n` is the top stack item and `m` is under the `n` public keys.
+- **Specification:** [§5.4.5](PROTOCOL.md#545-bip147-nulldummy-enforcement) **Theorem 5.4.5**, **Theorem 5.4.5.1**
+- **Implementation:** `script::execute_opcode_with_context_full` — Z3 consensus-set `checkmultisig_stack`. `bip_validation::check_bip147` inspects a bare scriptPubKey and is not the connect path.
 
 ### SC-012
 - **Rule:** After BIP66 activation, ECDSA signatures MUST be strictly DER-encoded.
@@ -598,14 +598,14 @@ Enforced by `bip_validation::check_bip30`. `ForkId::Bip30` is active at every he
 
 | Flag | Value | Activation height | Always-on after activation? |
 |------|-------|-------------------|----------------------------|
-| SCRIPT_VERIFY_P2SH | 0x01 | 173,805 | Yes (all txs) |
+| SCRIPT_VERIFY_P2SH | 0x01 | baseline mask | Yes (every tx; exception hashes replace the mask) |
 | SCRIPT_VERIFY_DERSIG | 0x04 | 363,725 | Yes (consensus block validation) |
 | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | 0x200 | 388,381 | Yes |
 | SCRIPT_VERIFY_CHECKSEQUENCEVERIFY | 0x400 | 419,328 | Yes |
 | SCRIPT_VERIFY_WITNESS | 0x800 | baseline mask | Yes (every tx; exception hashes replace the mask) |
 | SCRIPT_VERIFY_NULLDUMMY | 0x10 | 481,824 | Yes |
 
-`SCRIPT_VERIFY_WITNESS_PUBKEYTYPE` (0x8000) is standardness. The block mask does not set it.
+`SCRIPT_VERIFY_WITNESS_PUBKEYTYPE` (0x8000) is standardness. The block mask does not set it. Height 173,805 is the BIP16 gate inside `CalculateScriptFlags`. It is not the connect mask.
 
 Source: [§5.2.5](PROTOCOL.md#525-script-verification-flags) block script mask; implemented in `block::script_cache::get_block_script_verify_flags_core`.
 
@@ -904,6 +904,11 @@ Taproot spending rules (Orange Paper [§11.2](PROTOCOL.md#112-taproot)).
 - **Rule:** OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY MUST be disabled in tapscript.
 - **Specification:** [§11.2.8](PROTOCOL.md#1128-tapscript-opcodes-and-sigop-counting-bip-342) Tapscript Opcodes
 - **Implementation:** `script::eval_script` — Z3-verified (spec_locked)
+
+### TAP-010
+- **Rule:** In tapscript, the OP_SUCCESS bytes MUST make the script succeed when present anywhere, including an unexecuted branch. 0xcc stays in that set until CSFS is active. In a legacy or witness-v0 script those bytes MUST fail.
+- **Specification:** [§5.2.1](PROTOCOL.md#521-p2sh-push-only-validation) opcode table
+- **Implementation:** `script::is_op_success`, `script::eval_script_with_context_full_inner` — Z3 consensus-set `tapscript_op_success`
 
 ---
 

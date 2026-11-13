@@ -618,7 +618,7 @@ Where $\text{IsPushOpcode}(op) \iff op \in \text{PushOpcode}$, and $\text{PushOp
 - OP_RESERVED: $op = 0x50$
 - OP_1 through OP_16: $0x51 \leq op \leq 0x60$
 
-An opcode is an immediate success when it equals $0x50$ or $0x62$, or lies in $0x7e \leq op \leq 0x81$, $0x83 \leq op \leq 0x86$, $0x89 \leq op \leq 0x8a$, $0x8d \leq op \leq 0x8e$, $0x95 \leq op \leq 0x99$, or $0xbb \leq op \leq 0xfe$.
+In tapscript, an opcode is an immediate success when it occurs anywhere in the script, including an unexecuted branch, and it equals $0x50$ or $0x62$, or lies in $0x7e \leq op \leq 0x81$, $0x83 \leq op \leq 0x86$, $0x89 \leq op \leq 0x8a$, $0x8d \leq op \leq 0x8e$, $0x95 \leq op \leq 0x99$, or $0xbb \leq op \leq 0xfe$. $0xcc$ stays in that set until CSFS is active. The block mask does not set `DISCOURAGE_OP_SUCCESS`. In a legacy or witness-v0 script those bytes are disabled and fail.
 
 **Opcode table** (name, byte, minimum stack, operation word):
 
@@ -1451,21 +1451,18 @@ Before BIP90 activation (fork not yet active), all blocks pass the version enfor
 **BIP147Check**: $\mathbb{S} \times \mathbb{S} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
 
 **Properties**:
-- NULLDUMMY requirement: $\text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{valid} \implies h < H_{147} \lor \neg \text{ContainsMultisig}(scriptPubkey) \lor \text{IsNullDummy}(scriptSig)$
-- Multisig validation: $\text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{invalid} \implies h \geq H_{147} \land \text{ContainsMultisig}(scriptPubkey) \land \neg \text{IsNullDummy}(scriptSig)$
-- Validation correctness: $\text{BIP147Check}(scriptSig, scriptPubkey, h)$ enforces NULLDUMMY for multisig after activation
+- NULLDUMMY requirement: when `SCRIPT_VERIFY_NULLDUMMY` is set, the extra stack element under the signatures is zero-length
+- A one-byte `0x00` has length 1 and fails. `OP_0` pushes the empty element that passes
+- The check runs in the script being executed, including a P2SH redeem script and a P2WSH witness script
 
-For scriptSig $scriptSig$, scriptPubkey $scriptPubkey$ containing OP_CHECKMULTISIG, and block height $h$:
+The connect rule is the executing opcode, not a scan of the scriptPubKey. A P2SH scriptPubKey does not contain `OP_CHECKMULTISIG`, and a P2WSH dummy is a witness item.
 
-$$\text{BIP147Check}(scriptSig, scriptPubkey, h) = \begin{cases}
-\text{invalid} & \text{if } h \geq H_{147} \land \text{ContainsMultisig}(scriptPubkey) \land \neg \text{IsNullDummy}(scriptSig) \\
-\text{valid} & \text{otherwise}
-\end{cases}$$
+$$\text{NULLDUMMY}(flag, dummy) = \text{invalid} \iff flag \land |dummy| \neq 0$$
 
 Where:
-- $H_{147}$ is the BIP147 activation height (mainnet: 481,824; testnet: 834,624; regtest: 0)
-- $result$ checks if $scriptPubkey$ contains OP_CHECKMULTISIG (0xae)
-- $result$ verifies that the dummy element (extra stack element consumed by OP_CHECKMULTISIG) is empty (OP_0)
+- $H_{147}$ is the BIP147 activation height (mainnet: 481,824; testnet: 834,624; regtest: 0). The connect mask ORs `SCRIPT_VERIFY_NULLDUMMY` at that height
+- $dummy$ is the stack element under the $m$ signatures
+- `check_bip147` still inspects a bare scriptPubKey and its scriptSig. Connect does not call it
 
 **DecodeCScriptNum**: $\mathbb{S} \rightarrow \mathbb{Z}$
 
@@ -1486,8 +1483,8 @@ Where $\text{DecodeLittleEndian}(bytes)$ decodes bytes as a minimal little-endia
 **OP_CHECKMULTISIG Stack Consumption**: OP_CHECKMULTISIG consumes $m + n + 2$ stack elements where:
 1. $m$ signatures
 2. $n$ public keys
-3. $m = \text{DecodeCScriptNum}(stack[|stack|-2])$ (signature threshold, decoded via CScriptNum)
-4. $n = \text{DecodeCScriptNum}(stack[|stack|-1])$ (public key count, decoded via CScriptNum)
+3. $n = \text{DecodeCScriptNum}(stack[|stack|-1])$ (public key count, the top item, decoded via CScriptNum)
+4. $m = \text{DecodeCScriptNum}(stack[|stack| - n - 2])$ (signature threshold, under the $n$ public keys, decoded via CScriptNum)
 5. **Dummy element** (must be empty with BIP147)
 
 **Properties**:
@@ -1495,13 +1492,9 @@ Where $\text{DecodeLittleEndian}(bytes)$ decodes bytes as a minimal little-endia
 - Empty array handling: $|m_{bytes}| = 0 \implies m = 0$ (empty array decodes to 0)
 - Minimal encoding: $m_{bytes}$ and $n_{bytes}$ must be minimally encoded (no leading zeros except for sign)
 
-**Mathematical Property**: BIP147 enforces NULLDUMMY for multisig scripts:
+**Theorem 5.4.5** (BIP147 NULLDUMMY Enforcement): When `SCRIPT_VERIFY_NULLDUMMY` is set, the extra stack element under the `OP_CHECKMULTISIG` signatures is zero-length.
 
-$$\forall scriptSig, scriptPubkey \in \mathbb{S}, h \geq H_{147} : \text{ContainsMultisig}(scriptPubkey) \land \text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{valid} \implies \text{IsNullDummy}(scriptSig)$$
-
-**Theorem 5.4.5** (BIP147 NULLDUMMY Enforcement): BIP147 ensures that OP_CHECKMULTISIG dummy elements are empty after activation height.
-
-*Proof*: For any scriptSig $scriptSig$ and scriptPubkey $scriptPubkey$ containing OP_CHECKMULTISIG at height $h \geq H_{147}$, if $\neg \text{IsNullDummy}(scriptSig)$, then $\text{BIP147Check}(scriptSig, scriptPubkey, h) = \text{invalid}$, causing script validation to fail. This ensures that all multisig scripts after activation use empty dummy elements, which is required for SegWit compatibility.
+*Proof*: The interpreter pops $n$, the $n$ keys, $m$, and the $m$ signatures, then requires the next element to be empty. The flag is off before BIP147, so a non-empty dummy passes. The same check applies to a redeem script and a witness script.
 
 **Formula** (**F_BIP147PreActivationPass**):
 $$result == 1$$
@@ -1510,7 +1503,7 @@ Before BIP147 activation (fork not yet active), all CHECKMULTISIG operations pas
 
 **Theorem 5.4.5.1** (OP_CHECKMULTISIG CScriptNum Requirement): OP_CHECKMULTISIG must use CScriptNum decoding for $m$ and $n$ values.
 
-$$\forall stack \in \mathcal{ST}: \text{OP_CHECKMULTISIG}(stack) \text{ uses } m = \text{DecodeCScriptNum}(stack[|stack|-2]) \land n = \text{DecodeCScriptNum}(stack[|stack|-1])$$
+$$\forall stack \in \mathcal{ST}: \text{OP_CHECKMULTISIG}(stack) \text{ uses } n = \text{DecodeCScriptNum}(stack[|stack|-1]) \land m = \text{DecodeCScriptNum}(stack[|stack| - n - 2])$$
 
 *Proof*: From the definition of $\text{DecodeCScriptNum}$, OP_CHECKMULTISIG parameters use CScriptNum decoding. This allows empty byte arrays to be interpreted as 0, which is required for certain edge cases (e.g., block 299,917). Raw byte parsing would reject empty arrays, but CScriptNum correctly decodes them to 0.
 
