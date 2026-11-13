@@ -9,7 +9,7 @@ permissions:
 jobs:
   freeze:
     name: Frozen paths
-    runs-on: [self-hosted, Linux, X64, builds]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:

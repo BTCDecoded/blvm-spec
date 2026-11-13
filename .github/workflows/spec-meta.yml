@@ -28,7 +28,7 @@ jobs:
   update-spec-meta:
     name: Update SPEC_META.json
     if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, Linux, X64, builds]
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
@@ -71,7 +71,7 @@ jobs:
 
   verify-spec-meta:
     name: Verify SPEC_META.json (PRs)
-    runs-on: [self-hosted, Linux, X64, builds]
+    runs-on: ubuntu-latest
 
     # On PRs only — verify the file is not stale without auto-committing
     if: github.event_name == 'pull_request'
