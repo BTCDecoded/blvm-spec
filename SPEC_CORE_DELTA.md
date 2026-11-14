@@ -6,10 +6,8 @@ of each deviation.
 
 All deviations are **intentional** and have been reviewed for consensus-safety.
 Nothing here implies a consensus *incompatibility* with Bitcoin Core on a block a
-supported network can produce. D-09 through D-11 are unreachable on mainnet, testnet,
-testnet4, signet, and regtest. D-11 is the spec-locked `get_next_work_required`:
-it errors on an inverted period, and the body proof records that error. Connect
-uses `retarget_bits`, which clamps.
+supported network can produce. Compact targets, retarget products, and inverted
+difficulty periods follow Core.
 
 ---
 
@@ -136,45 +134,6 @@ negative when inputs cover outputs.
 **Rationale:** Aligns Rust types with Orange Paper mathematics ($\mathbb{N}$ and
 $\mathbb{Z}$).  Enables the Z3 translator to reason about signed vs unsigned bounds
 without heuristics.
-
----
-
-## D-09 — Compact exponents outside 3..=32
-
-| Field | Detail |
-|---|---|
-| Bitcoin Core | `arith_uint256::SetCompact` assigns every encoding a value. An exponent below 3 shifts the mantissa right. A larger exponent is overflow only when the digits do not fit in 256 bits. |
-| BLVM | `expand_target` returns an error when the exponent is outside 3..=32. `POW-002` and §7.1 state that domain. |
-| Files | `pow.rs` |
-| Status | Unreachable. A header's bits must equal the required bits, which are the compression of a real target. |
-
-**Rationale:** The Orange Paper defines `ExpandTarget` only on that domain. Core has no rule about the exponent itself. No supported network produces an exponent outside it, so no block outcome differs.
-
----
-
-## D-10 — Retarget product above 2^256
-
-| Field | Detail |
-|---|---|
-| Bitcoin Core | `CalculateNextWorkRequired` multiplies with `arith_uint256`, which drops the high bits. |
-| BLVM | `get_next_work_required` returns the previous bits when the product does not fit in 256 bits, as §7.1 states. `retarget_bits`, which `next_required_bits` and `connect_block` use, returns an error. |
-| Files | `pow.rs` |
-| Status | Unreachable. The product overflows only for a target above about 2^233.8 on a chain that retargets. Mainnet's limit is 2^224. Signet's limit falls short of the threshold. Regtest's limit is above it, and regtest does not retarget. |
-
-**Rationale:** The named function follows the paper. The connect path fails closed instead of wrapping or returning the previous bits. Neither path is hit on a supported network.
-
----
-
-## D-11 — Difficulty period whose last timestamp is earlier than its first
-
-| Field | Detail |
-|---|---|
-| Bitcoin Core | Clamps the timespan to a quarter of the expected timespan. |
-| BLVM | §7.1 `ClampTime` clamps. `retarget_bits` clamps. `get_next_work_required` returns an error before the clamp. |
-| Files | `pow.rs` |
-| Status | The connect path matches Core. The spec-locked `get_next_work_required` does not. Its body proof treats a reversed period as an error. |
-
-**Rationale:** Connect uses `retarget_bits`. Changing the named function to clamp requires the same change in the work-adjustment proof, which currently requires the error.
 
 ---
 

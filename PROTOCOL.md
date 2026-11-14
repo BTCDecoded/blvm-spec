@@ -2550,7 +2550,7 @@ flowchart TD
 - Positive bits: $bits > 0$ is required (bits must be positive)
 - Target expansion: $result$ expands compact difficulty representation to full 256-bit target
 - Formula correctness: $result = \text{mantissa} \times 2^{8 \times (\text{exponent} - 3)}$ where exponent and mantissa extracted from bits
-- Valid exponent domain: $result$ is defined only when $3 \leq \text{exponent} \leq 32$
+- Exponent: every exponent byte has a shifted value. The shift overflows when the mantissa does not fit in 256 bits
 
 $$\text{ExpandTarget}(bits) = \text{mantissa} \times 2^{8 \times (\text{exponent} - 3)}$$
 
@@ -2558,13 +2558,13 @@ $$\text{ExpandTarget}(bits) = \text{mantissa} \times 2^{8 \times (\text{exponent
 
 $$\text{requires}(bits > 0)$$
 
-Precondition: compact difficulty bits must be non-zero for a valid target expansion. Enforced by the implementation returning an error on zero or out-of-range exponent. Verified by blvm-spec-lock formal verification.
+Precondition: compact difficulty bits must be non-zero for a valid target expansion. A zero-length target is rejected. Verified by blvm-spec-lock formal verification.
 
 Where:
 - $\text{exponent} = (bits \gg 24) \land 0xff$
 - $\text{mantissa} = bits \land 0x007fffff$ (23-bit mantissa; bit `0x00800000` of the compact word lies outside this field)
 
-- **Domain (compact exponent):** Let $e = \text{exponent}$ and $m = \text{mantissa}$. $\text{ExpandTarget}(bits)$ is defined only when $e \in \{3,4,\ldots,32\}$; for $e \notin \{3,\ldots,32\}$, the compact encoding is outside the PoW-valid domain (consensus rejects such headers). For $e \in \{3,\ldots,32\}$ and $m = 0$, $\text{ExpandTarget}(bits) = 0 \in \mathbb{U}_{256}$.
+- **Domain (compact exponent):** Let $e = \text{exponent}$ and $m = \text{mantissa}$. $m = 0$ expands to $0$. For $e \le 3$ the mantissa shifts right by $8(3-e)$ bits. For $e > 3$ it shifts left by $8(e-3)$ bits. The encoding overflows when $m \neq 0$ and ($e > 34$, or $m > 255$ and $e > 33$, or $m > 65535$ and $e > 32$).
 
 *Proof*: Compact encoding is one exponent byte ($e$) and a 23-bit mantissa $m$. This is proven by blvm-spec-lock formal verification of **F_ExpandTargetZeroMantissa**, **F_ExpandTargetNonZeroMantissa**, and **F_ExpandTargetExponent**.
 
@@ -2611,14 +2611,13 @@ $$\text{timeSpan} = \text{ClampTime}(prev_{\text{last}}.\text{time} - prev_{\tex
 
 Let $\text{bitsBase}(prev, n) := prev_{\text{first}}.\text{bits}$ if $\text{EnforceBIP94}(n)$, else $prev_{\text{last}}.\text{bits}$.
 
-Let $b = \text{bitsBase}(prev, n)$, $T = \text{ExpandTarget}(b)$, and $\tau = \text{timeSpan}$. Let $\pi : \mathbb{U}_{256} \to \mathbb{N}$ embed targets as unsigned integers. Define the **partial** product $T \otimes \tau \in \mathbb{U}_{256}$ to exist iff $\pi(T) \cdot \tau < 2^{256}$, in which case $T \otimes \tau$ is the unique element of $\mathbb{U}_{256}$ with $\pi(T \otimes \tau) = \pi(T) \cdot \tau$; otherwise $T \otimes \tau$ is undefined.
+Let $b = \text{bitsBase}(prev, n)$, $T = \text{ExpandTarget}(b)$, and $\tau = \text{timeSpan}$. Let $\pi : \mathbb{U}_{256} \to \mathbb{N}$ embed targets as unsigned integers. The product keeps the low 256 bits: $\pi(T \otimes \tau) = (\pi(T) \cdot \tau) \bmod 2^{256}$. An inverted period has a negative raw timespan, and $\text{ClampTime}$ raises it to $T_{\text{expected}}/4$.
 
-Let $T_{\mathrm{adj}} := \left\lfloor \pi(T \otimes \tau) / T_{\text{expected}} \right\rfloor$ when $T \otimes \tau$ is defined. Let $c := \text{Compress}(T_{\mathrm{adj}})$ be the compact $n$Bits encoding of the full 256-bit target $T_{\mathrm{adj}}$, using the usual compact encoding (including mantissa normalization: while the provisional significand has bit `0x00800000` set, shift it right by one byte and increase the exponent size field accordingly until it fits the 23-bit mantissa). Let $\text{MAX\_TARGET} \in \mathbb{N}$ denote the compact encoding of the network’s maximum target (minimum difficulty ceiling).
+Let $T_{\mathrm{adj}} := \left\lfloor \pi(T \otimes \tau) / T_{\text{expected}} \right\rfloor$. Let $c := \text{Compress}(T_{\mathrm{adj}})$ be the compact $n$Bits encoding of the full 256-bit target $T_{\mathrm{adj}}$, using the usual compact encoding (including mantissa normalization: while the provisional significand has bit `0x00800000` set, shift it right by one byte and increase the exponent size field accordingly until it fits the 23-bit mantissa). Let $\text{MAX\_TARGET} \in \mathbb{N}$ denote the compact encoding of the network’s maximum target (minimum difficulty ceiling).
 
 $$\text{GetNextWorkRequired}(h, prev, n) = \begin{cases}
 \text{initialDifficulty} & \text{if } |prev| < 2 \\
-b & \text{if } |prev| \ge 2 \text{ and } T \otimes \tau \text{ is undefined} \\
-\min_{\mathbb{N}}(c,\, \text{MAX\_TARGET}) & \text{if } |prev| \ge 2 \text{ and } T \otimes \tau \text{ is defined}
+\min_{\mathbb{N}}(c,\, \text{MAX\_TARGET}) & \text{if } |prev| \ge 2
 \end{cases}$$
 
 where $\min_{\mathbb{N}}$ is the usual total order on $\mathbb{N}$, applied to the two compact encodings as unsigned integers.
@@ -2697,7 +2696,7 @@ flowchart TD
 
 **Corollary 7.1**: The difficulty can change by at most a factor of 4 between any two difficulty adjustment periods.
 
-**Theorem 7.1.1** (Target expansion on valid compact domain): Let $bits \in \mathbb{N}$, $e = (bits \gg 24) \land 0xff$, $m = bits \land 0x007fffff$. If $3 \le e \le 32$, then $\text{ExpandTarget}(bits)$ is defined and coincides with the mantissa–exponent rule displayed above; in particular, for $e > 3$ and $m > 0$, $\pi(\text{ExpandTarget}(bits)) = m \cdot 2^{8(e-3)}$ as integers, and the left shift introduces no truncation in $\mathbb{U}_{256}$ for $e \le 32$. If $e \notin \{3,\ldots,32\}$, $\text{ExpandTarget}(bits)$ is undefined (invalid compact exponent for PoW).
+**Theorem 7.1.1** (Target expansion): Let $bits \in \mathbb{N}$, $e = (bits \gg 24) \land 0xff$, $m = bits \land 0x007fffff$. $m = 0$ expands to $0$. Otherwise the mantissa shifts right by $8(3-e)$ when $e \le 3$ and left by $8(e-3)$ when $e > 3$. The value overflows when $m \neq 0$ and ($e > 34$, or $m > 255$ and $e > 33$, or $m > 65535$ and $e > 32$).
 
 *Proof*: Case-split on $e \le 3$ versus $e > 3$ per the expansion definition; for $e > 3$, $8(e-3) \le 232 < 256$, so the left shift stays inside $\mathbb{U}_{256}$.
 

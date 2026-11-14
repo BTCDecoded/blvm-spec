@@ -789,7 +789,7 @@ Difficulty encoding and validation (Orange Paper [§7](PROTOCOL.md#7-proof-of-wo
 - **Implementation:** `pow::expand_target` — Z3-verified (Tier 1)
 
 ### POW-002
-- **Rule:** Valid compact exponent MUST be in {3,…,32}; zero mantissa MUST expand to zero target.
+- **Rule:** Compact expansion follows SetCompact. A zero mantissa expands to zero. An exponent below 3 shifts the mantissa right. A larger exponent shifts it left, and the encoding overflows when that shift does not fit in 256 bits.
 - **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) **F_ExpandTargetZeroMantissa**, **F_ExpandTargetNonZeroMantissa**, **Theorem 7.1.1**
 - **Implementation:** `pow::expand_target` — Z3-verified (F_* formulas)
 
