@@ -197,6 +197,8 @@ For each $n \in \text{Network}$, the following parameters may differ:
 - $b \in \mathcal{B}$ for blocks
 - $x \parallel y$ for **byte-string concatenation** (when written in formulas; see also Taproot tagged-hash definitions in [§11.2](#112-taproot))
 
+**Reading.** Three layers, in the order they appear. A **Formula** block is a checked case: its display line is the prover's postcondition, and the viewer draws it as a card. The unmarked paragraph is the rule. A blockquote that starts with `Lock.` names the witness for that case. A blockquote that starts with `Binding.` names the code that witness reads. The blockquotes are not part of the rule.
+
 **Implicit conventions** (omitted from individual Properties sections):  
 Four invariants are universal across this specification and never restated per-function:
 
@@ -362,7 +364,9 @@ $$\text{where} \quad \text{fee} := \sum_{i \in tx.\text{inputs}} us(i.\text{prev
 **Formula** (**F_InputSumWithinMaxMoney**):
 $$result == 0$$
 
-Each input value is already in range. The running sum is checked after every addition and must stay in $[0, M_{\text{max}}]$. A sum above $M_{\text{max}}$ makes CheckTxInputs return $(\text{invalid}, 0)$. One input of exactly $M_{\text{max}}$ is still in range. Witness `_verify_f_input_sum_within_max_money`.
+Each input value is already in range. The running sum is checked after every addition and must stay in $[0, M_{\text{max}}]$. A sum above $M_{\text{max}}$ makes CheckTxInputs return $(\text{invalid}, 0)$. One input of exactly $M_{\text{max}}$ is still in range.
+
+> Lock. `_verify_f_input_sum_within_max_money`.
 
 **CalculateTransactionSize**: $\mathcal{TX} \rightarrow \mathbb{N}$
 
@@ -460,7 +464,9 @@ Where:
 
 $$\forall byte: \text{SighashBase}(byte) = byte \% 32$$
 
-The base type is the low five bits. For a byte, $byte \bmod 32 = byte \mathbin{\&} 31$. Lean definition `sighashBase`. The consensus-set row `sighash_base` reads `SighashType::base_type`, `SighashType::is_all`, and the BIP143 preimage trailer.
+The base type is the low five bits. For a byte, $byte \bmod 32 = byte \mathbin{\&} 31$.
+
+> Binding. Lean definition `sighashBase`. The consensus-set row `sighash_base` reads `SighashType::base_type`, `SighashType::is_all`, and the BIP143 preimage trailer.
 
 **Theorem 5.1.1** (P2SH Redeem Script Sighash): For P2SH transactions, the sighash must use the redeem script instead of the scriptPubKey.
 
@@ -520,12 +526,16 @@ Formally: $\text{EvalScript}(script, S_0, f, sv) = \text{false} \iff \text{Execu
 **Formula** (**F_CheckMultisigCountsPubkeys**):
 $$result == 0$$
 
-When `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` actually runs, outside tapscript, and the pubkey count $n$ decodes in $0..20$, $n$ is added to the opcode count. The opcode itself is already counted. A total above 201 fails the script. A count outside that range is not added. An unexecuted branch does not add $n$. Witness `_verify_f_checkmultisig_counts_pubkeys`.
+When `OP_CHECKMULTISIG` or `OP_CHECKMULTISIGVERIFY` actually runs, outside tapscript, and the pubkey count $n$ decodes in $0..20$, $n$ is added to the opcode count. The opcode itself is already counted. A total above 201 fails the script. A count outside that range is not added. An unexecuted branch does not add $n$.
+
+> Lock. `_verify_f_checkmultisig_counts_pubkeys`.
 
 **Formula** (**F_FalseResultEmpty**):
 $$result == 0$$
 
-A false result from `OP_EQUAL`, `OP_CHECKSIG`, or `OP_CHECKMULTISIG` is the empty vector. A true result is the single byte `0x01`. Witness `_verify_f_false_result_empty`.
+A false result from `OP_EQUAL`, `OP_CHECKSIG`, or `OP_CHECKMULTISIG` is the empty vector. A true result is the single byte `0x01`.
+
+> Lock. `_verify_f_false_result_empty`.
 
 ```mermaid
 sequenceDiagram
@@ -809,7 +819,9 @@ Walk `scriptSig` one instruction at a time. A truncated push, or any opcode abov
 **Formula** (**F_SigopCountPushOpcode**):
 $$(op \leq 96) == result$$
 
-An opcode is a push for this extraction exactly when it is at most `OP_16` (96). `OP_1NEGATE` and `OP_RESERVED` are pushes. An opcode above that bound makes the predicate false. Witness `_verify_f_sigop_count_push_opcode`.
+An opcode is a push for this extraction exactly when it is at most `OP_16` (96). `OP_1NEGATE` and `OP_RESERVED` are pushes. An opcode above that bound makes the predicate false.
+
+> Lock. `_verify_f_sigop_count_push_opcode`.
 
 For transaction $tx$ and UTXO set $us$:
 
@@ -1106,7 +1118,9 @@ When a time context is present, H05 holds exactly when the header timestamp is s
 **Formula** (**F_HeaderVersionFloor**):
 $$result = 1$$
 
-When BIP34 is inactive and `block_version` is 0, the version check passes. Witness `_verify_f_header_version_floor`.
+When BIP34 is inactive and `block_version` is 0, the version check passes.
+
+> Lock. `_verify_f_header_version_floor`.
 
 **Formula** (**F_HeaderBitsFloor**):
 $$result = 0$$
@@ -1280,7 +1294,9 @@ When `duplicate == 1` and `exception == 0`, the check result is invalid (`0`). T
 **Formula** (**F_Bip30RepeatRetiresPriorOutputs**):
 $$result == 0$$
 
-On those two blocks the earlier coinbase outputs with the same txid are removed before the new coinbase outputs are inserted. The bip30 index then counts only the new outputs. Witness `_verify_f_bip30_repeat_retires_prior_outputs`.
+On those two blocks the earlier coinbase outputs with the same txid are removed before the new coinbase outputs are inserted. The bip30 index then counts only the new outputs.
+
+> Lock. `_verify_f_bip30_repeat_retires_prior_outputs`.
 
 ---
 
@@ -1323,17 +1339,23 @@ When `bip34_active == 0` (fork inactive), the coinbase-height check always passe
 **Formula** (**F_BIP34SmallHeightOpcode**):
 $$result == 80 + height$$
 
-Heights 1 through 16 are one opcode. `OP_1` is `0x51` and `OP_16` is `0x60`, which is `0x50 + height`. Witness `_verify_f_bip34_small_height_opcode`.
+Heights 1 through 16 are one opcode. `OP_1` is `0x51` and `OP_16` is `0x60`, which is `0x50 + height`.
+
+> Lock. `_verify_f_bip34_small_height_opcode`.
 
 **Formula** (**F_BIP34HeightZero**):
 $$result == 0$$
 
-Height 0 is the single byte `OP_0`, not `0x50`. Witness `_verify_f_bip34_height_zero`.
+Height 0 is the single byte `OP_0`, not `0x50`.
+
+> Lock. `_verify_f_bip34_height_zero`.
 
 **Formula** (**F_BIP34HeightSeventeen**):
 $$result == 1$$
 
-Height 17 is a one-byte push, so its first byte is the length `1`, not the opcode `0x50 + 17`. Witness `_verify_f_bip34_height_seventeen`.
+Height 17 is a one-byte push, so its first byte is the length `1`, not the opcode `0x50 + 17`.
+
+> Lock. `_verify_f_bip34_height_seventeen`.
 
 ---
 
@@ -1395,7 +1417,9 @@ $$result == 0$$
 **Formula** (**F_NonDerAbortsScript**):
 $$result == 0$$
 
-After activation, a non-empty signature that fails `IsStrictDER` aborts the script. An empty signature does not: it pushes the empty vector and execution continues. A signature that is strict DER and simply does not verify also continues. Witness `_verify_f_non_der_aborts_script`.
+After activation, a non-empty signature that fails `IsStrictDER` aborts the script. An empty signature does not: it pushes the empty vector and execution continues. A signature that is strict DER and simply does not verify also continues.
+
+> Lock. `_verify_f_non_der_aborts_script`.
 
 ---
 
@@ -1622,7 +1646,9 @@ OP_CHECKTEMPLATEVERIFY (opcode 0xb3, OP_NOP4):
 **Formula** (**F_CtvTestnet4Inactive**):
 $$(height >= 0) == result$$
 
-`result` is the inactive bit. It is true for every non-negative height, so on testnet4 the opcode stays `OP_NOP4`. Witness `_verify_f_ctv_testnet4_inactive`.
+`result` is the inactive bit. It is true for every non-negative height, so on testnet4 the opcode stays `OP_NOP4`.
+
+> Lock. `_verify_f_ctv_testnet4_inactive`.
 
 **Implementation Notes**:
 
@@ -1684,7 +1710,9 @@ $$\forall lt \in \mathbb{N}_{32}: \text{LocktimeType}(lt) = \begin{cases}
 \text{Timestamp} & \text{otherwise}
 \end{cases}$$
 
-*Proof*: The threshold $500000000$ separates block heights from timestamps. This is proven by blvm-spec-lock formal verification of **F_LocktimeTypeIsHeight** and **F_LocktimeTypeIsTimestamp** (witnesses `_verify_f_locktime_type_is_height`, `_verify_f_locktime_type_is_timestamp`).
+*Proof*: The threshold $500000000$ separates block heights from timestamps. This is proven by blvm-spec-lock formal verification of **F_LocktimeTypeIsHeight** and **F_LocktimeTypeIsTimestamp**.
+
+> Lock. `_verify_f_locktime_type_is_height`, `_verify_f_locktime_type_is_timestamp`.
 
 **Theorem 5.4.7.3** (CLTV Type Matching Requirement): CLTV requires matching locktime types:
 
@@ -1712,8 +1740,9 @@ Symmetric to F_BIP65Passes for the timestamp domain: when transaction locktime i
 $$result == true$$
 
 $(tx\_locktime, stack\_locktime) = (0, 0)$: types match (both height) and
-$0 \geq 0$. BIP65Check passes. Mainnet block 659901. Witness
-`_verify_f_bip65_passes_zero_zero`. There is no `tx.lockTime != 0` guard.
+$0 \geq 0$. BIP65Check passes. Mainnet block 659901. There is no `tx.lockTime != 0` guard.
+
+> Lock. `_verify_f_bip65_passes_zero_zero`.
 
 **Formula** (**F_BIP65RejectsTypeMismatch**):
 $$result == false$$
@@ -1740,22 +1769,30 @@ CLTV and CSV read the stack element as a script number of at most 5 bytes. The h
 **Formula** (**F_DecodeLocktimeNegativeZero**):
 $$result == 0$$
 
-A one-byte stack element `0x80` is negative zero and decodes to 0. Witness `_verify_f_decode_locktime_negative_zero`.
+A one-byte stack element `0x80` is negative zero and decodes to 0.
+
+> Lock. `_verify_f_decode_locktime_negative_zero`.
 
 **Formula** (**F_DecodeLocktimeNegativeOne**):
 $$result == -1$$
 
-A one-byte stack element `0x81` has its sign bit set and magnitude 1, so it decodes to $-1$. Witness `_verify_f_decode_locktime_negative_one`.
+A one-byte stack element `0x81` has its sign bit set and magnitude 1, so it decodes to $-1$.
+
+> Lock. `_verify_f_decode_locktime_negative_one`.
 
 **Formula** (**F_CltvRejectsNegative**):
 $$result == false$$
 
-A negative script number fails CLTV before the transaction locktime is compared. Witness `_verify_f_cltv_rejects_negative`.
+A negative script number fails CLTV before the transaction locktime is compared.
+
+> Lock. `_verify_f_cltv_rejects_negative`.
 
 **Formula** (**F_CltvRejectsAboveU32**):
 $$result == false$$
 
-A non-negative script number greater than $2^{32}-1$ cannot satisfy CLTV. Witness `_verify_f_cltv_rejects_above_u32`.
+A non-negative script number greater than $2^{32}-1$ cannot satisfy CLTV.
+
+> Lock. `_verify_f_cltv_rejects_above_u32`.
 
 ---
 
@@ -1869,7 +1906,9 @@ When the signature is empty ($|sig| = 0$) and the pubkey is non-zero ($|pk| > 0$
 **Formula** (**F_CsfsTestnet4Inactive**):
 $$(height >= 0) == result$$
 
-`result` is the inactive bit. It is true for every non-negative height, so on testnet4 the opcode stays inactive. Witness `_verify_f_csfs_testnet4_inactive`.
+`result` is the inactive bit. It is true for every non-negative height, so on testnet4 the opcode stays inactive.
+
+> Lock. `_verify_f_csfs_testnet4_inactive`.
 
 **Implementation Notes**:
 
@@ -1986,12 +2025,16 @@ After BIP54 activation, the coinbase transaction must satisfy both the nLockTime
 **Formula** (**F_Bip54CoinbaseLocktime**):
 $$result == height - 1$$
 
-The coinbase lock time is the previous height. Witness `_verify_f_bip54_coinbase_locktime`.
+The coinbase lock time is the previous height.
+
+> Lock. `_verify_f_bip54_coinbase_locktime`.
 
 **Formula** (**F_Bip54CoinbaseSequence**):
 $$(sequence != 4294967295) == result$$
 
-The coinbase sequence is not `0xffffffff`. Witness `_verify_f_bip54_coinbase_sequence`.
+The coinbase sequence is not `0xffffffff`.
+
+> Lock. `_verify_f_bip54_coinbase_sequence`.
 
 ---
 
@@ -2099,7 +2142,9 @@ $$result \geq -1$$
 
 Height-based BIP68 lock: $required = ph + lock - 1$ with $ph \geq 0$ and
 $0 \leq lock \leq 65535$ (**F_SequenceLockTimeMask**). The $-1$ is last-invalid
-semantics. Witness `_verify_f_sequence_lock_height_add`.
+semantics.
+
+> Lock. `_verify_f_sequence_lock_height_add`.
 
 **GetMedianTimePast**: $[\mathcal{H}] \rightarrow \mathbb{N}$
 
@@ -2123,22 +2168,26 @@ case occurs only when fewer than 11 headers are available.
 $$result == t1$$
 
 Even $|T| = 2$, already sorted $t_0 \leq t_1$: the upper middle is $T[1] = t_1$,
-not $(t_0 + t_1)/2$. Witness `_verify_f_mtp_index` under
-`requires(t0 <= t1)`.
+not $(t_0 + t_1)/2$.
+
+> Lock. `_verify_f_mtp_index` under `requires(t0 <= t1)`.
 
 **Formula** (**F_MtpIndexN4**):
 $$result == t2$$
 
 Even $|T| = 4$, already sorted $t_0 \leq t_1 \leq t_2 \leq t_3$: the upper
-middle is $T[2] = t_2$, not the mean of the two central values. Witness
-`_verify_f_mtp_index_n4`.
+middle is $T[2] = t_2$, not the mean of the two central values.
+
+> Lock. `_verify_f_mtp_index_n4`.
 
 **Formula** (**F_MtpIndexN11**):
 $$result == t5$$
 
 The BIP113 window: $|T| = 11$, already sorted. $\lfloor 11/2 \rfloor = 5$,
-so the median is $T[5] = t_5$. Witness `_verify_f_mtp_index_n11`.
+so the median is $T[5] = t_5$.
 Even $n$ is only for a short chain; after 11 headers this is the live case.
+
+> Lock. `_verify_f_mtp_index_n11`.
 
 **BIP113 Reference**: This function implements [BIP113: Median Time-Past](https://github.com/bitcoin/bips/blob/master/bip-0113.mediawiki), which uses the median timestamp of the last 11 blocks to prevent time-warp attacks.
 
@@ -2208,17 +2257,23 @@ Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is m
 **Formula** (**F_CsvVersionBelowTwoFails**):
 $$result == false$$
 
-When the stack disable bit is clear and the transaction version is less than 2, CSV fails. Witness `_verify_f_csv_version_below_two_fails`.
+When the stack disable bit is clear and the transaction version is less than 2, CSV fails.
+
+> Lock. `_verify_f_csv_version_below_two_fails`.
 
 **Formula** (**F_RelativeLockUnsignedVersion**):
 $$result == (version \geq 2)$$
 
-For a version word in $0 \ldots 2^{32}-1$, BIP68 and CSV are enabled exactly when that unsigned word is at least 2. Wire `0xffffffff` enables both. Witness `_verify_f_relative_lock_unsigned_version`.
+For a version word in $0 \ldots 2^{32}-1$, BIP68 and CSV are enabled exactly when that unsigned word is at least 2. Wire `0xffffffff` enables both.
+
+> Lock. `_verify_f_relative_lock_unsigned_version`.
 
 **Formula** (**F_CsvDisableBitSkipsVersion**):
 $$result == true$$
 
-When the stack disable bit is set, CSV succeeds even if the transaction version is less than 2. Witness `_verify_f_csv_disable_bit_skips_version`.
+When the stack disable bit is set, CSV succeeds even if the transaction version is less than 2.
+
+> Lock. `_verify_f_csv_disable_bit_skips_version`.
 
 ## 6. Economic Model
 
@@ -2282,37 +2337,33 @@ guard for undefined 64-bit shifts.
 
 $$\text{result} = 0$$
 
-Post-condition holds under `requires(height >= HALVING_INTERVAL * 64)` (see witness
-`_verify_f_subsidy_zero_after_64` in `blvm-consensus/src/spec_witnesses.rs`). The body
-uses only integer division and comparison — no shifts — so Z3 proves this without
-translator extensions. Full claim: ∀ h ≥ HALVING_INTERVAL × 64, GetBlockSubsidy(h) = 0.
+Post-condition holds under `requires(height >= HALVING_INTERVAL * 64)`. Full claim: ∀ h ≥ HALVING_INTERVAL × 64, GetBlockSubsidy(h) = 0.
+
+> Lock. `_verify_f_subsidy_zero_after_64`. The body uses integer division and comparison, with no shifts.
 
 **Formula** (**F_SubsidyZeroAfter33**):
 
 $$\text{result} = 0$$
 
-Tight zero: post-condition holds under
-`requires(height >= HALVING_INTERVAL * 33)` (see witness
-`_verify_f_subsidy_zero_after_33`). The witness unrolls the same 64-arm
-literal-shift `match` as **F_SubsidyPiecewise**; arms $k \geq 33$ are $0$.
-This is not the $k \geq 64$ undefined-shift guard.
+Tight zero: post-condition holds under `requires(height >= HALVING_INTERVAL * 33)`. Arms $k \geq 33$ are $0$. This is not the $k \geq 64$ undefined-shift guard.
+
+> Lock. `_verify_f_subsidy_zero_after_33`. The witness unrolls the same 64-arm literal-shift match as **F_SubsidyPiecewise**.
 
 **Formula** (**F_SubsidyPiecewise**):
 
 $$result \geq 0 \land result \leq INITIAL\_SUBSIDY$$
 
-Bound claim verified by witness `_verify_f_subsidy_piecewise` using a 64-arm `match`
-body where every shift RHS is a literal (Z3 translates `INITIAL_SUBSIDY >> k` as
-integer division by a power of two for each literal k).
 Full piecewise formula: result = INITIAL_SUBSIDY >> floor(h / HALVING_INTERVAL) for k < 64, else 0.
+
+> Lock. `_verify_f_subsidy_piecewise` using a 64-arm `match` body where every shift RHS is a literal (Z3 translates `INITIAL_SUBSIDY >> k` as integer division by a power of two for each literal k).
 
 **Formula** (**F_SubsidyFloorHalf**):
 
 $$\text{result} = 0$$
 
-Integer floor-half: $(\text{INITIAL\_SUBSIDY} \gg (k+1)) - \lfloor (\text{INITIAL\_SUBSIDY} \gg k)/2 \rfloor = 0$.
-Witness `_verify_f_subsidy_floor_half` uses literal $k = 9$ (an odd subsidy
-where real-valued $/2$ fails). The odd-$k$ set stays a remark.
+Integer floor-half: $(\text{INITIAL\_SUBSIDY} \gg (k+1)) - \lfloor (\text{INITIAL\_SUBSIDY} \gg k)/2 \rfloor = 0$. The odd-$k$ set stays a remark.
+
+> Lock. `_verify_f_subsidy_floor_half` uses literal $k = 9$ (an odd subsidy where real-valued $/2$ fails).
 
 ### 6.2 Total Supply
 
@@ -2333,21 +2384,27 @@ where real-valued $/2$ fails). The odd-$k$ set stays a remark.
 
 $$result \geq 0$$
 
-Non-negativity invariant: the total supply is always non-negative. Verified for the accumulation loop body by `_verify_f_total_supply_non_neg` in `blvm-consensus/src/spec_witnesses.rs`.
+Non-negativity invariant: the total supply is always non-negative.
+
+> Lock. `_verify_f_total_supply_non_neg`.
 
 **Formula** (**F_TotalSupplyMonoStep**):
 
 $$result \geq supply$$
 
 One-step monotonicity: $supply + subsidy \geq supply$ when $supply \geq 0$,
-$subsidy \geq 0$, $supply \leq M_{max}$, and $subsidy \leq M_{max}$. Witness `_verify_f_total_supply_mono_step`. The $\forall$ over
+$subsidy \geq 0$, $supply \leq M_{max}$, and $subsidy \leq M_{max}$. The $\forall$ over
 heights is this step plus **F_SubsidyPiecewise** ($subsidy \geq 0$).
+
+> Lock. `_verify_f_total_supply_mono_step`.
 
 **Formula** (**F_TotalSupplyBound**):
 
 $$result \leq \text{MAX\_MONEY}$$
 
-Overflow-guard invariant: $result \leq \text{MAX\_MONEY}$. Issued supply is strictly below this cap (Theorems 6.2.3 and 6.1.2). Verified by `_verify_f_total_supply_bound` in `blvm-consensus/src/spec_witnesses.rs`.
+Overflow-guard invariant: $result \leq \text{MAX\_MONEY}$. Issued supply is strictly below this cap (Theorems 6.2.3 and 6.1.2).
+
+> Lock. `_verify_f_total_supply_bound`.
 
 **Formula** (**F_TotalSupplyExact**):
 
@@ -2355,19 +2412,20 @@ $$result == 2099999997690000$$
 
 Issued supply after 33 halvings:
 $H \sum_{k=0}^{32} (\text{INITIAL\_SUBSIDY} \gg k) = 2{,}099{,}999{,}997{,}690{,}000$.
-Witness `_verify_f_total_supply_exact` computes that product of literal shifts;
-it does not return the constant and does not call production `total_supply`.
 **F_TotalSupplyBound** remains the first-epoch overflow guard.
 **F_IssuedSupplyBelowCap** is the closed-form $result \leq \text{MAX\_MONEY}$
 for the same unrolled sum (all epochs; no induction).
+
+> Lock. `_verify_f_total_supply_exact` computes that product of literal shifts; it does not return the constant and does not call production `total_supply`.
 
 **Formula** (**F_IssuedSupplyBelowCap**):
 
 $$result \leq MAX\_MONEY$$
 
 Same unrolled sum as **F_TotalSupplyExact**. Issued supply is
-$2{,}310{,}000$ sat below the overflow cap. Witness
-`_verify_f_issued_supply_below_cap`. Does not rewrite **F_TotalSupplyBound**.
+$2{,}310{,}000$ sat below the overflow cap. Does not rewrite **F_TotalSupplyBound**.
+
+> Lock. `_verify_f_issued_supply_below_cap`.
 
 $$\text{TotalSupply}(h) = \sum_{i=0}^{h} \text{GetBlockSubsidy}(i)$$
 
@@ -2588,8 +2646,10 @@ The exponent byte extracted from compact bits ($\text{exponent} = (bits \gg 24) 
 $$result == 2015$$
 
 A $D = 2016$-block window measures $D-1 = 2015$ inter-block intervals
-(`prev_last.time - prev_first.time`). Witness `_verify_f_retarget_interval_count`.
+(`prev_last.time - prev_first.time`).
 This is the lockable integer claim. It does not lock a real-valued fixed point.
+
+> Lock. `_verify_f_retarget_interval_count`.
 
 **Formula** (**F_NextWorkClamped**):
 
@@ -2597,7 +2657,8 @@ $$result > 0 \land result \leq 486604799$$
 
 $\text{GetNextWorkRequired}$ clamps compact bits to
 $\text{MAX\_TARGET} = \text{0x1d00ffff} = 486604799$ and rejects $0$.
-Witness `_verify_f_next_work_clamped`.
+
+> Lock. `_verify_f_next_work_clamped`.
 
 **CompressTarget**: $\mathbb{U}_{256} \rightarrow \mathbb{N}$
 
@@ -2629,32 +2690,42 @@ Off a difficulty boundary the required compact bits are the parent header's bits
 **Formula** (**F_Bip94BitsFromFirst**):
 $$result == first_bits$$
 
-When BIP94 is enforced, the retarget base is the first block of the period. Witness `_verify_f_bip94_bits_from_first`.
+When BIP94 is enforced, the retarget base is the first block of the period.
+
+> Lock. `_verify_f_bip94_bits_from_first`.
 
 **Formula** (**F_Bip94BitsFromLast**):
 $$result == last_bits$$
 
-When BIP94 is not enforced, the retarget base is the last block of the period. Witness `_verify_f_bip94_bits_from_last`.
+When BIP94 is not enforced, the retarget base is the last block of the period.
+
+> Lock. `_verify_f_bip94_bits_from_last`.
 
 **Formula** (**F_Bip94Timewarp**):
 $$(timestamp + 600 >= parent_time) == result$$
 
-For a parent at least 600 seconds old, the addition form is the same bound as $\text{parent}.\text{time} - 600$. Witness `_verify_f_bip94_timewarp`.
+For a parent at least 600 seconds old, the addition form is the same bound as $\text{parent}.\text{time} - 600$.
+
+> Lock. `_verify_f_bip94_timewarp`.
 
 **Formula** (**F_Bip94TimewarpOffBoundary**):
 $$result == true$$
 
-The 600-second check applies on a difficulty-period boundary. Off that boundary the check does not reject. Witness `_verify_f_bip94_timewarp_off_boundary`.
+The 600-second check applies on a difficulty-period boundary. Off that boundary the check does not reject.
+
+> Lock. `_verify_f_bip94_timewarp_off_boundary`.
 
 **Formula** (**F_OffBoundaryParentBits**):
 $$result == parent_bits$$
 
-Off a difficulty boundary the required compact bits are the parent header's bits. Witness `_verify_f_off_boundary_parent_bits`.
+Off a difficulty boundary the required compact bits are the parent header's bits.
+
+> Lock. `_verify_f_off_boundary_parent_bits`.
 
 **Formula** (**F_HeaderBitsMatchRequired**):
 $$(header_bits == required_bits) == result$$
 
-Witness `_verify_f_header_bits_match_required`.
+> Lock. `_verify_f_header_bits_match_required`.
 
 ```mermaid
 flowchart TD
@@ -2790,12 +2861,16 @@ Where [SHA256](https://en.wikipedia.org/wiki/SHA-2) is the [Secure Hash Algorith
 **Formula** (**F_ProofNegativeCompactRejected**):
 $$result == false$$
 
-Compact bit `0x00800000` makes CheckProofOfWork false before the hash is compared. Witness `_verify_f_proof_negative_compact_rejected`.
+Compact bit `0x00800000` makes CheckProofOfWork false before the hash is compared.
+
+> Lock. `_verify_f_proof_negative_compact_rejected`.
 
 **Formula** (**F_ProofEqualHashAccepted**):
 $$result == true$$
 
-A header hash equal to a positive expanded target meets the proof-of-work check. A hash one unit above that target does not. Witness `_verify_f_proof_equal_hash_accepted`.
+A header hash equal to a positive expanded target meets the proof-of-work check. A hash one unit above that target does not.
+
+> Lock. `_verify_f_proof_equal_hash_accepted`.
 
 ## 8. Security Properties
 
@@ -3243,14 +3318,17 @@ bytes cost 4 weight units, witness bytes cost 1.
 **Formula** (**F_WeightEquiv**):
 $$result == 4 * base + wit$$
 
-Under $total = base + wit$, when $0 \leq base \leq W_{max}$ and $0 \leq wit \leq W_{max}$, $3 \times base + total = 4 \times base + wit$.
-Witness `_verify_f_weight_equiv`. **F_WeightToVSizeFloor** / **F_WeightToVSizeCeiling**
+Under $total = base + wit$, when $0 \leq base \leq W_{max}$ and $0 \leq wit \leq W_{max}$, $3 \times base + total = 4 \times base + wit$. **F_WeightToVSizeFloor** / **F_WeightToVSizeCeiling**
 are a different claim.
+
+> Lock. `_verify_f_weight_equiv`.
 
 **Formula** (**F_StrippedSizeCountsScripts**):
 $$result \geq script_sig + script_pubkey$$
 
-The stripped size counts every byte of `script_sig` and `script_pubkey`. A one-byte length placeholder with the script bytes omitted is not the stripped size, so a block of large scripts stays under the weight limit only when those bytes are actually absent. Witness `_verify_f_stripped_size_counts_scripts`.
+The stripped size counts every byte of `script_sig` and `script_pubkey`. A one-byte length placeholder with the script bytes omitted is not the stripped size, so a block of large scripts stays under the weight limit only when those bytes are actually absent.
+
+> Lock. `_verify_f_stripped_size_counts_scripts`.
 
 Where:
 - $result = |\text{Serialize}(tx \setminus witness)|$ (transaction size without witness data)
@@ -3327,7 +3405,9 @@ When the witness stack has zero elements ($|w| = 0$), IsWitnessEmpty always retu
 **Formula** (**F_WitnessStackNullByLength**):
 $$(len == 0) == result$$
 
-A witness stack is absent exactly when it has no items. One empty item is still present. Witness `_verify_f_witness_stack_null_by_length`.
+A witness stack is absent exactly when it has no items. One empty item is still present.
+
+> Lock. `_verify_f_witness_stack_null_by_length`.
 
 #### 11.1.3 Witness Program Extraction
 
@@ -3389,34 +3469,44 @@ A witness program version byte is `OP_0` ($0$) or `OP_1` through `OP_16` ($81$ t
 **Formula** (**F_WitnessVersionRejected**):
 $$result == false$$
 
-When `op` is 79 (`OP_1NEGATE`) or 80 (`OP_RESERVED`), the opcode is not a witness version. Witness `_verify_f_witness_version_rejected`.
+When `op` is 79 (`OP_1NEGATE`) or 80 (`OP_RESERVED`), the opcode is not a witness version.
+
+> Lock. `_verify_f_witness_version_rejected`.
 
 **Formula** (**F_WitnessVersionAccepted**):
 $$result == true$$
 
-When `op` is 0 (`OP_0`), 81 (`OP_1`), or 96 (`OP_16`), the opcode is a witness version. Witness `_verify_f_witness_version_accepted`.
+When `op` is 0 (`OP_0`), 81 (`OP_1`), or 96 (`OP_16`), the opcode is a witness version.
+
+> Lock. `_verify_f_witness_version_accepted`.
 
 **Formula** (**F_WitnessPayloadByte**):
 $$result == (byte * (byte - 128) != 0)$$
 
-A one-byte payload, $0 \leq byte < 2^{8}$, is a true program exactly when that byte is neither `0x00` nor `0x80`. Witness `_verify_f_witness_payload_byte`.
+A one-byte payload, $0 \leq byte < 2^{8}$, is a true program exactly when that byte is neither `0x00` nor `0x80`.
+
+> Lock. `_verify_f_witness_payload_byte`.
 
 **Formula** (**F_WitnessPayloadEmpty**):
 $$result = 0$$
 
-An empty payload is not a true program. Witness `_verify_f_witness_payload_empty`.
+An empty payload is not a true program.
+
+> Lock. `_verify_f_witness_payload_empty`.
 
 `prefix_nonzero` is nonzero when any byte before the last is nonzero. The payload is a true program exactly when its length is at least one and either that prefix is nonzero or the last byte is neither 0 nor 128. That covers an empty payload, a zero payload of any length, and a negative zero of any length. An upgradable witness program also requires an empty scriptSig, the witness flag, and a clear discourage flag.
 
 **Formula** (**F_CastToBoolSummary**):
 $$result == (len >= 1 && (prefix_nonzero != 0 || (last != 0 && last != 128)))$$
 
-Witness `_verify_f_cast_to_bool_summary`.
+> Lock. `_verify_f_cast_to_bool_summary`.
 
 **Formula** (**F_UpgradableProgramShape**):
 $$result == (script_sig_len == 0 && witness_flag != 0 && discourage == 0 && len >= 1 && (prefix_nonzero != 0 || (last != 0 && last != 128)))$$
 
-The program accepts exactly when those gates are open and the payload summary is true. Witness `_verify_f_upgradable_program_shape`.
+The program accepts exactly when those gates are open and the payload summary is true.
+
+> Lock. `_verify_f_upgradable_program_shape`.
 
 #### 11.1.4 Witness Merkle Root
 
@@ -3458,7 +3548,7 @@ Block connection accepts a missing commitment output only when no witness data i
 **Formula** (**F_WitnessCommitmentShape**):
 $$result == ((has_commitment == 0 && any_witness == 0) || (has_commitment != 0 && reserved_len == 32 && stored == implied_hash(root, nonce)))$$
 
-Witness `_verify_f_witness_commitment_shape`.
+> Lock. `_verify_f_witness_commitment_shape`.
 
 $$\text{ValidateWitnessCommitment}(tx, r, w_{cb}) = \text{true} \iff \neg \exists \text{ commitment output} \lor (n \text{ is one 32-byte item} \land \text{ExtractCommitment}(o_{\text{last}}) = c)$$
 
@@ -3530,12 +3620,16 @@ For P2WSH-in-P2SH:
 **Formula** (**F_NestedRedeemPushCanonical**):
 $$result == false$$
 
-The scriptSig of a nested witness spend is the canonical push of the redeem script and nothing else. A 22-byte or 34-byte redeem uses a direct push. `OP_PUSHDATA1` of that redeem fails. Witness `_verify_f_nested_redeem_push_canonical`.
+The scriptSig of a nested witness spend is the canonical push of the redeem script and nothing else. A 22-byte or 34-byte redeem uses a direct push. `OP_PUSHDATA1` of that redeem fails.
+
+> Lock. `_verify_f_nested_redeem_push_canonical`.
 
 **Formula** (**F_P2shUnknownWitnessSucceeds**):
 $$result == true$$
 
-A P2SH redeem that is a witness program, but not a 20-byte or 32-byte version-0 program, is not taproot. With the discourage-upgradable flag clear and a canonical redeem push, the spend succeeds and the witness bytes are ignored. An invalid version-0 length still fails. Witness `_verify_f_p2sh_unknown_witness_succeeds`.
+A P2SH redeem that is a witness program, but not a 20-byte or 32-byte version-0 program, is not taproot. With the discourage-upgradable flag clear and a canonical redeem push, the spend succeeds and the witness bytes are ignored. An invalid version-0 length still fails.
+
+> Lock. `_verify_f_p2sh_unknown_witness_succeeds`.
 
 **Activation**: Block 481,824 (mainnet) - Same as SegWit activation
 
@@ -3828,7 +3922,9 @@ SIGHASH_SINGLE (output type $type \mathbin{\&} \mathtt{0x03} = \mathtt{0x03}$, i
 **Formula** (**F_TaprootSighashSingleMissingOutput**):
 $$result == false$$
 
-When the output type is 3 and $input\_index \geq n\_outputs$, no Taproot signature hash is produced. Witness `_verify_f_taproot_sighash_single_missing_output`.
+When the output type is 3 and $input\_index \geq n\_outputs$, no Taproot signature hash is produced.
+
+> Lock. `_verify_f_taproot_sighash_single_missing_output`.
 
 #### 11.2.7 Tapscript Signature Hash (BIP 342)
 
@@ -3866,7 +3962,9 @@ where $ext = \text{TapLeafHash}(v, s) \parallel 0x00 \parallel \text{LE}_{32}(\t
 **Formula** (**F_TapscriptSighashSingleMissingOutput**):
 $$result == false$$
 
-When the output type is 3 and $input\_index \geq n\_outputs$, no tapscript signature hash is produced. Witness `_verify_f_tapscript_sighash_single_missing_output`.
+When the output type is 3 and $input\_index \geq n\_outputs$, no tapscript signature hash is produced.
+
+> Lock. `_verify_f_tapscript_sighash_single_missing_output`.
 
 #### 11.2.8 Tapscript Opcodes and SigOp Counting (BIP 342)
 
@@ -3901,7 +3999,9 @@ where $0xac = \text{OP\_CHECKSIG}$, $0xad = \text{OP\_CHECKSIGVERIFY}$, $0xba = 
 **Formula** (**F_TapscriptTruncatedPushNotSuccess**):
 $$result == false$$
 
-The tapscript success-opcode scan uses the same push rule. A direct push or `OP_PUSHDATA1`/`OP_PUSHDATA2`/`OP_PUSHDATA4` whose length header or payload does not fit is not an opcode. The scan stops. Leftover length bytes are not success opcodes, so the script does not succeed. Witness `_verify_f_tapscript_truncated_push_not_success`.
+The tapscript success-opcode scan uses the same push rule. A direct push or `OP_PUSHDATA1`/`OP_PUSHDATA2`/`OP_PUSHDATA4` whose length header or payload does not fit is not an opcode. The scan stops. Leftover length bytes are not success opcodes, so the script does not succeed.
+
+> Lock. `_verify_f_tapscript_truncated_push_not_success`.
 
 **Properties**:
 - Bounds: $result \leq |s|$ (each opcode byte counts at most once)
@@ -4188,15 +4288,18 @@ Stack headroom before the 1000-item limit: $result = 999 - depth \geq 0$ when $d
 $$result \geq 0$$
 
 Combined-stack headroom: $result = 1000 - (stack + alt) \geq 0$ when
-$0 \leq stack \leq L_{stack}$, $0 \leq alt \leq L_{stack}$, and $stack + alt \leq L_{stack}$. Witness
-`_verify_f_stack_combined_safe`. **F_StackSizeSafe** is one stack only.
+$0 \leq stack \leq L_{stack}$, $0 \leq alt \leq L_{stack}$, and $stack + alt \leq L_{stack}$. **F_StackSizeSafe** is one stack only.
+
+> Lock. `_verify_f_stack_combined_safe`.
 
 **Formula** (**F_StackCombinedFail**):
 $$result \geq 0$$
 
 Overflow past the combined limit: $result = (stack + alt) - 1001 \geq 0$ when
-$0 \leq stack \leq L_{stack}$, $0 \leq alt \leq L_{stack}$, and $stack + alt \geq 1001$. Witness `_verify_f_stack_combined_fail`.
+$0 \leq stack \leq L_{stack}$, $0 \leq alt \leq L_{stack}$, and $stack + alt \geq 1001$.
 1000 combined items pass; 1001 fail.
+
+> Lock. `_verify_f_stack_combined_fail`.
 
 #### 13.3.4 Parser Determinism
 
