@@ -7,8 +7,9 @@ of each deviation.
 All deviations are **intentional** and have been reviewed for consensus-safety.
 Nothing here implies a consensus *incompatibility* with Bitcoin Core on a block a
 supported network can produce. D-09 through D-11 are unreachable on mainnet, testnet,
-testnet4, signet, and regtest. D-12 is a public function connect does not call. D-13
-has test callers only.
+testnet4, signet, and regtest. D-11 is the spec-locked `get_next_work_required`:
+it errors on an inverted period, and the body proof records that error. Connect
+uses `retarget_bits`, which clamps.
 
 ---
 
@@ -171,35 +172,9 @@ without heuristics.
 | Bitcoin Core | Clamps the timespan to a quarter of the expected timespan. |
 | BLVM | §7.1 `ClampTime` clamps. `retarget_bits` clamps. `get_next_work_required` returns an error before the clamp. |
 | Files | `pow.rs` |
-| Status | The connect path matches Core. The spec-locked `get_next_work_required` does not. |
+| Status | The connect path matches Core. The spec-locked `get_next_work_required` does not. Its body proof treats a reversed period as an error. |
 
-**Rationale:** Connect uses `retarget_bits`. The error is on the function the paper names, and that function is not the connect path.
-
----
-
-## D-12 — `validate_segwit_witness_structure` caps the witness script
-
-| Field | Detail |
-|---|---|
-| Bitcoin Core | A v0 witness applies 520 bytes to stack items. For P2WSH the witness script is the last element and is limited to 10,000 bytes. |
-| BLVM | The P2WSH spend path uses `witness.iter().take(witness.len() - 1)`. `validate_segwit_witness_structure` rejects every element longer than 520 bytes, including the witness script. |
-| Files | `witness.rs`, `script/mod.rs` |
-| Status | Connect does not call the public function. A caller that does will reject a valid block whose witness script exceeds 520 bytes. |
-
-**Rationale:** `SC-004` names the spend path. The public function still implements the older "every element" predicate.
-
----
-
-## D-13 — BIP143 ALL midstate stores hash type `01`
-
-| Field | Detail |
-|---|---|
-| Bitcoin Core | The preimage stores the sighash byte as given. |
-| BLVM | `batch_bip143_sighash_all_midstate` writes `0x01` for every byte whose base type is 1 without ANYONECANPAY (`0x21`, `0x41`, `0x61`). `build_bip143_preimage` stores the raw byte. |
-| Files | `transaction_hash.rs` |
-| Status | Callers of the midstate writer are tests. |
-
-**Rationale:** The writer is the plain-ALL batch path. It is not the connect preimage.
+**Rationale:** Connect uses `retarget_bits`. Changing the named function to clamp requires the same change in the work-adjustment proof, which currently requires the error.
 
 ---
 

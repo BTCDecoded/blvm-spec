@@ -557,7 +557,7 @@ Canonical activation and deactivation heights for this register (**not** Orange 
 | CSV + sequence locks | 68/112 | 419,328 | 770,112 | 1 | 1 | `CalculateSequenceLocks`, `CalculateScriptFlags` |
 | Median time past | 113 | 419,328 | 770,112 | 0 | 1 | H05 header floor whenever a time context is present. These heights are the BIP113 locktime cutoff in `enforce_tx_finality`, not a gate on the header check |
 | SegWit v0 | 141 | 481,824 | 834,624 | 0 | 1 | `ValidateSegWitBlock`, witness flags |
-| NULLDUMMY | 147 | 481,824 | 834,624 | 0 | 1 | `BIP147Check` |
+| NULLDUMMY | 147 | 481,824 | 834,624 | 0 | 1 | `get_block_script_verify_flags_core` |
 | Taproot | 341/342 | 709,632 | 2,011,968 | 0 | 1 | Taproot validation, `TaprootActivationHeight` |
 | CTV | 119 | — (disabled) | — (disabled) | 0 | — (disabled) | `BIP119Check` (feature-gated; `u64::MAX` = never) |
 | CSFS | 348 | — (disabled) | — (disabled) | 0 | — (disabled) | `BIP348Check` (feature-gated) |
@@ -676,9 +676,9 @@ BIP activation rule entries (refer to **[§8 of this register](#8-activation-hei
 - **Implementation:** `bip_validation::check_bip90` — Z3-verified (F_BIP90PreActivationPass)
 
 ### SF-013
-- **Rule:** Before BIP147 activation, null-dummy check MUST pass regardless.
-- **Specification:** [§5.4.5](PROTOCOL.md#545-bip147-nulldummy-enforcement) **F_BIP147PreActivationPass**
-- **Implementation:** `bip_validation::check_bip147` — Z3-verified (F_BIP147PreActivationPass)
+- **Rule:** Before BIP147 activation, the connect mask does not set SCRIPT_VERIFY_NULLDUMMY, so a non-empty CHECKMULTISIG dummy passes.
+- **Specification:** [§5.4.5](PROTOCOL.md#545-bip147-nulldummy-enforcement)
+- **Implementation:** `block::script_cache::get_block_script_verify_flags_core`. `bip_validation::check_bip147` returns success before the height and is not the connect path.
 
 ### SF-014
 - **Rule:** All BIP rules MUST be enforced consistently after their activation heights.

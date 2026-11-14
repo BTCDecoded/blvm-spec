@@ -1451,11 +1451,12 @@ Before BIP90 activation (fork not yet active), all blocks pass the version enfor
 **BIP147Check**: $\mathbb{S} \times \mathbb{S} \times \mathbb{N} \rightarrow \{\text{valid}, \text{invalid}\}$
 
 **Properties**:
-- NULLDUMMY requirement: when `SCRIPT_VERIFY_NULLDUMMY` is set, the extra stack element under the signatures is zero-length
-- A one-byte `0x00` has length 1 and fails. `OP_0` pushes the empty element that passes
-- The check runs in the script being executed, including a P2SH redeem script and a P2WSH witness script
+- Arguments are the scriptSig, the scriptPubKey, and the height
+- Before height $H_{147}$ the check returns valid
+- At and after $H_{147}$, a scriptPubKey that contains `OP_CHECKMULTISIG` requires the first push of the scriptSig to be empty
+- Connect does not call `check_bip147`
 
-The connect rule is the executing opcode, not a scan of the scriptPubKey. A P2SH scriptPubKey does not contain `OP_CHECKMULTISIG`, and a P2WSH dummy is a witness item.
+The connect rule is the executing opcode, not this scan. A P2SH scriptPubKey does not contain `OP_CHECKMULTISIG`, and a P2WSH dummy is a witness item. When `SCRIPT_VERIFY_NULLDUMMY` is set, the extra stack element under the signatures is zero-length. A one-byte `0x00` has length 1 and fails. `OP_0` pushes the empty element that passes. The check runs in the script being executed, including a P2SH redeem script and a P2WSH witness script.
 
 $$\text{NULLDUMMY}(flag, dummy) = \text{invalid} \iff flag \land |dummy| \neq 0$$
 
@@ -3302,7 +3303,7 @@ The virtual size is at most one more than the floor of weight divided by 4: $\lc
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: Element size bounds: $result = \text{true} \iff \forall e \in w : |e| \leq 520$. Empty witness: $|w| = 0 \implies result = \text{true}$. This predicate is not the P2WSH spend rule. It rejects a witness script longer than 520 bytes. Connect does not call it. A P2WSH spend applies 520 bytes to every witness element except the last. The last element is the witness script and is limited by the 10,000-byte script size. P2WPKH applies 520 bytes to both elements.
+**Note**: Element size bounds: $result = \text{true} \iff \forall e \in w : |e| \leq 520$. Empty witness: $|w| = 0 \implies result = \text{true}$. This predicate is not the P2WSH spend rule. It rejects a witness script longer than 520 bytes. Connect and `ValidateSegWitBlock` do not call it. A P2WSH spend applies 520 bytes to every witness element except the last. The last element is the witness script and is limited by the 10,000-byte script size. P2WPKH applies 520 bytes to both elements.
 
 For witness $w$:
 
