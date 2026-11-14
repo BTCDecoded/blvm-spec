@@ -567,7 +567,7 @@ Canonical activation and deactivation heights for this register (**not** Orange 
 - SegWit and BIP147 share mainnet height 481,824 (same deployment).
 - BIP68 and BIP112 share activation height; CSV script flag and sequence-lock enforcement activate together.
 - CTV/CSFS/BIP54 default to inactive on mainnet/testnet (`activation height = u64::MAX` or 0 = disabled per fork table builder).
-- Regtest: BIP34, BIP66, BIP65, and CSV start at height 1, matching Bitcoin Core, so the version-1 genesis is valid. SegWit, Taproot, and the other buried regtest forks stay at height 0.
+- Regtest: BIP34, BIP66, BIP65, and CSV start at height 1, so the version-1 genesis is valid. SegWit, Taproot, and the other buried regtest forks stay at height 0.
 - Signet: most soft forks active from height 1 (`ForkActivationTable`); Taproot activation helper returns 1; BIP54/CTV/CSFS default inactive (`u64::MAX`).
 
 ### Table 2 — BIP90 minimum block version (HDR-002)
@@ -789,7 +789,7 @@ Difficulty encoding and validation (Orange Paper [§7](PROTOCOL.md#7-proof-of-wo
 - **Implementation:** `pow::expand_target` — Z3-verified (Tier 1)
 
 ### POW-002
-- **Rule:** Compact expansion follows SetCompact. A zero mantissa expands to zero. An exponent below 3 shifts the mantissa right. A larger exponent shifts it left, and the encoding overflows when that shift does not fit in 256 bits.
+- **Rule:** A zero mantissa expands to zero. An exponent below 3 shifts the mantissa right. A larger exponent shifts it left, and the encoding overflows when that shift does not fit in 256 bits.
 - **Specification:** [§7.1](PROTOCOL.md#71-difficulty-adjustment) **F_ExpandTargetZeroMantissa**, **F_ExpandTargetNonZeroMantissa**, **Theorem 7.1.1**
 - **Implementation:** `pow::expand_target` — Z3-verified (F_* formulas)
 
