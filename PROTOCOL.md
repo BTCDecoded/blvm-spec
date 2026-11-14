@@ -2547,7 +2547,7 @@ flowchart TD
 **ExpandTarget**: $\mathbb{N} \rightarrow \mathbb{U256}$
 
 **Properties**:
-- Positive bits: $bits > 0$ is required (bits must be positive)
+- Zero word: a compact word of zero expands to $0$ and is not proof of work
 - Target expansion: $result$ expands compact difficulty representation to full 256-bit target
 - Formula correctness: $result = \text{mantissa} \times 2^{8 \times (\text{exponent} - 3)}$ where exponent and mantissa extracted from bits
 - Exponent: every exponent byte has a shifted value. The shift overflows when the mantissa does not fit in 256 bits
@@ -2558,7 +2558,7 @@ $$\text{ExpandTarget}(bits) = \text{mantissa} \times 2^{8 \times (\text{exponent
 
 $$\text{requires}(bits > 0)$$
 
-Precondition: compact difficulty bits must be non-zero for a valid target expansion. A zero-length target is rejected. Verified by blvm-spec-lock formal verification.
+A compact word of zero expands to zero. It is not proof of work.
 
 Where:
 - $\text{exponent} = (bits \gg 24) \land 0xff$
@@ -2566,7 +2566,7 @@ Where:
 
 - **Domain (compact exponent):** Let $e = \text{exponent}$ and $m = \text{mantissa}$. $m = 0$ expands to $0$. For $e \le 3$ the mantissa shifts right by $8(3-e)$ bits. For $e > 3$ it shifts left by $8(e-3)$ bits. The encoding overflows when $m \neq 0$ and ($e > 34$, or $m > 255$ and $e > 33$, or $m > 65535$ and $e > 32$).
 
-*Proof*: Compact encoding is one exponent byte ($e$) and a 23-bit mantissa $m$. This is proven by blvm-spec-lock formal verification of **F_ExpandTargetZeroMantissa**, **F_ExpandTargetNonZeroMantissa**, and **F_ExpandTargetExponent**.
+*Proof*: Compact encoding is one exponent byte ($e$) and a 23-bit mantissa $m$. The shift and overflow cases are Theorem 7.1.1.
 
 **Formula** (**F_ExpandTargetZeroMantissa**):
 $$result = 0$$
@@ -2576,7 +2576,7 @@ When the 23-bit mantissa of the compact bits word is zero ($bits \mathbin{\&} \t
 **Formula** (**F_ExpandTargetNonZeroMantissa**):
 $$result \neq 0$$
 
-When the 23-bit mantissa of the compact bits word is non-zero ($bits \mathbin{\&} \text{0x007FFFFF} \neq 0$), the expanded target is non-zero. Complements F_ExpandTargetZeroMantissa: together they establish the exact biconditional between mantissa and target being zero.
+A nonzero mantissa field has a nonzero sentinel. The expanded target is a separate value. It is zero when the right shift $8(3-e)$ drops every bit: every exponent $0$, exponent $1$ with mantissa below $2^{16}$, and exponent $2$ with mantissa below $256$. A nonzero mantissa otherwise expands to a nonzero target when the encoding does not overflow.
 
 **Formula** (**F_ExpandTargetExponent**):
 $$result \leq 255$$
@@ -2698,7 +2698,7 @@ flowchart TD
 
 **Theorem 7.1.1** (Target expansion): Let $bits \in \mathbb{N}$, $e = (bits \gg 24) \land 0xff$, $m = bits \land 0x007fffff$. $m = 0$ expands to $0$. Otherwise the mantissa shifts right by $8(3-e)$ when $e \le 3$ and left by $8(e-3)$ when $e > 3$. The value overflows when $m \neq 0$ and ($e > 34$, or $m > 255$ and $e > 33$, or $m > 65535$ and $e > 32$).
 
-*Proof*: Case-split on $e \le 3$ versus $e > 3$ per the expansion definition; for $e > 3$, $8(e-3) \le 232 < 256$, so the left shift stays inside $\mathbb{U}_{256}$.
+*Proof*: If $m = 0$ the expansion is $0$. If $e \le 3$ the mantissa shifts right by $8(3-e)$ and the result fits in $\mathbb{U}_{256}$. If $m \neq 0$ and ($e > 34$, or $m > 255$ and $e > 33$, or $m > 65535$ and $e > 32$) the left shift does not fit. Otherwise the mantissa shifts left by $8(e-3)$. That shift is at most $248$ bits, and the overflow cases excluded above leave the value inside $\mathbb{U}_{256}$.
 
 **Theorem 7.1.2** (Difficulty Adjustment Bounds Enforcement): Difficulty adjustment respects maximum and minimum bounds:
 
@@ -2785,7 +2785,7 @@ Where [SHA256](https://en.wikipedia.org/wiki/SHA-2) is the [Secure Hash Algorith
 **Properties**:
 - Boolean result: $result \in \{\text{true}, \text{false}\}$
 
-**Note**: PoW correctness: $result = \text{true} \iff \text{SHA256}(\text{SHA256}(h)) \leq \text{ExpandTarget}(h.bits)$, the compact sign bit is clear, and the expanded target is not zero. Valid target expansion requires `h.bits` to have a non-zero exponent byte.
+**Note**: PoW correctness: $result = \text{true} \iff \text{SHA256}(\text{SHA256}(h)) \leq \text{ExpandTarget}(h.bits)$, the compact sign bit is clear, and the expanded target is not zero.
 
 **Formula** (**F_ProofNegativeCompactRejected**):
 $$result == false$$
