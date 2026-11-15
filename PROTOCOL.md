@@ -41,6 +41,7 @@ This paper presents a mathematical specification of the Bitcoin consensus protoc
    - 5.3 [Block Validation](#53-block-validation)
      - 5.3.1 [Header Validation](#531-header-validation)
      - 5.3.2 [Transaction Application Equivalence](#532-transaction-application-equivalence)
+     - 5.3.3 [ConnectBlock Pipeline](#533-connectblock-pipeline)
    - 5.4 [BIP Validation Rules](#54-bip-validation-rules)
      - 5.4.1 [BIP30: Duplicate Coinbase Prevention](#541-bip30-duplicate-coinbase-prevention)
      - 5.4.2 [BIP34: Block Height in Coinbase](#542-bip34-block-height-in-coinbase)
@@ -123,11 +124,12 @@ This paper presents a mathematical specification of the Bitcoin consensus protoc
       - 13.3.3 [Resource Limit Enforcement](#1333-resource-limit-enforcement)
       - 13.3.4 [Parser Determinism](#1334-parser-determinism)
       - 13.3.5 [Integration Proofs](#1335-integration-proofs)
+      - 13.3.6 [Spec-lock Formula Anchor Witness](#1336-spec-lock-formula-anchor-witness)
     - 13.4 [Peer Consensus Protocol](./ARCHITECTURE.md#134-peer-consensus-protocol)
 
 ## 1. Introduction
 
-Bitcoin is a distributed consensus system that maintains a shared ledger of transactions without requiring trusted intermediaries. The system achieves consensus through proof-of-work and enforces economic rules through cryptographic validation. This paper provides a complete mathematical description of how Bitcoin operates.
+Bitcoin is a distributed consensus system that maintains a shared ledger of transactions without requiring trusted intermediaries. The system achieves consensus through proof-of-work and enforces economic rules through cryptographic validation. This paper is the mathematical description of those consensus rules. Mempool policy, peer lifecycle, and reorganization live in [`ARCHITECTURE.md`](./ARCHITECTURE.md) under the same section numbers.
 
 ### 1.1 Key Contributions
 
@@ -138,16 +140,17 @@ Bitcoin is a distributed consensus system that maintains a shared ledger of tran
 
 ### 1.2 Document Structure
 
-This specification is organized into four main parts:
+This specification is organized into five main parts:
 
 1. **Foundations** ([§2](#2-system-model)–[§4](#4-consensus-constants)): Mathematical foundations, data structures, and constants
 2. **Core Protocol** ([§5](#5-state-transition-functions)–[§8](#8-security-properties)): State transitions, economic model, proof-of-work, and security
 3. **Network Layer** ([§9](#9-mempool-protocol)–[§11](#11-advanced-features)): Mempool, P2P protocol, and advanced features
 4. **Mining Protocol** ([§12](#12-mining-protocol)): Block creation and mining process ([§12.1](./ARCHITECTURE.md#121-block-template-generation) and [§12.3](./ARCHITECTURE.md#123-mining-process) are in `ARCHITECTURE.md`; [§12.2](#122-coinbase-transaction) and [§12.4](#124-block-template-interface) are in this file)
+5. **Engineering invariants** ([§13](#13-engineering-specific-edge-cases)): Overflow, serialization, resource limits, and the spec-lock witness ([§13.3](#133-engineering-invariants)). [§13.1](./ARCHITECTURE.md#131-performance), [§13.2](./ARCHITECTURE.md#132-security), and [§13.4](./ARCHITECTURE.md#134-peer-consensus-protocol) are in `ARCHITECTURE.md`
 
 Each section builds upon previous sections, with cross-references to maintain consistency.
 
-**Companion file:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) shares the same section numbering for implementation-oriented material. `cargo-spec-lock verify` merges both files. [§10.2](#102-connection-management) (connection types) and [§10.2.1](#1021-handshake-invariants) are in this file; headings that exist only in the companion file include, for example: [§10.3](./ARCHITECTURE.md#103-peer-discovery), [§10.6](./ARCHITECTURE.md#106-dandelion-k-anonymity), [§11.3](./ARCHITECTURE.md#113-chain-reorganization), [§12.1](./ARCHITECTURE.md#121-block-template-generation), [§12.3](./ARCHITECTURE.md#123-mining-process), [§13.1](./ARCHITECTURE.md#131-performance), [§13.2](./ARCHITECTURE.md#132-security), [§13.4](./ARCHITECTURE.md#134-peer-consensus-protocol). In this file only (among §13): [§13.3](#133-engineering-invariants) and [§13.3.1](#1331-integer-arithmetic-overflowunderflow)–[§13.3.5](#1335-integration-proofs).
+**Companion file:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) shares the same section numbering for implementation-oriented material. `cargo-spec-lock verify` merges both files. [§10.2](#102-connection-management) (connection types) and [§10.2.1](#1021-handshake-invariants) are in this file; headings that exist only in the companion file include, for example: [§10.3](./ARCHITECTURE.md#103-peer-discovery), [§10.6](./ARCHITECTURE.md#106-dandelion-k-anonymity), [§11.3](./ARCHITECTURE.md#113-chain-reorganization), [§12.1](./ARCHITECTURE.md#121-block-template-generation), [§12.3](./ARCHITECTURE.md#123-mining-process), [§13.1](./ARCHITECTURE.md#131-performance), [§13.2](./ARCHITECTURE.md#132-security), [§13.4](./ARCHITECTURE.md#134-peer-consensus-protocol). In this file only (among §13): [§13.3](#133-engineering-invariants) and [§13.3.1](#1331-integer-arithmetic-overflowunderflow)–[§13.3.6](#1336-spec-lock-formula-anchor-witness).
 
 ## 2. System Model
 
@@ -163,7 +166,7 @@ Each section builds upon previous sections, with cross-references to maintain co
 - **Byzantine Fault Tolerance**: Some participants may behave maliciously
 - **Economic Rationality**: Participants act to maximize their utility
 
-### 2.2.1 Networks and Parameters
+#### 2.2.1 Networks and Parameters
 
 Consensus rules are identical across networks. Only parameters differ.
 
@@ -223,7 +226,7 @@ Four invariants are universal across this specification and never restated per-f
 ### 3.3 Script System
 
 **Script**: $\mathcal{SC} = \mathbb{S}$ (sequence of [opcodes](https://en.bitcoin.it/wiki/Script))  
-**Witness**: $\mathcal{W} = \mathbb{S}^*$ (stack of [witness data](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki))  
+**Witness**: $\mathcal{W} = \mathbb{S}^*$ (stack of byte strings)  
 **Stack**: $\mathcal{ST} = \mathbb{S}^*$ (execution stack, see [Script Execution](#52-script-execution))
 
 ## 4. Consensus Constants
@@ -499,7 +502,7 @@ $$\forall sv = \text{WitnessV0}: \text{CHECKMULTISIG sighash} = \text{ComputeWit
 
 $$\forall sv = \text{Base}: \text{CHECKMULTISIG removes all signature pushes from BaseScriptCode before any sighash computation, then applies SerializeScriptCode and CalculateSighash}$$
 
-*Proof*: BIP143 defines witness sighash over the full witness script without FindAndDelete. Legacy CHECKMULTISIG removes each signature push from scriptCode before computing any input's sighash. WitnessV0 CHECKMULTISIG uses BIP143 with the witness script as scriptCode (§11.1.9.1).
+*Proof*: Witness sighash ([§11.1.9](#1119-bip143-witness-sighash-computewitnesssignaturehash)) does not apply FindAndDelete. Legacy CHECKMULTISIG removes each signature push from scriptCode before computing any input's sighash. WitnessV0 CHECKMULTISIG uses the witness script as scriptCode ([§11.1.9.1](#11191-derivewitnessscriptcode-bip143-scriptcode)).
 
 ### 5.2 Script Execution
 
@@ -521,7 +524,7 @@ Formally: $\text{EvalScript}(script, S_0, f, sv) = \text{false} \iff \text{Execu
 
 **Resource limits by SigVersion**:
 - **Base** and **WitnessV0**: $|script| \leq L_{script} = 10{,}000$; non-push opcode count $c \leq L_{ops} = 201$.
-- **Tapscript**: neither the 10k script-size nor 201-op limits apply; BIP342 enforces tapscript validation weight and sigops budget separately (§11.2.8).
+- **Tapscript**: neither the 10,000-byte script-size limit nor the 201-opcode limit applies. Signature opcodes are counted by $\text{CountTapscriptSigOps}$, and a non-empty signature spends the validation budget, both in [§11.2.8](#1128-tapscript-opcodes-and-sigop-counting-bip-342).
 
 **Formula** (**F_CheckMultisigCountsPubkeys**):
 $$result == 0$$
@@ -848,7 +851,7 @@ $$\text{GetTransactionSigOpCost}(tx, us, w, f) = \text{GetLegacySigOpCount}(tx) 
 
 Where:
 - $\text{IsP2SHEnabled}(f) = (f \land 0x01) \neq 0$
-- $\text{CountWitnessSigOps}(tx, w, us, f)$ adds witness sigop cost **only for witness outputs of version 0** (P2WPKH and P2WSH). For each such input, P2WPKH contributes **1**; P2WSH uses $\text{CountSigOpsInScript}$ on the witness stack’s last push (the witness script), with accurate multisig counting. **Witness version 1 (P2TR / Taproot) contributes 0** to this term; taproot signature-related limits are enforced via **BIP 342** tapscript validation weight during script execution, not by adding tapscript sigops into $\text{GetTransactionSigOpCost}$. Implementations must not fold $\text{CountTapscriptSigOps}$ into $\text{CountWitnessSigOps}$ or they will over-count and reject valid mainnet blocks.
+- $\text{CountWitnessSigOps}(tx, w, us, f)$ adds witness sigop cost **only for witness outputs of version 0** (P2WPKH and P2WSH). For each such input, P2WPKH contributes **1**; P2WSH uses $\text{CountSigOpsInScript}$ on the witness stack’s last push (the witness script), with accurate multisig counting. **Witness version 1 (P2TR / Taproot) contributes 0** to this term. During script execution, taproot signature limits are the tapscript validation budget in [§11.2.8](#1128-tapscript-opcodes-and-sigop-counting-bip-342), not an addition of tapscript sigops into $\text{GetTransactionSigOpCost}$. Implementations must not fold $\text{CountTapscriptSigOps}$ into $\text{CountWitnessSigOps}$ or they will over-count and reject valid mainnet blocks.
 
 **Block SigOps Limit**: For block $b$:
 
@@ -1094,7 +1097,7 @@ $$\text{MinVersion}(height) = \begin{cases} 4 & \text{if BIP65 active at } heigh
 
 H01 and H02 are the same check. Before BIP34 there is no version floor, so version 0 is valid. BIP34 requires version ≥ 2, BIP66 requires version ≥ 3, and BIP65 requires version ≥ 4.
 
-H08 (parent hash linkage) is enforced by **ValidatePrevBlockHash** in `blvm-consensus`; the node chain layer calls it when the parent header is available. Rules H01–H07 are the connect-local subset checked inside `connect_block` (H02 and H07 are also invoked from the node in some paths).
+H08 is **ValidatePrevBlockHash**. The node calls it when the parent header is available, before `connect_block`. Inside `connect_block`, `validate_block_header` applies H03 and H06, and H04 and H05 when a time context is supplied; `check_bip90` applies H01 and H02; `check_proof_of_work` applies the hash half of H07; `next_required_bits` applies the required-work half of H07 when ancestor headers are supplied.
 
 Merkle root correctness is *not* part of `ValidBlockHeader`. The `bits` field check (H06) rejects an all-zero `bits` as a structural sanity check; cryptographic verification of the merkle root against the block's transaction list happens inside `connect_block` itself after header validation passes.
 
@@ -1242,7 +1245,7 @@ stateDiagram-v2
 Implementation contract for **ConnectBlock** (`connect_block_inner` in `blvm-consensus`):
 
 1. CheckFinalTx for every transaction (a non-final transaction is invalid before later checks)
-2. Validate block header (H01, H03–H06; H02/H07/H08 via callers)
+2. Header checks inside connect: H03–H06 (`validate_block_header`; H04 and H05 only with a time context), H01 and H02 (`check_bip90`), and H07 (`check_proof_of_work`, plus `next_required_bits` when ancestors are supplied). H08 runs before connect
 3. BIP checks (BIP30, BIP34, BIP54, …) gated by activation
 4. Transaction loop: CheckTransaction, CheckTxInputs, VerifyScript, sigop limit, and the consensus weight cap (weight above 4000000). Under production, VerifyScript is skipped below the assume-valid height when an assume-valid hash is set and chainwork meets the minimum. Signature-operation cost is still counted.
 5. CheckCoinbaseSubsidy (coinbase output ≤ subsidy + fees) and the witness commitment when a witness is present
@@ -1250,7 +1253,7 @@ Implementation contract for **ConnectBlock** (`connect_block_inner` in `blvm-con
 
 ### 5.4 BIP Validation Rules
 
-This section specifies the mathematical properties of critical Bitcoin Improvement Proposals (BIPs) that enforce consensus rules for block and transaction validation.
+This section states the checks named for these proposals. Mainnet consensus uses BIP30, BIP34, BIP66, BIP65, BIP90, and BIP147 as each subsection states. BIP54 is the same kind of check and stays inactive until its activation height is set. BIP119 and BIP348 are specified here and are not consensus-active. Sequence locks (BIP68) are [§5.5](#55-sequence-locks-bip68). Subsection order is not activation order.
 
 #### 5.4.1 BIP30: Duplicate Coinbase Prevention
 
@@ -1652,7 +1655,8 @@ $$(height >= 0) == result$$
 
 **Implementation Notes**:
 
-- Template hash calculation must match BIP119 specification exactly
+- $\text{TemplateHash}(tx, i)$ is the double SHA256 of the $\text{TemplatePreimage}$ defined above. That preimage is what $\text{BIP119Check}$ compares
+- The published BIP119 $\text{DefaultCheckTemplateVerifyHash}$ is a different byte string: one SHA256 of version, locktime, a scriptSig hash only when any scriptSig is non-empty, a 4-byte input count, a sequences hash, a 4-byte output count, an outputs hash, and the input index. $\text{BIP119Check}$ does not use that byte string
 - Input index must be within bounds: $0 \leq i < |tx.\text{inputs}|$
 - Transaction must have at least one input and one output
 - Template hash is 32 bytes (SHA256 output)
@@ -1824,9 +1828,9 @@ $$\text{VerifySchnorr}(msg, pk, sig) = \begin{cases}
 \end{cases}$$
 
 Where:
-- $pk$ is a 32-byte x-only public key (BIP 340)
-- $sig$ is a 64-byte Schnorr signature (BIP 340)
-- $msg$ is hashed with SHA256 before verification (BIP 340 accepts any size, but secp256k1 requires 32 bytes)
+- $pk$ is a 32-byte x-only public key
+- $sig$ is a 64-byte signature
+- $\text{SchnorrVerify}$ takes $\text{SHA256}(msg)$, that key, and that signature
 
 **Stack Operation**:
 
@@ -1841,7 +1845,7 @@ OP_CHECKSIGFROMSTACK (opcode 0xcc, replaces OP_SUCCESS204):
   - Script fails if signature is invalid
 - **Validation**: $\text{BIP348Check}(msg, pk, sig, h) = \text{valid}$
 - **Context**: Tapscript only (leaf version 0xc0)
-- **Sigops**: Counts against Tapscript sigops budget (BIP 342)
+- **Sigops**: opcode $0xcc$ is not in $\text{CountTapscriptSigOps}$ ([§11.2.8](#1128-tapscript-opcodes-and-sigop-counting-bip-342)), and this opcode does not subtract from the tapscript validation budget
 
 **Mathematical Properties**:
 
@@ -1867,7 +1871,7 @@ $$\forall msg, pk \in \mathbb{S}, h \in \mathbb{N}: |sig| = 0 \implies \text{BIP
 
 $$\forall msg, pk, sig \in \mathbb{S}, h \in \mathbb{N}: \text{BIP348Check}(msg, pk, sig, h) = \text{valid} \land |pk| = 32 \land |sig| = 64 \implies \text{VerifySchnorr}(msg, pk, sig) = \text{true}$$
 
-*Proof*: From the definition of $\text{BIP348Check}$, CSFS uses BIP 340 Schnorr signature verification for 32-byte pubkeys. The message is hashed with SHA256 before verification (BIP 340 accepts any size, but secp256k1 requires 32 bytes), per BIP 340 specification.
+*Proof*: From the definition of $\text{BIP348Check}$, a 32-byte public key and a 64-byte signature are valid only when $\text{VerifySchnorr}(msg, pk, sig)$ is true. $\text{VerifySchnorr}$ requires those lengths and $\text{SchnorrVerify}(\text{SHA256}(msg), pk, sig)$.
 
 **Theorem 5.4.8.5** (CSFS Unknown Pubkey Type): Unknown pubkey types (non-32-byte) succeed:
 
@@ -1883,7 +1887,7 @@ When the public key has zero length ($|pk| = 0$), CSFS always returns invalid. T
 **Formula** (**F_CSFSUnknownPubkeyValid**):
 $$result == true$$
 
-When the public key has non-zero length but is not exactly 32 bytes ($|pk| > 0 \land |pk| \neq 32$), CSFS always returns valid (unknown pubkey type succeeds per BIP348 tapscript softfork upgrade rules).
+When the public key length is neither 0 nor 32 ($|pk| > 0 \land |pk| \neq 32$), $\text{BIP348Check}$ returns valid and does not verify a signature.
 
 **Formula** (**F_CSFSEmptySigValid**):
 $$result == true$$
@@ -1913,13 +1917,13 @@ $$(height >= 0) == result$$
 **Implementation Notes**:
 
 - CSFS is only available in Tapscript (leaf version 0xc0)
-- Message is hashed with SHA256 before BIP 340 verification (BIP 340 accepts any size, but secp256k1 requires 32 bytes)
-- Only 32-byte pubkeys are verified (BIP 340 x-only pubkeys)
-- Empty signatures push empty vector and continue (matches OP_CHECKSIG behavior)
-- Valid signatures push $[0x01]$ (single byte, not number 1)
-- Invalid signatures cause script to fail
-- Unknown pubkey types (non-32-byte) succeed without verification
-- CSFS operations count against Tapscript sigops budget (BIP 342)
+- The message is hashed with SHA256. Verification uses that 32-byte digest, a 32-byte x-only key, and a 64-byte signature
+- Only a 32-byte public key is verified
+- An empty signature pushes an empty vector and continues
+- A valid signature pushes $[0x01]$ (one byte, not the number 1)
+- An invalid signature fails the script
+- A public key whose length is neither 0 nor 32 succeeds without verification
+- Opcode $0xcc$ is not in $\text{CountTapscriptSigOps}$ ([§11.2.8](#1128-tapscript-opcodes-and-sigop-counting-bip-342)) and does not subtract from the tapscript validation budget
 
 **Relationship to CTV**:
 
@@ -1970,8 +1974,6 @@ After BIP54 activation, the coinbase transaction must have $\text{lockTime} = he
 **ActivationHeightFromVersionBits**: $[\mathcal{H}] \times \text{Deployment} \times \mathbb{N} \times \mathbb{N} \rightarrow \mathbb{N} \cup \{\bot\}$ — BIP9 lock-in scan for activation height discovery.
 
 **Activation**: Network-specific (e.g. regtest: 0; mainnet/testnet: configurable or $u64::\text{MAX}$ until set).
-
-**References**: [BIP 54](https://bips.dev/54/).
 
 **Bip9Deployment for BIP54**: all networks use the same signaling parameters:
 - Signal bit: 15 (out of the 29 available BIP9 version bits)
@@ -2189,7 +2191,7 @@ Even $n$ is only for a short chain; after 11 headers this is the live case.
 
 > Lock. `_verify_f_mtp_index_n11`.
 
-**BIP113 Reference**: This function implements [BIP113: Median Time-Past](https://github.com/bitcoin/bips/blob/master/bip-0113.mediawiki), which uses the median timestamp of the last 11 blocks to prevent time-warp attacks.
+$\text{GetMedianTimePast}$ is the median defined above: the middle timestamp of at most the last 11 headers, and 0 when the header list is empty.
 
 **CalculateSequenceLocks**: $\mathcal{TX} \times \mathbb{N} \times [\mathbb{N}] \times [\mathcal{H}]^? \rightarrow (\mathbb{Z}, \mathbb{Z})$
 
@@ -2905,7 +2907,7 @@ Therefore, the total UTXO value increases by exactly the block subsidy plus fees
 $$\text{TotalSupply}(h) \leq \text{MAX\_MONEY} = 21 \times 10^6 \times C$$
 Issued supply is strictly below this cap (Theorems 6.2.3 and 8.2).
 
-**Theorem 8.2** (Supply Convergence): The total supply is constant for all
+**Theorem 8.2** (Issued Supply After Halving 33): The total supply is constant for all
 $h \geq 33 \times H$ (block 6,930,000) and equals exactly
 $2{,}099{,}999{,}997{,}690{,}000$ satoshis ($20{,}999{,}999.9769$ BTC).
 
@@ -3054,7 +3056,7 @@ Any change to any transaction would result in a different merkle root, assuming 
 
 ### 8.5 Deterministic Properties
 
-Many consensus functions must be deterministic to ensure all nodes reach the same results.
+Theorems 8.5 and 8.6 are the merkle statements in [§8.4.1](#841-computemerkleroot). The determinism statements in this section are 8.5.1–8.5.3. Many consensus functions must be deterministic to ensure all nodes reach the same results.
 
 **Theorem 8.5.1** (Proof of Work Determinism): Proof of work validation is deterministic:
 
@@ -3238,7 +3240,7 @@ Parses raw bytes into a protocol message. Rejects messages that are too short, t
 
 Further P2P lifecycle and dispatch details appear with [§10.3](./ARCHITECTURE.md#103-peer-discovery) and [§10.6](./ARCHITECTURE.md#106-dandelion-k-anonymity) in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
-### 10.2.1 Handshake Invariants
+#### 10.2.1 Handshake Invariants
 
 **HandleVersionReceived**: On receipt of `version` message, node must send `verack` only after processing. VerAck is never sent before Version.
 
@@ -3270,7 +3272,7 @@ Further P2P lifecycle and dispatch details appear with [§10.3](./ARCHITECTURE.m
 
 **Witness Data**: $\mathcal{W} = \mathbb{S}^*$ (stack of witness elements)
 
-**Witness Merkle (BIP141)**: The commitment uses the **witness transaction id (wtxid)** merkle tree (not a hash of raw witness stacks). Let $\text{wtxid}(tx)$ be the 32-byte hash defined in [BIP141](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki): coinbase wtxid is fixed to $0^{32}$; for other transactions, if no witness data is present, $\text{wtxid}(tx) = \text{txid}(tx)$ (legacy serialization); if witness data is present, $\text{wtxid}(tx) = \text{SHA256d}(\text{SerializeWithWitness}(tx))$.
+**Witness Merkle (BIP141)**: The commitment uses the **witness transaction id (wtxid)** merkle tree (not a hash of raw witness stacks). Let $\text{wtxid}(tx)$ be this 32-byte hash: the coinbase wtxid is $0^{32}$; for any other transaction, $\text{wtxid}(tx) = \text{txid}(tx)$ when the transaction has no witness data (legacy serialization), and $\text{wtxid}(tx) = \text{SHA256d}(\text{SerializeWithWitness}(tx))$ when it does.
 
 $$\text{WitnessRoot} = \text{ComputeMerkleRoot}(\{\text{wtxid}(tx_i) : i \in [0, |block.transactions|)\})$$
 
@@ -3288,7 +3290,7 @@ Hashes witness data to a 32-byte digest for inclusion in the witness Merkle tree
 
 **CountWitnessSigOps**: $\mathcal{TX} \times \mathcal{W}^* \times \mathcal{US} \times \mathbb{N} \rightarrow \mathbb{N}$
 
-Counts witness-committed signature operations per BIP141/BIP143.
+Counts witness signature operations for the cost term in [§5.2.2](#522-signature-operation-counting). A coinbase contributes 0. A 20-byte version-0 program contributes 1. A 32-byte version-0 program contributes $\text{CountSigOpsInScript}$ of its last witness item, with accurate multisig counting, or 0 when the witness is empty. Version 1 contributes 0.
 
 **Properties**:
 - Coinbase zero: $\text{IsCoinbase}(tx) \implies result = 0$
@@ -3386,7 +3388,7 @@ For witness $w$:
 
 $$\text{ValidateSegWitWitnessStructure}(w) = \forall e \in w : |e| \leq 520$$
 
-Where 520 is MAX_SCRIPT_ELEMENT_SIZE (maximum witness element size per BIP141).
+Where 520 is the maximum length of a witness element this predicate accepts.
 
 **IsWitnessEmpty**: $\mathcal{W} \rightarrow \{\text{true}, \text{false}\}$
 
@@ -3637,7 +3639,7 @@ A P2SH redeem that is a witness program, but not a 20-byte or 32-byte version-0 
 
 **ComputeWitnessSignatureHash**: $\mathcal{TX} \times \mathbb{N} \times \mathbb{S} \times \mathbb{Z} \times \mathbb{N}_{8} \rightarrow \mathbb{H}$
 
-Computes the signature hash for SegWit (P2WPKH, P2WSH) inputs per BIP 143. Replaces legacy sighash with a committed structure that excludes scriptSig and binds the amount.
+Computes the signature hash for a SegWit v0 input (P2WPKH, P2WSH). The preimage below is the hash input. It omits $\text{scriptSig}$ and includes the amount of the spent output.
 
 **Preimage structure** (BIP 143 byte layout):
 $$\text{Preimage} = \text{nVersion}\_{32} \parallel \text{hashPrevouts}\_{256} \parallel \text{hashSequence}\_{256} \parallel \text{outpoint}\_{288} \parallel \text{scriptCode} \parallel \text{amount}\_{64} \parallel \text{nSequence}\_{32} \parallel \text{hashOutputs}\_{256} \parallel \text{nLockTime}\_{32} \parallel \text{sighashType}\_{32}$$
@@ -3669,7 +3671,7 @@ $$\text{ComputeWitnessSignatureHash}(tx, i, scriptCode, amount, type) = \text{SH
 **Properties**:
 - P2WPKH length: $|result| = 25$ when $|program| = 22$
 
-Derives the BIP143 `scriptCode` parameter for SegWit v0 inputs. This is **not** the witness program bytes on the output chain; it is the script whose hash is committed in the BIP143 preimage (BIP143 §4.3).
+Derives the $\text{scriptCode}$ argument of $\text{ComputeWitnessSignatureHash}$ for SegWit v0 inputs. It is not the witness program on the output. It is the script committed in that preimage.
 
 **P2WPKH** (native or nested in P2SH): witness program is `OP_0 PUSH_20 <20-byte-pubkey-hash>` (22 bytes). The scriptCode is the P2PKH expansion:
 
@@ -3688,7 +3690,7 @@ $$\text{DeriveWitnessScriptCode}(program, witnessScript) = witnessScript$$
 
 **Theorem 11.1.3** (P2WPKH scriptCode): Using the raw 22-byte witness program as BIP143 scriptCode for P2WPKH is incorrect; implementations must expand to the P2PKH script above.
 
-*Proof*: BIP143 §4.3 requires the P2PKH expansion for P2WPKH inputs. Signatures are validated against $\text{ComputeWitnessSignatureHash}$ with this scriptCode.
+*Proof*: For a 22-byte program, $\text{DeriveWitnessScriptCode}$ is the 25-byte script above, not the program. $\text{ComputeWitnessSignatureHash}$ commits to that $\text{scriptCode}$.
 
 ### 11.2 Taproot
 
@@ -3790,7 +3792,7 @@ For internal public key $pk$ and merkle root $root$:
 
 $$\text{ComputeTaprootTweak}(pk, root) = \text{TaggedHash}(\text{"TapTweak"}, pk, root)$$
 
-Where $\text{TaggedHash}$ is BIP340 tagged hash function.
+Where $\text{TaggedHash}(\text{tag}, \text{data}) = \text{SHA256}(\text{SHA256}(\text{tag}) \parallel \text{SHA256}(\text{tag}) \parallel \text{data})$.
 
 **ValidateTaprootKeyAggregation**: $[0,1]^{256} \times [0,1]^{256} \times \mathbb{H} \rightarrow \{\text{true}, \text{false}\}$
 
@@ -3817,7 +3819,7 @@ $$\text{ValidateTaprootScriptPath}(s, proof, root) = \begin{cases}
 \text{false} & \text{otherwise}
 \end{cases}$$
 
-where $v$ is the leaf version (default $\texttt{0xc0}$ for tapscript per BIP 341).
+where $v$ is the leaf version. Tapscript uses $v = \texttt{0xc0}$.
 
 **ComputeScriptMerkleRoot**: $\mathbb{S} \times [\mathbb{H}]^* \times \mathbb{N}_{8} \rightarrow \mathbb{H}$
 
@@ -3910,7 +3912,7 @@ Parses a Taproot witness Schnorr signature element: 64 bytes → implicit `SIGHA
 
 **Properties**:
 - Hash length: $result = h \implies |h| = 32$ (32-byte hash)
-- Tagged hash: $result$ uses BIP340 tagged hash for domain separation
+- Tagged hash: $result$ is a $\text{TaggedHash}$ ([§11.2.2](#1122-taproot-key-operations)): $\text{SHA256}(\text{SHA256}(\text{tag}) \parallel \text{SHA256}(\text{tag}) \parallel \text{data})$
 - Annex: optional annex hash $h_a$ from $\text{StripTaprootAnnex}$; $\text{spend\_type} = (\text{ext\_flag} \ll 1) \lor \text{annex\_present}$ (key path: $0x00$ or $0x01$); append $h_a$ to SigMsg when present
 
 For transaction $tx$, input index $i$, UTXO set $us$, sighash type $type$, and optional annex hash $h_a$:
@@ -3988,13 +3990,15 @@ at most once, so worst-case checks are $O(m)$ in the key count, not a
 cartesian $n \times m$ (15-of-15 is at most 15 ECDSA checks, not 225).
 Tapscript disables CHECKMULTISIG; CHECKSIGADD is the $O(n)$ replacement.
 
-**CountTapscriptSigOps**: $\mathbb{S} \rightarrow \mathbb{N}$; counts CHECKSIG-family opcodes in a tapscript per **BIP 342** (used for the **per-tapscript sigops budget** during Tapscript execution / validation weight). This count is **not** added to the **legacy block** $\text{GetTransactionSigOpCost}$ witness term ($\text{CountWitnessSigOps}$ is witness-v0-only for that cost; see [§5.2.2](#522-signature-operation-counting)).
+**CountTapscriptSigOps**: $\mathbb{S} \rightarrow \mathbb{N}$. This is the per-tapscript signature-opcode count during execution. It is **not** added to the legacy block $\text{GetTransactionSigOpCost}$ witness term ($\text{CountWitnessSigOps}$ is witness-v0-only for that cost; see [§5.2.2](#522-signature-operation-counting)).
 
 Parse $s$ sequentially. For each byte: if it is a push opcode (0x01–0x4b, or 0x4c/0x4d/0x4e with length bytes), skip the payload; otherwise it is an opcode byte. Count opcode bytes in $\{0xac, 0xad, 0xba\}$:
 
 $$\text{CountTapscriptSigOps}(s) = \sum_{\text{opcode positions } i} \mathbf{1}[s[i] \in \{0xac, 0xad, 0xba\}]$$
 
 where $0xac = \text{OP\_CHECKSIG}$, $0xad = \text{OP\_CHECKSIGVERIFY}$, $0xba = \text{OP\_CHECKSIGADD}$. Bytes inside push-data payloads are not counted (they are data, not opcodes).
+
+**Tapscript validation budget**: Executing a leaf whose version is $\texttt{0xc0}$ starts a budget at the serialized size of that input's witness stack, plus 50. The serialized size is the compact-size item count plus, for each item, the compact-size length and the item bytes. The size is taken before the annex is removed. $\text{OP\_CHECKSIG}$, $\text{OP\_CHECKSIGVERIFY}$, and $\text{OP\_CHECKSIGADD}$ subtract 50 when the signature is non-empty, and fail the script when the budget goes below 0. An empty signature does not subtract. $\text{OP\_CHECKSIGFROMSTACK}$ ($0xcc$) does not subtract, and it is not in $\text{CountTapscriptSigOps}$.
 
 **Formula** (**F_TapscriptTruncatedPushNotSuccess**):
 $$result == false$$
