@@ -9,7 +9,20 @@ Do not open a public GitHub issue for a vulnerability.
 1. GitHub private vulnerability reporting on the repository that contains the bug: `https://github.com/BTCDecoded/<repo>/security/advisories/new`.
 2. Email `security@thebitcoincommons.org`.
 
-The encrypted channel is that mailbox. A published key is **not on file yet**. Until a maintainer publishes a fingerprint in this file, email is unencrypted and GitHub private reporting is the channel that keeps the report off the public issue tracker. Do not send a live mainnet exploit to a public list while the key is missing.
+The encrypted channel is that mailbox. The key fingerprint is `338B 0CE4 AE55 6EBD A677 2C51 DE34 66C3 CA36 3748`. Encrypt to `security@thebitcoincommons.org`. GitHub private reporting stays available. Do not send a live mainnet exploit to a public list.
+
+```
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEavpigRYJKwYBBAHaRw8BAQdAulfJNxkQbBZdBCnzw5dmM5z+r4HxVfTjc7no
+N8Pt0PO0NEJUQ0RlY29kZWQgU2VjdXJpdHkgPHNlY3VyaXR5QHRoZWJpdGNvaW5j
+b21tb25zLm9yZz6IkAQTFgoAOBYhBDOLDOSuVW69pncsUd40ZsPKNjdIBQJq+mKB
+AhsDBQsJCAcCBhUKCQgLAgQWAgMBAh4BAheAAAoJEN40ZsPKNjdI3y4BAKaPYH5+
+NF2nvWJ7aU3zDIwHy2Do1Z/IyKUs5X6mvhxYAP4nUtFjWUM9YB4vCTV7dgv3Ef7m
+cNj0nmYE8yY++dd2AA==
+=643R
+-----END PGP PUBLIC KEY BLOCK-----
+```
 
 Include what you can: the crate, the commit, the network, whether you think it splits the chain or only crashes one process, and a minimal reproduction. A patch is welcome and not required.
 
