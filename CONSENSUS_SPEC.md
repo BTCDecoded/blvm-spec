@@ -207,7 +207,7 @@ Structural and local validation rules for transactions.
 - **Implementation:** `transaction::check_tx_inputs` — Z3-verified (spec_locked)
 
 ### TX-011
-- **Rule:** Legacy (SigVersion::Base) sighash MUST apply FindAndDelete for signature pushes before hashing.
+- **Rule:** Legacy (SigVersion::Base) sighash MUST apply FindAndDelete to an exact signature push before hashing. A longer push that contains the signature bytes MUST stay.
 - **Specification:** [§5.1.1](PROTOCOL.md#511-transaction-sighash-calculation) CalculateSighash, **Theorem 5.1.3**, **F_FindAndDelete**
 - **Implementation:** `script::find_and_delete`, `transaction_hash::compute_legacy_sighash_*` — Z3-verified (spec_locked)
 

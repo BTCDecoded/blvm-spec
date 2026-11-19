@@ -422,7 +422,19 @@ script & \text{if } |pattern| = 0 \lor |pattern| > |script| \\
 \text{RemoveAll}(script, pattern) & \text{otherwise}
 \end{cases}$$
 
-Where $\text{RemoveAll}(script, pattern)$ removes all occurrences of $pattern$ from $script$ while preserving opcode boundaries.
+Where $\text{RemoveAll}(script, pattern)$ removes all occurrences of $pattern$ from $script$ while preserving opcode boundaries. A match is the bytes at the opcode cursor, equal to $pattern$. A longer push whose payload contains those bytes is not a match.
+
+**Formula** (**F_FindAndDelete**):
+
+$$\text{FindAndDelete}(script, \text{SerializePush}(sig)) \text{ deletes a push only when that push's encoding equals } \text{SerializePush}(sig).$$
+
+$\text{SerializePush}(sig)$ is the minimal push of $sig$. A longer push that merely contains $sig$ stays. Deleting it would change the legacy sighash.
+
+> Lock. `find_and_delete_keeps_a_push_that_contains_the_signature`.
+
+A canonical pay-to-pubkey script is one key push and `OP_CHECKSIG` (`0xac`). The push opcode is `0x21` or `0x41`. $\text{SerializePush}$ of a DER signature begins with the signature length and then `0x30`. Those encodings differ, so FindAndDelete leaves that script unchanged, including when the signature push is shorter than the script.
+
+> Lock. `canonical_p2pk_find_and_delete_leaves_the_script`. A spend of that script is locked by `p2pk_spend_matches_libbitcoinconsensus`. When that script is the redeem inside pay-to-script-hash, the legacy script code is the redeem, and FindAndDelete is still the identity. That spend is locked by `p2sh_p2pk_spend_matches_libbitcoinconsensus`. A pay-to-pubkey-hash script is 25 bytes. Its only data push is 21 bytes, `0x14` and the 20-byte hash. A DER signature push has a different length, so FindAndDelete leaves that script unchanged. When it is the pay-to-script-hash redeem, the script code is the redeem. Locked by `p2pkh_find_and_delete_leaves_the_script` and `p2sh_p2pkh_spend_matches_libbitcoinconsensus`. A bare pay-to-pubkey-hash spend uses that same script as the script code. Locked by `p2pkh_spend_matches_libbitcoinconsensus`. `OP_CHECKMULTISIG` leaves a longer push that contains the signature. The sighash subscript starts at the last executed `OP_CODESEPARATOR`. Locked by `checkmultisig_keeps_a_push_that_contains_the_signature`. An exact copy of the signature push in that subscript is removed before the sighash. A signature over the cleaned subscript verifies. A signature over the subscript that still contains the push does not. Locked by `checkmultisig_removes_an_exact_signature_push`.
 
 **SerializeScriptCode**: $\mathbb{S} \rightarrow \mathbb{S}$
 
@@ -2205,7 +2217,7 @@ For transaction $tx$, flags $f$, previous heights $ph \in [\mathbb{N}]$, and rec
 $$\text{CalculateSequenceLocks}(tx, f, ph, rh) = (\text{min\_height}, \text{min\_time})$$
 
 Where:
-- BIP68 is only enforced if the low 32 bits of $tx.\text{version}$, read as an unsigned integer, are at least 2 and $(f \land 0x01) \neq 0$. Wire `0xffffffff` is $2^{32}-1$ and enables the lock.
+- BIP68 is only enforced if the low 32 bits of $tx.\text{version}$, read as an unsigned integer, are at least 2 and $(f \land 0x01) \neq 0$. Wire `0xffffffff` is $2^{32}-1$ and enables the lock. Wire `0x80000000` is $2^{31}$ and enables the lock.
 - For each input $i \in tx.\text{inputs}$:
   - If $\text{IsSequenceDisabled}(i.\text{sequence})$: skip input
   - If $\text{ExtractSequenceTypeFlag}(i.\text{sequence})$ (time-based):
@@ -2254,7 +2266,7 @@ Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is m
 
 *Proof*: $\text{EvaluateSequenceLocks}$ is the case analysis of disabled / height / time guards. This is proven by blvm-spec-lock formal verification of **F_EvalSeqLocksDisabled**, **F_EvalSeqLocksHeightNotMet**, **F_EvalSeqLocksHeightMet**, **F_EvalSeqLocksTimeNotMet**, **F_EvalSeqLocksTimeMet**, and **F_EvalSeqLocksBothMet**.
 
-**OP_CHECKSEQUENCEVERIFY** (opcode `0xb2`), when the CSV flag is set, reads the same 5-byte signed script number as CLTV. If bit 31 of that non-negative value is set, the opcode succeeds on every transaction version and does not compare input sequences. Otherwise the transaction version is the unsigned 32-bit wire word and must be at least 2. Wire `0xffffffff` enables CSV. A version below 2 fails the opcode.
+**OP_CHECKSEQUENCEVERIFY** (opcode `0xb2`), when the CSV flag is set, reads the same 5-byte signed script number as CLTV. If bit 31 of that non-negative value is set, the opcode succeeds on every transaction version and does not compare input sequences. Otherwise the transaction version is the unsigned 32-bit wire word and must be at least 2. Wire `0xffffffff` and wire `0x80000000` enable CSV. A version below 2 fails the opcode.
 
 **Formula** (**F_CsvVersionBelowTwoFails**):
 $$result == false$$
@@ -2266,7 +2278,7 @@ When the stack disable bit is clear and the transaction version is less than 2, 
 **Formula** (**F_RelativeLockUnsignedVersion**):
 $$result == (version \geq 2)$$
 
-For a version word in $0 \ldots 2^{32}-1$, BIP68 and CSV are enabled exactly when that unsigned word is at least 2. Wire `0xffffffff` enables both.
+For a version word in $0 \ldots 2^{32}-1$, BIP68 and CSV are enabled exactly when that unsigned word is at least 2. Wire `0xffffffff` and wire `0x80000000` both enable them. A signed compare of those words would treat them as negative and would not.
 
 > Lock. `_verify_f_relative_lock_unsigned_version`.
 
