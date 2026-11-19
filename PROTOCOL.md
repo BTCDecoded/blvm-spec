@@ -426,9 +426,9 @@ Where $\text{RemoveAll}(script, pattern)$ removes all occurrences of $pattern$ f
 
 **Formula** (**F_FindAndDelete**):
 
-$$\text{FindAndDelete}(script, \text{SerializePush}(sig)) \text{ deletes a push only when that push's encoding equals } \text{SerializePush}(sig).$$
+$$\text{FindAndDelete}(script, \text{SerializePush}(sig)) == \text{RemoveExactPush}(script, \text{SerializePush}(sig))$$
 
-$\text{SerializePush}(sig)$ is the minimal push of $sig$. A longer push that merely contains $sig$ stays. Deleting it would change the legacy sighash.
+$\text{RemoveExactPush}(script, pattern)$ removes a push only when that push's encoding equals $pattern$. $\text{SerializePush}(sig)$ is the minimal push of $sig$. A longer push that merely contains $sig$ stays. Deleting it would change the legacy sighash.
 
 > Lock. `find_and_delete_keeps_a_push_that_contains_the_signature`.
 
