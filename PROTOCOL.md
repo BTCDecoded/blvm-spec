@@ -2253,7 +2253,7 @@ Where:
 $$\forall tx \in \mathcal{TX}, ph \in [\mathbb{N}], seq \in \mathbb{N}_{32}:$$
 $$\text{CalculateSequenceLocks}(tx, f, ph, rh) \text{ does not overflow}$$
 
-*Proof*: The locktime value is 16 bits (**F_SequenceLockTimeMask**). Time scaling is **F_SequenceTimeEncoding**. Height addition $ph + lock - 1$ is proven by blvm-spec-lock formal verification of **F_SequenceLockHeightAdd**.
+*Proof*: The locktime value is 16 bits (**F_SequenceLockTimeMask**). Time scaling is **F_SequenceTimeEncoding**. Height addition $ph + lock - 1$ has a blvm-spec-lock check pending for **F_SequenceLockHeightAdd**; see blvm-spec-lock#23.
 
 **Theorem 5.5.2** (Sequence Lock Correctness): Sequence locks correctly enforce relative locktime:
 
@@ -2264,7 +2264,7 @@ $$\forall i \in tx.\text{inputs}: \text{IsSequenceDisabled}(i.\text{sequence}) \
 
 Where $\text{LocktimeSatisfied}$ checks if the relative locktime constraint is met.
 
-*Proof*: $\text{EvaluateSequenceLocks}$ is the case analysis of disabled / height / time guards. This is proven by blvm-spec-lock formal verification of **F_EvalSeqLocksDisabled**, **F_EvalSeqLocksHeightNotMet**, **F_EvalSeqLocksHeightMet**, **F_EvalSeqLocksTimeNotMet**, **F_EvalSeqLocksTimeMet**, and **F_EvalSeqLocksBothMet**.
+*Proof*: $\text{EvaluateSequenceLocks}$ is the case analysis of disabled / height / time guards. This has a blvm-spec-lock check pending for **F_EvalSeqLocksDisabled**, **F_EvalSeqLocksHeightNotMet**, **F_EvalSeqLocksHeightMet**, **F_EvalSeqLocksTimeNotMet**, **F_EvalSeqLocksTimeMet**, and **F_EvalSeqLocksBothMet**; see blvm-spec-lock#23.
 
 **OP_CHECKSEQUENCEVERIFY** (opcode `0xb2`), when the CSV flag is set, reads the same 5-byte signed script number as CLTV. If bit 31 of that non-negative value is set, the opcode succeeds on every transaction version and does not compare input sequences. Otherwise the transaction version is the unsigned 32-bit wire word and must be at least 2. Wire `0xffffffff` and wire `0x80000000` enable CSV. A version below 2 fails the opcode.
 
@@ -2321,8 +2321,7 @@ xychart-beta
 
 **Note**: Upper bound: $result \leq 50 \times C$ for all $h$. Genesis: $result = 50 \times C$.
 F\_SubsidyZeroAfter64 is the $k \geq 64$ undefined-shift guard. The tight zero is
-Theorem 6.1.2 and **F_SubsidyZeroAfter33**. F_* formulas cover the formally
-verified postconditions.
+Theorem 6.1.2 and **F_SubsidyZeroAfter33**. F_* formulas cover postconditions for which a blvm-spec-lock check is pending; see blvm-spec-lock#23.
 
 **Theorem 6.1.1** (Halving Schedule): For $k < 32$:
 $$\text{GetBlockSubsidy}(k \times H + H) =
@@ -2790,7 +2789,7 @@ flowchart TD
 $$\forall h \in \mathcal{H}, prev \in \mathcal{H}^*, n \in \text{Network}:$$
 $$\text{GetNextWorkRequired}(h, prev, n) \leq \text{MAX\_TARGET} \land \text{GetNextWorkRequired}(h, prev, n) > 0$$
 
-*Proof*: The algorithm clamps compact bits to $\text{MAX\_TARGET}$ and rejects $0$. This is proven by blvm-spec-lock formal verification of **F_NextWorkClamped**.
+*Proof*: The algorithm clamps compact bits to $\text{MAX\_TARGET}$ and rejects $0$. This has a blvm-spec-lock check pending for **F_NextWorkClamped**; see blvm-spec-lock#23.
 
 **Theorem 7.1.3** (Halving-Difficulty Grand Cycle). The halving interval $H$ and
 the difficulty adjustment interval $D$ are commensurable with ratio $H/D = 625/6$.
@@ -4362,7 +4361,7 @@ $$\text{ExecuteScript}(script, tx, lt) \text{ uses consistent locktime validatio
 $$\forall b \in \mathcal{B}, h \in \mathbb{N}:$$
 $$\text{ConnectBlock}(b, us, h) \text{ enforces economic invariants (subsidy, fees, supply limits)}$$
 
-*Proof*: ConnectBlock applies subsidy, fee, and supply checks. Those checks are proven by blvm-spec-lock formal verification of **F_SubsidyZeroAfter33**, **F_FeeNonNeg**, and **F_TotalSupplyBound**.
+*Proof*: ConnectBlock applies subsidy, fee, and supply checks. The subsidy check has a blvm-spec-lock check pending for **F_SubsidyZeroAfter33** (see blvm-spec-lock#23), and the fee and supply checks are proven by blvm-spec-lock formal verification of **F_FeeNonNeg** and **F_TotalSupplyBound**.
 
 #### 13.3.6 Spec-lock Formula Anchor Witness
 
