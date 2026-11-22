@@ -2253,7 +2253,7 @@ Where:
 $$\forall tx \in \mathcal{TX}, ph \in [\mathbb{N}], seq \in \mathbb{N}_{32}:$$
 $$\text{CalculateSequenceLocks}(tx, f, ph, rh) \text{ does not overflow}$$
 
-*Proof*: The locktime value is 16 bits (**F_SequenceLockTimeMask**). Time scaling is **F_SequenceTimeEncoding**. Height addition $ph + lock - 1$ has a blvm-spec-lock check pending for **F_SequenceLockHeightAdd**; see blvm-spec-lock#23.
+*Proof*: The locktime value is 16 bits (**F_SequenceLockTimeMask**). Time scaling is **F_SequenceTimeEncoding**. Height addition $ph + lock - 1$ for a single height-based input is proven by blvm-spec-lock formal verification of **F_SequenceLockHeightAdd**.
 
 **Theorem 5.5.2** (Sequence Lock Correctness): Sequence locks correctly enforce relative locktime:
 
