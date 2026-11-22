@@ -2321,7 +2321,7 @@ xychart-beta
 
 **Note**: Upper bound: $result \leq 50 \times C$ for all $h$. Genesis: $result = 50 \times C$.
 F\_SubsidyZeroAfter64 is the $k \geq 64$ undefined-shift guard. The tight zero is
-Theorem 6.1.2 and **F_SubsidyZeroAfter33**. The $k \geq 64$ guard (**F_SubsidyZeroAfter64**) and the tight zero are proven by blvm-spec-lock formal verification of GetBlockSubsidy.
+Theorem 6.1.2 and **F_SubsidyZeroAfter33**. The $k \geq 64$ guard (**F_SubsidyZeroAfter64**), the tight zero, the full piecewise formula (**F_SubsidyPiecewise**), and floor-half by $\gg 1$ (**F_SubsidyFloorHalf**) are proven by blvm-spec-lock formal verification of GetBlockSubsidy.
 
 **Theorem 6.1.1** (Halving Schedule): For $k < 32$:
 $$\text{GetBlockSubsidy}(k \times H + H) =
@@ -2366,17 +2366,17 @@ Tight zero: post-condition holds under `requires(height >= HALVING_INTERVAL * 33
 
 $$result \geq 0 \land result \leq INITIAL\_SUBSIDY$$
 
-Full piecewise formula: result = INITIAL_SUBSIDY >> floor(h / HALVING_INTERVAL) for k < 64, else 0.
+Full piecewise formula: result = INITIAL_SUBSIDY >> floor(h / HALVING_INTERVAL) for k < 64, else 0. The full formula on the real $\text{GetBlockSubsidy}$ body, for symbolic height, including $0$ when $\lfloor h/H \rfloor \geq 64$, is proven by blvm-spec-lock formal verification of **F_SubsidyPiecewise**.
 
-> Lock. `_verify_f_subsidy_piecewise` using a 64-arm `match` body where every shift RHS is a literal (Z3 translates `INITIAL_SUBSIDY >> k` as integer division by a power of two for each literal k).
+> Lock. Identity on production `get_block_subsidy` (symbolic height).
 
 **Formula** (**F_SubsidyFloorHalf**):
 
 $$\text{result} = 0$$
 
-Integer floor-half: $(\text{INITIAL\_SUBSIDY} \gg (k+1)) - \lfloor (\text{INITIAL\_SUBSIDY} \gg k)/2 \rfloor = 0$. The odd-$k$ set stays a remark.
+Integer floor-half for all heights: $\text{GetBlockSubsidy}(h + H) = \text{GetBlockSubsidy}(h) \gg 1$. The checked relation is $\gg 1$, which equals $\lfloor \cdot / 2 \rfloor$ because the subsidy is non-negative. The odd-$k$ set stays a remark. This is proven by blvm-spec-lock formal verification of **F_SubsidyFloorHalf**.
 
-> Lock. `_verify_f_subsidy_floor_half` uses literal $k = 9$ (an odd subsidy where real-valued $/2$ fails).
+> Lock. Identity on production `get_block_subsidy` (symbolic height; two evaluations at $h$ and $h+H$).
 
 ### 6.2 Total Supply
 
